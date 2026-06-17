@@ -680,7 +680,10 @@ export default function BowlsTracker() {
       try {
         const parsed = JSON.parse(ev.target.result);
         if (!Array.isArray(parsed.entries)) throw new Error("Invalid format");
-        setEntries(parsed.entries.map(e => ({ ...e, section: e.section || "gents" })));
+        const restored = parsed.entries.map(e => ({ ...e, section: e.section || "gents" }));
+        setEntries(restored);
+        save(ENTRIES_KEY, restored);
+        if (parsed.myName) { setMyName(parsed.myName); save(NAME_KEY, parsed.myName); }
         setBackupMsg(`Restored ${parsed.entries.length} tournament entries`);
       } catch {
         setBackupMsg("⚠️ Could not read backup file — was it exported from this app?");
