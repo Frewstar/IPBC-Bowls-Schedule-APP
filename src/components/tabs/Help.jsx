@@ -33,7 +33,7 @@ function Tip({ text }) {
   );
 }
 
-export default function HelpTab() {
+export default function HelpTab({ seasonYear }) {
   return (
     <div style={{ maxWidth: "520px", margin: "0 auto" }}>
       <div style={{ background: GREEN, borderRadius: "12px", padding: "20px", marginBottom: "16px", boxShadow: "0 4px 16px rgba(74,14,31,0.15)" }}>
@@ -42,7 +42,7 @@ export default function HelpTab() {
           <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: "#fff" }}>How to Use the App</div>
         </div>
         <div style={{ fontFamily: F_UI, fontSize: "13px", color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>
-          This app helps you track your tournament ties, find draw games, and view the 2025 fixture list — all in one place on your phone.
+          This app helps you track your tournament ties, find draw games, and view the {seasonYear || new Date().getFullYear()} fixture list — all in one place on your phone.
         </div>
       </div>
 
@@ -79,9 +79,9 @@ export default function HelpTab() {
         <Tip text="Add competitions in My Ties using the + Enter Tournament button." />
       </HelpSection>
 
-      <HelpSection icon={Calendar} title="Fixtures — 2025 Match Calendar">
+      <HelpSection icon={Calendar} title={`Fixtures — ${seasonYear || new Date().getFullYear()} Match Calendar`}>
         <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
-          The full 2025 fixture list for Irvine Park BC — home and away games, club events, and competitions.
+          The full {seasonYear || new Date().getFullYear()} fixture list for Irvine Park BC — home and away games, club events, and competitions.
         </div>
         <Step num="1" text="Your next upcoming fixture appears at the top in burgundy." />
         <Step num="2" text="The next 5 upcoming fixtures are shown by default." />

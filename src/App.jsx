@@ -54,7 +54,7 @@ export default function BowlsTracker() {
 
   // ── Settings ──
   const [settings, setSettings] = useState(() =>
-    load(SETTINGS_KEY, { fontScale: 1, defaultSection: "gents" })
+    load(SETTINGS_KEY, { fontScale: 1, defaultSection: "gents", seasonYear: new Date().getFullYear() })
   );
   const fontScale = settings.fontScale || 1;
   function updateSetting(key, val) {
@@ -346,13 +346,13 @@ export default function BowlsTracker() {
   function getRoundDateForComp(tournamentId, roundIdx) {
     const manual = masterRoundDates?.[tournamentId]?.[roundIdx];
     if (manual) return manual;
-    return getTournRoundDate(tournamentId, roundIdx);
+    return getTournRoundDate(tournamentId, roundIdx, settings.seasonYear || new Date().getFullYear());
   }
 
   function openRoundDatesEditor(t) {
     if (!isSuperAdmin) return;
     const existing = masterRoundDates[t.id] || [];
-    const base = (t.rounds || []).map(r => parseTournRoundDate(r)).filter(Boolean);
+    const base = (t.rounds || []).map(r => parseTournRoundDate(r, settings.seasonYear || new Date().getFullYear())).filter(Boolean);
     const len = Math.max(existing.length, base.length, 1);
     const merged = Array.from({ length: len }, (_, i) => existing[i] || base[i] || "");
     setRoundDatesCompId(t.id);
@@ -822,7 +822,7 @@ export default function BowlsTracker() {
                 Irvine Park Bowling Club
               </div>
               <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "500", color: GOLD_MUTED, letterSpacing: "0.15em", textTransform: "uppercase", marginTop: "3px" }}>
-                {activeSection === "ladies" ? "Ladies Section" : "Gents Section"} · 2025
+                {activeSection === "ladies" ? "Ladies Section" : "Gents Section"} · {settings.seasonYear || new Date().getFullYear()}
               </div>
             </div>
 
@@ -2075,7 +2075,7 @@ export default function BowlsTracker() {
             FIXTURES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "fixtures" && (
-          <FixturesTab fixturesExpanded={fixturesExpanded} setFixturesExpanded={setFixturesExpanded} />
+          <FixturesTab fixturesExpanded={fixturesExpanded} setFixturesExpanded={setFixturesExpanded} seasonYear={settings.seasonYear || new Date().getFullYear()} />
         )}
                 {/* ══════════════════════════════════════════
             MEMBERS TAB
@@ -2144,7 +2144,7 @@ export default function BowlsTracker() {
                 {/* ══════════════════════════════════════════
             HELP TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "help" && <HelpTab />}
+        {activeTab === "help" && <HelpTab seasonYear={settings.seasonYear || new Date().getFullYear()} />}
               </div>
 
       {/* ── MANAGE COMPETITIONS SHEET ── */}

@@ -21,8 +21,9 @@ export function fmtDate(iso) {
   return `${parseInt(d)} ${MONTH_ABBR[parseInt(m) - 1]}`;
 }
 
-// Parse the date from tournament round strings like "1st Round\n9th June" → "2025-06-09"
-export function parseTournRoundDate(roundStr) {
+// Parse the date from tournament round strings like "1st Round\n9th June" → "YYYY-06-09"
+// year defaults to the current calendar year if not supplied.
+export function parseTournRoundDate(roundStr, year = new Date().getFullYear()) {
   if (!roundStr) return "";
   const lines = roundStr.split("\n");
   if (lines.length < 2) return "";
@@ -33,13 +34,13 @@ export function parseTournRoundDate(roundStr) {
   const MONTHS = { jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12" };
   const month = MONTHS[m[2].toLowerCase().slice(0, 3)];
   if (!month) return "";
-  return `2025-${month}-${day}`;
+  return `${year}-${month}-${day}`;
 }
 
 // Get auto-date for a given tournament + round index
-export function getTournRoundDate(tournamentId, roundIdx) {
+export function getTournRoundDate(tournamentId, roundIdx, year = new Date().getFullYear()) {
   const t = TOURNAMENTS.find(t2 => t2.id === tournamentId);
-  return t?.rounds?.[roundIdx] ? parseTournRoundDate(t.rounds[roundIdx]) : "";
+  return t?.rounds?.[roundIdx] ? parseTournRoundDate(t.rounds[roundIdx], year) : "";
 }
 
 export function fixtureStatus(fixtureDate) {

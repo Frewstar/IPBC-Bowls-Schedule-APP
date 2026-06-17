@@ -176,6 +176,22 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
               </button>
             )}
           </div>
+          {isSuperAdmin && (
+            <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <label style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, whiteSpace: "nowrap" }}>Season Year</label>
+              <input
+                type="number"
+                min={2020}
+                max={2100}
+                value={settings.seasonYear || new Date().getFullYear()}
+                onChange={e => {
+                  const raw = parseInt(e.target.value, 10);
+                  if (!isNaN(raw)) updateSetting("seasonYear", Math.min(2100, Math.max(2020, raw)));
+                }}
+                style={{ width: "90px", padding: "6px 8px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "13px", fontFamily: F_UI, color: TEXT, background: SURFACE, outline: "none" }}
+              />
+            </div>
+          )}
         </div>
         <div>
           {tournaments.map((t, i) => {
@@ -217,7 +233,7 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
         <SecHeader icon={Info} label="About" />
         <div style={{ padding: "14px 16px" }}>
           <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN, marginBottom: "4px" }}>Irvine Park Bowling Club</div>
-          <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "10px" }}>Tournament Tracker · 2025 Season</div>
+          <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "10px" }}>Tournament Tracker · {settings.seasonYear || new Date().getFullYear()} Season</div>
           <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, lineHeight: 1.6 }}>
             Built by <strong style={{ color: TEXT2 }}>Frewstar</strong> for the members of IPBC. All data stays on your device.
           </div>

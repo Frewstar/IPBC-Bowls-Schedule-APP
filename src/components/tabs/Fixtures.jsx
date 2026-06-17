@@ -44,7 +44,7 @@ function groupByMonth(fixList) {
   return g;
 }
 
-export default function FixturesTab({ fixturesExpanded, setFixturesExpanded }) {
+export default function FixturesTab({ fixturesExpanded, setFixturesExpanded, seasonYear }) {
   const upcoming = FIXTURES.filter(f => fixtureStatus(f.date) !== "past");
   const nextUp = upcoming[0] || null;
   const shownUpcoming = fixturesExpanded ? upcoming : upcoming.slice(0, 5);
@@ -116,7 +116,7 @@ export default function FixturesTab({ fixturesExpanded, setFixturesExpanded }) {
       })()}
 
       <div style={{ textAlign: "center", marginTop: "12px", fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>
-        Irvine Park BC · 2025 Season · {FIXTURES.length} fixtures
+        Irvine Park BC · {seasonYear || new Date().getFullYear()} Season · {FIXTURES.length} fixtures
       </div>
     </div>
   );
