@@ -80,7 +80,7 @@ export default function BowlsTracker() {
   }
 
   // ── SW update banner ──
-  const [swWaiting, setSwWaiting] = useState(null); // holds the Workbox instance
+  const [swWaiting, setSwWaiting] = useState(null);
   useEffect(() => {
     function onSwUpdate(e) { setSwWaiting(e.detail); }
     window.addEventListener("swUpdateWaiting", onSwUpdate);
@@ -90,6 +90,23 @@ export default function BowlsTracker() {
     if (!swWaiting) return;
     swWaiting.messageSkipWaiting();
     swWaiting.addEventListener("controlling", () => window.location.reload());
+  }
+
+  // ── Android install prompt ──
+  const [installPrompt, setInstallPrompt] = useState(null);
+  useEffect(() => {
+    const isStandalone = navigator.standalone === true ||
+      window.matchMedia("(display-mode: standalone)").matches;
+    if (isStandalone) return; // already installed
+    function onInstallReady(e) { setInstallPrompt(e.detail); }
+    window.addEventListener("swInstallReady", onInstallReady);
+    return () => window.removeEventListener("swInstallReady", onInstallReady);
+  }, []);
+  async function triggerInstall() {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === "accepted") setInstallPrompt(null);
   }
 
   // ── Section toggle (used across tabs) ──
@@ -872,6 +889,22 @@ export default function BowlsTracker() {
           </div>
           <button onClick={dismissIosBanner} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "8px", color: "#fff", padding: "6px 8px", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <X size={16} strokeWidth={2} />
+          </button>
+        </div>
+      )}
+
+      {/* ── ANDROID INSTALL BANNER ── */}
+      {installPrompt && (
+        <div style={{ position: "fixed", bottom: "70px", left: "12px", right: "12px", zIndex: 200, background: GREEN, borderRadius: "14px", padding: "14px 16px", boxShadow: "0 4px 20px rgba(74,14,31,0.3)", display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "700", color: "#fff", marginBottom: "2px" }}>Install this app</div>
+            <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.82)" }}>Add IPBC Bowls to your home screen</div>
+          </div>
+          <button onClick={triggerInstall} style={{ background: GOLD, border: "none", borderRadius: "8px", color: "#4a0e1f", padding: "9px 16px", fontSize: "13px", fontWeight: "700", cursor: "pointer", fontFamily: F_UI, whiteSpace: "nowrap", flexShrink: 0 }}>
+            Install
+          </button>
+          <button onClick={() => setInstallPrompt(null)} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "8px", color: "#fff", padding: "9px", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center" }}>
+            <X size={15} strokeWidth={2} />
           </button>
         </div>
       )}
