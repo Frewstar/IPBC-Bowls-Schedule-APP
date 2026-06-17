@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- PWA / Mobile -->
+    <meta name="theme-color" content="#4a0e1f" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="IPBC Bowls" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- SEO -->
+    <meta name="description" content="Tournament draws, results and member directory for Irvine Park Bowling Club" />
+    <meta name="application-name" content="IPBC Bowls Manager" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+
+    <!-- Heritage typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet" />
+
+    <title>Irvine Park Bowling Club</title>
+
+    <style>
+      :root {
+        --burgundy-deep:   #4a0e1f;
+        --burgundy-mid:    #6b1d2e;
+        --burgundy-light:  #8b2439;
+        --gold-primary:    #c9a84c;
+        --gold-light:      #e8c56a;
+        --gold-muted:      #9a7a2e;
+        --white:           #ffffff;
+        --off-white:       #faf8f5;
+        --surface:         #ffffff;
+        --surface-2:       #f5f0eb;
+        --border:          #e8e0d5;
+        --text-primary:    #1a0a0e;
+        --text-secondary:  #6b5a5e;
+        --text-muted:      #9e8a8e;
+        --success:         #2d6a4f;
+        --success-light:   #f0fdf4;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body, #root {
+        height: 100%;
+        background: var(--off-white);
+        color: var(--text-primary);
+        font-family: 'DM Sans', system-ui, sans-serif;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+      }
+      body {
+        padding-top: env(safe-area-inset-top);
+        /* bottom padding handled by the fixed nav bar + content padding */
+      }
+      ::-webkit-scrollbar { width: 4px; height: 4px; }
+      ::-webkit-scrollbar-track { background: var(--surface-2); }
+      ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+      input, select, textarea {
+        background: var(--surface);
+        color: var(--text-primary);
+        border-color: var(--border);
+        font-family: 'DM Sans', system-ui, sans-serif;
+      }
+      input::placeholder, textarea::placeholder { color: var(--text-muted); }
+      input:focus, select:focus, textarea:focus {
+        outline: none;
+        border-color: var(--burgundy-mid) !important;
+        box-shadow: 0 0 0 3px rgba(107,29,46,0.08);
+      }
+      option { background: white; color: var(--text-primary); }
+      @keyframes slideUp {
+        from { transform: translateY(100%); }
+        to   { transform: translateY(0); }
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

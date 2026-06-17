@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="#3b0814"/>
+  <!-- Gold outer ring -->
+  <circle cx="256" cy="230" r="150" fill="none" stroke="#c9a84c" stroke-width="12"/>
+  <!-- Bowling bowl shape -->
+  <circle cx="256" cy="230" r="130" fill="#5a0a1e"/>
+  <!-- Bowl bias dot -->
+  <circle cx="300" cy="185" r="22" fill="#c9a84c"/>
+  <!-- Jack (small white ball) -->
+  <circle cx="190" cy="300" r="20" fill="#ffffff" opacity="0.9"/>
+  <!-- IPBC text -->
+  <text x="256" y="415" text-anchor="middle" font-family="Georgia, serif" font-size="52" font-weight="bold" fill="#c9a84c" letter-spacing="6">IPBC</text>
+  <!-- Est line -->
+  <text x="256" y="448" text-anchor="middle" font-family="Georgia, serif" font-size="22" fill="#c9a84c" opacity="0.6" letter-spacing="2">EST. 1928</text>
+</svg>
