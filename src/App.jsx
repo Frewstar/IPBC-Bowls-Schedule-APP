@@ -155,6 +155,8 @@ export default function BowlsTracker() {
   const [teamPartners, setTeamPartners] = useState(() => load("ipbc_team_partners_v1", {}));
   const [entryMyPartners, setEntryMyPartners] = useState([]);
   const [entryPartnerSearch, setEntryPartnerSearch] = useState("");
+  const [entryJustSaved, setEntryJustSaved] = useState(false);
+  const [lastAddedTournName, setLastAddedTournName] = useState("");
   const [nextOppPartners, setNextOppPartners] = useState([]);
   const [nextOppPartnerSearch, setNextOppPartnerSearch] = useState("");
   const [editOppPartnersTarget, setEditOppPartnersTarget] = useState(null);
@@ -641,34 +643,37 @@ export default function BowlsTracker() {
   // ── Tournament entry handlers ──
   function createEntry() {
     if (!entryTournId || !myName) return;
-    if (!entryOppPicked && !entryRound1Bye) return;
     const t = TOURNAMENTS.find(t2 => t2.id === entryTournId);
-    const rounds = Math.max(1, entryRounds);
+    const rounds = t?.rounds?.length > 0 ? t.rounds.length : Math.max(1, entryRounds);
     const firstTie = entryRound1Bye
       ? { roundIdx: 0, roundLabel: getRoundLabel(0, rounds), opponent: "", oppPhone: "", date: "", time: "", myScore: null, oppScore: null, result: "BYE" }
-      : { roundIdx: 0, roundLabel: getRoundLabel(0, rounds), opponent: entryOppPicked.name, oppPhone: entryOppPicked.phone || "", date: entryDate, time: entryTime, myScore: null, oppScore: null, result: null };
+      : entryOppPicked
+      ? { roundIdx: 0, roundLabel: getRoundLabel(0, rounds), opponent: entryOppPicked.name, oppPhone: entryOppPicked.phone || "", date: entryDate, time: entryTime, myScore: null, oppScore: null, result: null }
+      : null;
+    const tournName = t?.name || entryTournId;
     setEntries(prev => [...prev, {
       id: `entry-${Date.now()}`,
       myName,
       section: activeSection,
       tournamentId: entryTournId,
-      tournamentName: t?.name || entryTournId,
+      tournamentName: tournName,
       tournamentColor: t?.color || GOLD,
       totalRounds: rounds,
       status: "active",
       myPartners: [...entryMyPartners],
-      ties: [firstTie],
+      ties: firstTie ? [firstTie] : [],
     }]);
     if (entryMyPartners.length > 0 && entryTournId !== "balloted-pairs") {
       const updated = { ...teamPartners, [entryTournId]: entryMyPartners };
       setTeamPartners(updated);
       save("ipbc_team_partners_v1", updated);
     }
-    setAddingEntry(false);
     setEntryTournId(""); setEntryRounds(4);
     setEntryOppSearch(""); setEntryOppPicked(null); setEntryRound1Bye(false);
     setEntryDate(""); setEntryTime("");
     setEntryMyPartners([]); setEntryPartnerSearch("");
+    setLastAddedTournName(tournName);
+    setEntryJustSaved(true);
   }
 
   function recomputeStatus(e, updatedTies) {
@@ -1143,15 +1148,11 @@ export default function BowlsTracker() {
                         <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "32px 24px", textAlign: "center", marginBottom: "14px" }}>
                           <div style={{ marginBottom: "12px", display: "flex", justifyContent: "center" }}><Target size={32} strokeWidth={1.25} color={GREEN} /></div>
                           <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", color: GREEN, marginBottom: "8px" }}>No tournaments yet</div>
-                          <div style={{ fontSize: "12px", color: TEXT2, marginBottom: "20px" }}>Enter all your competitions at once, or add them one by one</div>
-                          <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
-                            <button onClick={() => setShowSetupSheet(true)} style={{ background: MID, border: "none", borderRadius: "8px", color: "#ffffff", padding: "11px 20px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>
-                              Set Up My Season
-                            </button>
-                            <button onClick={() => setShowEntrySheet(true)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT, padding: "11px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI }}>
-                              Add One
-                            </button>
-                          </div>
+                          <div style={{ fontSize: "12px", color: TEXT2, marginBottom: "20px" }}>Pick each competition and add your round 1 opponent</div>
+                          <button onClick={() => { setShowEntrySheet(true); setEntryJustSaved(false); setEntryTournId(""); setEntryRounds(4); setEntryOppSearch(""); setEntryOppPicked(null); setEntryDate(""); setEntryTime(""); }}
+                            style={{ background: MID, border: "none", borderRadius: "10px", color: "#ffffff", padding: "13px 32px", fontSize: "14px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                            <Plus size={16} strokeWidth={2.5} /> Add Tournament
+                          </button>
                         </div>
                       )}
 
@@ -1287,14 +1288,10 @@ export default function BowlsTracker() {
                         })}
 
                         {/* ─── Action row ─── */}
-                        <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
-                          <button onClick={() => { setShowEntrySheet(true); setEntryTournId(""); setEntryRounds(4); setEntryOppSearch(""); setEntryOppPicked(null); setEntryDate(""); setEntryTime(""); }}
-                            style={{ flex: 1, background: MID, border: "none", borderRadius: "10px", color: "#ffffff", padding: "12px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                            <Plus size={14} strokeWidth={2.5} /> Enter Tournament
-                          </button>
-                          <button onClick={() => { setShowSetupSheet(true); setSetupTournIds([]); setSetupConfig({}); setSetupSearchFor(null); setSetupSearchVal(""); }}
-                            style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", color: TEXT, padding: "12px 16px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "500" }}>
-                            Setup Season
+                        <div style={{ marginTop: "8px" }}>
+                          <button onClick={() => { setShowEntrySheet(true); setEntryJustSaved(false); setEntryTournId(""); setEntryRounds(4); setEntryOppSearch(""); setEntryOppPicked(null); setEntryDate(""); setEntryTime(""); }}
+                            style={{ width: "100%", background: MID, border: "none", borderRadius: "10px", color: "#ffffff", padding: "12px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                            <Plus size={14} strokeWidth={2.5} /> Add Tournament
                           </button>
                         </div>
 
@@ -1958,8 +1955,29 @@ export default function BowlsTracker() {
                         );
                       })()}
 
-                      {/* ══ BOTTOM SHEET: Enter Tournament ══ */}
-                      <BottomSheet open={showEntrySheet} onClose={() => { setShowEntrySheet(false); setEntryRound1Bye(false); setEntryOppPicked(null); setEntryOppSearch(""); setEntryMyPartners([]); setEntryPartnerSearch(""); }} title="Enter Tournament">
+                      {/* ══ BOTTOM SHEET: Add Tournament ══ */}
+                      <BottomSheet open={showEntrySheet} onClose={() => { setShowEntrySheet(false); setEntryJustSaved(false); setEntryRound1Bye(false); setEntryOppPicked(null); setEntryOppSearch(""); setEntryMyPartners([]); setEntryPartnerSearch(""); }} title="Add Tournament">
+                        {entryJustSaved ? (
+                          <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
+                            <div style={{ display: "flex", justifyContent: "center", marginBottom: "14px" }}>
+                              <div style={{ width: "52px", height: "52px", borderRadius: "50%", background: `${GREEN}20`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <Check size={28} strokeWidth={2.5} color={GREEN} />
+                              </div>
+                            </div>
+                            <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: GREEN, marginBottom: "6px" }}>Added!</div>
+                            <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, marginBottom: "28px" }}>{lastAddedTournName}</div>
+                            <div style={{ display: "flex", gap: "10px" }}>
+                              <button onClick={() => setEntryJustSaved(false)}
+                                style={{ flex: 1, background: MID, border: "none", borderRadius: "10px", color: "#fff", padding: "13px", fontSize: "14px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
+                                Add another
+                              </button>
+                              <button onClick={() => { setEntryJustSaved(false); setShowEntrySheet(false); }}
+                                style={{ flex: 1, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", color: TEXT, padding: "13px", fontSize: "14px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>
+                                Done
+                              </button>
+                            </div>
+                          </div>
+                        ) : <>
                         <div style={{ marginBottom: "16px" }}>
                           <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Competition</div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
@@ -1983,21 +2001,23 @@ export default function BowlsTracker() {
                             ))}
                           </div>
                         </div>
-                        <div style={{ marginBottom: "16px" }}>
-                          <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Number of Rounds</div>
-                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                            {[1,2,3,4,5,6].map(n => (
-                              <button key={n} onClick={() => setEntryRounds(n)} style={{
-                                background: entryRounds === n ? MID : SURFACE, border: `1px solid ${entryRounds === n ? MID : BORDER}`,
-                                borderRadius: "8px", color: entryRounds === n ? "#fff" : TEXT,
-                                padding: "8px 16px", fontSize: "16px", cursor: "pointer", fontFamily: F_DISPLAY, fontWeight: "600",
-                              }}>{n}</button>
-                            ))}
+                        {entryTournId && !(TOURNAMENTS.find(t => t.id === entryTournId)?.rounds?.length > 0) && (
+                          <div style={{ marginBottom: "16px" }}>
+                            <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Number of Rounds</div>
+                            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                              {[1,2,3,4,5,6].map(n => (
+                                <button key={n} onClick={() => setEntryRounds(n)} style={{
+                                  background: entryRounds === n ? MID : SURFACE, border: `1px solid ${entryRounds === n ? MID : BORDER}`,
+                                  borderRadius: "8px", color: entryRounds === n ? "#fff" : TEXT,
+                                  padding: "8px 16px", fontSize: "16px", cursor: "pointer", fontFamily: F_DISPLAY, fontWeight: "600",
+                                }}>{n}</button>
+                              ))}
+                            </div>
+                            <div style={{ fontSize: "10px", color: TEXT3, marginTop: "6px" }}>
+                              {Array.from({ length: entryRounds }, (_, i) => getRoundLabel(i, entryRounds)).join(" → ")}
+                            </div>
                           </div>
-                          <div style={{ fontSize: "10px", color: TEXT3, marginTop: "6px" }}>
-                            {Array.from({ length: entryRounds }, (_, i) => getRoundLabel(i, entryRounds)).join(" → ")}
-                          </div>
-                        </div>
+                        )}
                         {entryTournId && teamSizeFor(entryTournId) > 0 && (
                           <div style={{ marginBottom: "16px" }}>
                             <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1.5px" }}>
@@ -2087,17 +2107,13 @@ export default function BowlsTracker() {
                           </div>
                         )}
                         <div style={{ display: "flex", gap: "8px" }}>
-                          {(() => {
-                            const canSave = entryTournId && (entryOppPicked || entryRound1Bye);
-                            return (
-                              <button onClick={() => { createEntry(); setShowEntrySheet(false); }} disabled={!canSave}
-                                style={{ flex: 1, background: canSave ? MID : BORDER, border: "none", borderRadius: "8px", color: canSave ? "#fff" : TEXT3, padding: "12px", fontSize: "13px", cursor: canSave ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
-                                Save
-                              </button>
-                            );
-                          })()}
-                          <button onClick={() => setShowEntrySheet(false)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "12px 16px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
+                          <button onClick={createEntry} disabled={!entryTournId}
+                            style={{ flex: 1, background: entryTournId ? MID : BORDER, border: "none", borderRadius: "8px", color: entryTournId ? "#fff" : TEXT3, padding: "12px", fontSize: "13px", cursor: entryTournId ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
+                            Save
+                          </button>
+                          <button onClick={() => { setEntryJustSaved(false); setShowEntrySheet(false); }} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "12px 16px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
                         </div>
+                        </>}
                       </BottomSheet>
 
                       {/* ══ BOTTOM SHEET: Setup Season ══ */}
@@ -2256,7 +2272,7 @@ export default function BowlsTracker() {
               </div>
 
               {/* Add button */}
-              <button onClick={openAddHonour}
+              <button onClick={() => { if (!myName) { navigateTo("myties"); return; } openAddHonour(); }}
                 style={{ width: "100%", background: MID, border: "none", borderRadius: "10px", color: "#fff", padding: "13px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginBottom: "20px" }}>
                 <Plus size={16} strokeWidth={2.5} /> Add Honour
               </button>
