@@ -2,7 +2,7 @@ import { Phone } from "lucide-react";
 import { GREEN, GOLD, GOLD_MUTED, SURFACE, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
 import { DEFAULT_TOURNAMENTS } from "../../lib/constants.js";
 
-export default function FindTab({ search, setSearch, playerGames, tournaments }) {
+export default function FindTab({ search, setSearch, playerGames, tournaments, onH2H }) {
   const TOURNAMENTS = tournaments || DEFAULT_TOURNAMENTS;
   return (
     <div>
@@ -31,7 +31,9 @@ export default function FindTab({ search, setSearch, playerGames, tournaments })
             <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, letterSpacing: "1.5px" }}>vs</div>
             <div style={{ flex: 1, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "10px 12px" }}>
               <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, letterSpacing: "1.5px", textTransform: "uppercase", marginBottom: "4px" }}>Opponent</div>
-              <div style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "600", color: TEXT }}>{g.opponent}</div>
+              {onH2H
+                ? <button onClick={() => onH2H(g.opponent)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "600", color: TEXT, textAlign: "left" }}>{g.opponent}</button>
+                : <div style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "600", color: TEXT }}>{g.opponent}</div>}
               {g.oppPhone && <a href={`tel:${g.oppPhone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500" }}><Phone size={12} strokeWidth={1.75} />{g.oppPhone}</a>}
             </div>
           </div>

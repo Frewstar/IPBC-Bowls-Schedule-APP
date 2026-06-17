@@ -11,7 +11,7 @@ import {
 // ── lib imports ──────────────────────────────────────────────────────────────
 import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_UI } from "./lib/theme.js";
 import { MEMBERS_KEY, TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
-import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel } from "./lib/utils.js";
+import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, getHeadToHead } from "./lib/utils.js";
 import { DEFAULT_TOURNAMENTS, FIXTURES, DRAW_ENTRIES, DEFAULT_MEMBERS } from "./lib/constants.js";
 
 // ── component imports ─────────────────────────────────────────────────────────
@@ -237,6 +237,10 @@ export default function BowlsTracker() {
   function deleteHonour(id) {
     setHonours(prev => prev.filter(h => h.id !== id));
   }
+
+  // ── Head-to-head ──
+  const [h2hOpponent, setH2hOpponent] = useState(null); // string | null
+  function openH2H(name) { if (name) setH2hOpponent(name.trim()); }
 
   // ── Custom competitions ──
   const CUSTOM_COMPS_KEY = "bowls_custom_comps_v1";
@@ -1224,7 +1228,7 @@ export default function BowlsTracker() {
                                     <div style={{ width: "3px", alignSelf: "stretch", borderRadius: "2px", background: tie.result === "W" ? "#16a34a" : tie.result === "L" ? "#dc2626" : "#d1d5db", flexShrink: 0 }} />
                                     <div style={{ flex: 1 }}>
                                       <div style={{ fontSize: "10px", color: TEXT2, textTransform: "uppercase", letterSpacing: "1px" }}>{tie.roundLabel}</div>
-                                      <button onClick={() => { setHistorySearch(tie.opponent); }}
+                                      <button onClick={() => openH2H(tie.opponent)}
                                         style={{ background: "none", border: "none", padding: "0", cursor: "pointer", fontSize: "13px", fontWeight: "bold", color: GREEN, fontFamily: F_UI, textAlign: "left" }}>
                                         vs {tie.opponent}
                                       </button>
@@ -1383,7 +1387,7 @@ export default function BowlsTracker() {
                                             ) : (
                                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
                                                 <div>
-                                                  <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN }}>vs {tie.opponent}</div>
+                                                  <button onClick={() => openH2H(tie.opponent)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN, textAlign: "left" }}>vs {tie.opponent}</button>
                                                   {tie.oppPhone && <a href={`tel:${tie.oppPhone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "13px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500", marginTop: "3px" }}><Phone size={13} strokeWidth={1.75} />{tie.oppPhone}</a>}
                                                 </div>
                                                 <button onClick={() => openEditOpp(entry.id, tie.roundIdx, tie.opponent)}
@@ -1813,7 +1817,7 @@ export default function BowlsTracker() {
             FIND GAMES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "search" && (
-          <FindTab search={search} setSearch={setSearch} playerGames={playerGames} tournaments={TOURNAMENTS} />
+          <FindTab search={search} setSearch={setSearch} playerGames={playerGames} tournaments={TOURNAMENTS} onH2H={openH2H} />
         )}
 
         {/* ══════════════════════════════════════════
@@ -1981,6 +1985,74 @@ export default function BowlsTracker() {
                   </div>
                 </div>
               </BottomSheet>
+
+              {/* ══ HEAD-TO-HEAD SHEET ══ */}
+              {(() => {
+                const h2h = h2hOpponent ? getHeadToHead(entries, myName, h2hOpponent) : null;
+                return (
+                  <BottomSheet open={!!h2hOpponent} onClose={() => setH2hOpponent(null)} title={h2hOpponent || ""} titleColor={GOLD}>
+                    {h2h && (
+                      <div>
+                        {/* Record bar */}
+                        <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+                          <div style={{ flex: 1, textAlign: "center", background: WIN_BG, border: `1px solid ${WIN_GOLD}44`, borderRadius: "10px", padding: "12px 8px" }}>
+                            <div style={{ fontFamily: F_DISPLAY, fontSize: "32px", fontWeight: "700", color: WIN_GOLD, lineHeight: 1 }}>{h2h.wins}</div>
+                            <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: WIN_GOLD, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>Won</div>
+                          </div>
+                          <div style={{ flex: 1, textAlign: "center", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "12px 8px" }}>
+                            <div style={{ fontFamily: F_DISPLAY, fontSize: "32px", fontWeight: "700", color: TEXT2, lineHeight: 1 }}>{h2h.played}</div>
+                            <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>Played</div>
+                          </div>
+                          <div style={{ flex: 1, textAlign: "center", background: LOSS_BG, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "12px 8px" }}>
+                            <div style={{ fontFamily: F_DISPLAY, fontSize: "32px", fontWeight: "700", color: LOSS_RED, lineHeight: 1 }}>{h2h.losses}</div>
+                            <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: LOSS_RED, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>Lost</div>
+                          </div>
+                        </div>
+
+                        {/* Match list */}
+                        {h2h.matches.length === 0 ? (
+                          <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "28px", textAlign: "center" }}>
+                            <div style={{ fontFamily: F_DISPLAY, fontSize: "17px", fontWeight: "600", color: TEXT2, marginBottom: "4px" }}>No completed games yet</div>
+                            <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3 }}>Results will appear here once you've played {h2hOpponent}</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "8px" }}>Match History</div>
+                            {h2h.matches.map((m, i) => (
+                              <div key={i} style={{
+                                display: "flex", alignItems: "center", gap: "12px",
+                                background: m.result === "W" ? WIN_BG : LOSS_BG,
+                                border: `1px solid ${m.result === "W" ? WIN_GOLD + "44" : LOSS_RED + "44"}`,
+                                borderLeft: `3px solid ${m.result === "W" ? WIN_GOLD : LOSS_RED}`,
+                                borderRadius: "8px", padding: "11px 13px", marginBottom: "7px",
+                              }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: TEXT2, marginBottom: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {m.tournamentName} · {m.roundLabel}
+                                  </div>
+                                  {m.date && (
+                                    <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, display: "flex", alignItems: "center", gap: "4px" }}>
+                                      <Clock size={10} strokeWidth={1.75} />{fmtDate(m.date)}
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                  <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: m.result === "W" ? WIN_GOLD : LOSS_RED, lineHeight: 1 }}>
+                                    {m.myScore}–{m.oppScore}
+                                  </div>
+                                  <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: m.result === "W" ? WIN_GOLD : LOSS_RED, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "2px" }}>
+                                    {m.result === "W" ? "Won" : "Lost"}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </BottomSheet>
+                );
+              })()}
             </div>
           );
         })()}

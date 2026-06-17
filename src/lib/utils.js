@@ -70,6 +70,46 @@ export function countdownLabel(isoDate) {
   return `In ${Math.ceil(d/7)} weeks`;
 }
 
+// Head-to-head record between myName and a single opponent.
+// Matches on exact string (case-insensitive, trimmed). BYEs and pending
+// ties are excluded — only "W" and "L" results are counted.
+// NOTE: "D WILSON" and "DAVID WILSON" are treated as different opponents
+// because opponent names are stored as free-text, not member IDs.
+export function getHeadToHead(entries, myName, opponentName) {
+  const myKey  = (myName      || "").replace(/\s+/g, "").toUpperCase();
+  const oppKey = (opponentName || "").trim().toUpperCase();
+  const matches = [];
+
+  for (const entry of entries) {
+    const entryKey = (entry.myName || "").replace(/\s+/g, "").toUpperCase();
+    if (entryKey !== myKey) continue;
+    for (const tie of entry.ties) {
+      if (tie.result !== "W" && tie.result !== "L") continue;
+      if ((tie.opponent || "").trim().toUpperCase() !== oppKey) continue;
+      matches.push({
+        tournamentName: entry.tournamentName || entry.tournamentId || "",
+        roundLabel:     tie.roundLabel || "",
+        date:           tie.date || "",
+        myScore:        tie.myScore  ?? null,
+        oppScore:       tie.oppScore ?? null,
+        result:         tie.result,
+      });
+    }
+  }
+
+  // Most-recent first; undated matches sink to the bottom
+  matches.sort((a, b) => {
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return new Date(b.date) - new Date(a.date);
+  });
+
+  const wins   = matches.filter(m => m.result === "W").length;
+  const losses = matches.filter(m => m.result === "L").length;
+  return { opponent: opponentName, played: matches.length, wins, losses, matches };
+}
+
 // Find the most urgent pending tie across all active entries
 export function findUrgentTie(allEntries) {
   const pending = allEntries
