@@ -152,6 +152,7 @@ export default function BowlsTracker() {
   const [entryRound1Bye, setEntryRound1Bye] = useState(false);
   const [entryDate, setEntryDate]       = useState("");
   const [entryTime, setEntryTime]       = useState("");
+  const [teamPartners, setTeamPartners] = useState(() => load("ipbc_team_partners_v1", {}));
   const [entryMyPartners, setEntryMyPartners] = useState([]);
   const [entryPartnerSearch, setEntryPartnerSearch] = useState("");
   const [nextOppPartners, setNextOppPartners] = useState([]);
@@ -649,6 +650,11 @@ export default function BowlsTracker() {
       myPartners: [...entryMyPartners],
       ties: [firstTie],
     }]);
+    if (entryMyPartners.length > 0 && entryTournId !== "balloted-pairs") {
+      const updated = { ...teamPartners, [entryTournId]: entryMyPartners };
+      setTeamPartners(updated);
+      save("ipbc_team_partners_v1", updated);
+    }
     setAddingEntry(false);
     setEntryTournId(""); setEntryRounds(4);
     setEntryOppSearch(""); setEntryOppPicked(null); setEntryRound1Bye(false);
@@ -1906,7 +1912,16 @@ export default function BowlsTracker() {
                           <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Competition</div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
                             {TOURNAMENTS.map(t => (
-                              <button key={t.id} onClick={() => { setEntryTournId(t.id); setEntryDate(getRoundDateForComp(t.id, 0)); }} style={{
+                              <button key={t.id} onClick={() => {
+                                  setEntryTournId(t.id);
+                                  setEntryDate(getRoundDateForComp(t.id, 0));
+                                  if (t.id !== "balloted-pairs" && teamPartners[t.id]?.length > 0) {
+                                    setEntryMyPartners(teamPartners[t.id]);
+                                  } else {
+                                    setEntryMyPartners([]);
+                                  }
+                                  setEntryPartnerSearch("");
+                                }} style={{
                                 background: entryTournId === t.id ? MID : SURFACE2,
                                 border: `1px solid ${entryTournId === t.id ? MID : BORDER}`,
                                 borderRadius: "20px", color: entryTournId === t.id ? "#fff" : TEXT,
