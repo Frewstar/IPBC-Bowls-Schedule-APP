@@ -36,6 +36,10 @@ export const DEFAULT_TOURNAMENTS = [
     id: "mixed-pairs", name: "Mixed Pairs", type: "Mixed Pairs", color: "#a78bfa",
     rounds: ["1st Round\n1st June","2nd Round\n29th June","3rd Round\n15th July","4th Round\n27th July"],
   },
+  {
+    id: "balloted-pairs", name: "Balloted Pairs", type: "Pairs", color: "#c084fc",
+    rounds: ["1st Round","2nd Round","Semi Final","Final"],
+  },
 ];
 
 // ── FIXTURES DATA ─────────────────────────────────────────────────────────

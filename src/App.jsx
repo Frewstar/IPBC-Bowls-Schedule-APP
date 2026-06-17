@@ -152,6 +152,13 @@ export default function BowlsTracker() {
   const [entryRound1Bye, setEntryRound1Bye] = useState(false);
   const [entryDate, setEntryDate]       = useState("");
   const [entryTime, setEntryTime]       = useState("");
+  const [entryMyPartners, setEntryMyPartners] = useState([]);
+  const [entryPartnerSearch, setEntryPartnerSearch] = useState("");
+  const [nextOppPartners, setNextOppPartners] = useState([]);
+  const [nextOppPartnerSearch, setNextOppPartnerSearch] = useState("");
+  const [editOppPartnersTarget, setEditOppPartnersTarget] = useState(null);
+  const [editOppPartnersVal, setEditOppPartnersVal] = useState([]);
+  const [editOppPartnerSearch, setEditOppPartnerSearch] = useState("");
   const [scoringInfo, setScoringInfo]   = useState(null);
   const [scoreMy, setScoreMy]           = useState("");
   const [reorderMode, setReorderMode]   = useState(false);
@@ -170,6 +177,33 @@ export default function BowlsTracker() {
       .filter(m => m.name.toUpperCase().includes(q))
       .slice(0, 6);
   }, [editOppSearch, members, activeSection]);
+
+  const entryPartnerResults = useMemo(() => {
+    if (!entryPartnerSearch || entryPartnerSearch.length < 2) return [];
+    const q = entryPartnerSearch.toUpperCase();
+    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+  }, [entryPartnerSearch, members, activeSection]);
+
+  const nextOppPartnerResults = useMemo(() => {
+    if (!nextOppPartnerSearch || nextOppPartnerSearch.length < 2) return [];
+    const q = nextOppPartnerSearch.toUpperCase();
+    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+  }, [nextOppPartnerSearch, members, activeSection]);
+
+  const editOppPartnerResults = useMemo(() => {
+    if (!editOppPartnerSearch || editOppPartnerSearch.length < 2) return [];
+    const q = editOppPartnerSearch.toUpperCase();
+    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+  }, [editOppPartnerSearch, members, activeSection]);
+
+  function teamSizeFor(tournamentId) {
+    const t = TOURNAMENTS.find(t2 => t2.id === tournamentId);
+    const type = t?.type || "";
+    if (type === "Pairs" || type === "Mixed Pairs") return 1;
+    if (type === "Triples") return 2;
+    if (type === "Rinks") return 3;
+    return 0;
+  }
 
   function openEditOpp(entryId, roundIdx, currentName) {
     setEditOppTarget({ entryId, roundIdx });
@@ -612,12 +646,14 @@ export default function BowlsTracker() {
       tournamentColor: t?.color || GOLD,
       totalRounds: rounds,
       status: "active",
+      myPartners: [...entryMyPartners],
       ties: [firstTie],
     }]);
     setAddingEntry(false);
     setEntryTournId(""); setEntryRounds(4);
     setEntryOppSearch(""); setEntryOppPicked(null); setEntryRound1Bye(false);
     setEntryDate(""); setEntryTime("");
+    setEntryMyPartners([]); setEntryPartnerSearch("");
   }
 
   function recomputeStatus(e, updatedTies) {
@@ -693,12 +729,14 @@ export default function BowlsTracker() {
           date: nextDate,
           time: nextTime,
           myScore: null, oppScore: null, result: null,
+          oppPartners: [...nextOppPartners],
         }],
       };
     }));
     setNextRoundFor(null);
     setNextOppSearch(""); setNextOppPicked(null);
     setNextDate(""); setNextTime("");
+    setNextOppPartners([]); setNextOppPartnerSearch("");
   }
 
   function buildSeason() {
@@ -1529,6 +1567,74 @@ export default function BowlsTracker() {
                                           </div>
                                         )}
 
+                                        {/* Team members for team competitions */}
+                                        {tie && (() => {
+                                          const ts = teamSizeFor(entry.tournamentId);
+                                          if (ts === 0) return null;
+                                          const myParts = entry.myPartners || [];
+                                          const oppParts = tie.oppPartners || [];
+                                          const isEditingOppParts = editOppPartnersTarget?.entryId === entry.id && editOppPartnersTarget?.roundIdx === rIdx;
+                                          return (
+                                            <div style={{ marginBottom: "12px" }}>
+                                              {myParts.length > 0 && (
+                                                <div style={{ fontSize: "12px", color: TEXT2, fontFamily: F_UI, marginBottom: "4px" }}>
+                                                  <span style={{ fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", fontSize: "10px" }}>Your team: </span>
+                                                  {myParts.map(p => p.name).join(", ")}
+                                                </div>
+                                              )}
+                                              {isEditingOppParts ? (
+                                                <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "10px 12px" }}>
+                                                  <div style={{ fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Opponent's team members</div>
+                                                  {editOppPartnersVal.map((p, pi) => (
+                                                    <div key={pi} style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                                                      <span style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", color: TEXT }}>{p.name}</span>
+                                                      <button onClick={() => setEditOppPartnersVal(prev => prev.filter((_, j) => j !== pi))} style={{ background: "none", border: "none", color: TEXT3, cursor: "pointer" }}><X size={12} strokeWidth={2} /></button>
+                                                    </div>
+                                                  ))}
+                                                  {editOppPartnersVal.length < ts && (
+                                                    <div>
+                                                      <input value={editOppPartnerSearch} onChange={e => setEditOppPartnerSearch(e.target.value)} placeholder="Search name…"
+                                                        style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "13px", fontFamily: F_UI, outline: "none" }} />
+                                                      {editOppPartnerSearch.length >= 2 && (
+                                                        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", marginTop: "4px", overflow: "hidden" }}>
+                                                          {editOppPartnerResults.map(m => (
+                                                            <div key={m.id} onClick={() => { setEditOppPartnersVal(prev => [...prev, { name: m.name, phone: m.phone || "" }]); setEditOppPartnerSearch(""); }}
+                                                              style={{ padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontFamily: F_UI, color: TEXT, borderBottom: `1px solid ${BORDER}` }}>{m.name}</div>
+                                                          ))}
+                                                          <div onClick={() => { setEditOppPartnersVal(prev => [...prev, { name: editOppPartnerSearch.toUpperCase(), phone: "" }]); setEditOppPartnerSearch(""); }}
+                                                            style={{ padding: "8px 12px", cursor: "pointer", fontSize: "12px", color: GOLD_MUTED }}>+ Add manually</div>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  )}
+                                                  <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
+                                                    <button onClick={() => {
+                                                      setEntries(prev => prev.map(e2 => e2.id !== entry.id ? e2 : { ...e2, ties: e2.ties.map(t2 => t2.roundIdx !== rIdx ? t2 : { ...t2, oppPartners: editOppPartnersVal }) }));
+                                                      setEditOppPartnersTarget(null); setEditOppPartnerSearch("");
+                                                    }} style={{ flex: 1, background: MID, border: "none", borderRadius: "6px", color: "#fff", padding: "8px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>Save</button>
+                                                    <button onClick={() => { setEditOppPartnersTarget(null); setEditOppPartnerSearch(""); }}
+                                                      style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "8px 12px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                                  <div style={{ flex: 1, fontSize: "12px", color: TEXT2, fontFamily: F_UI }}>
+                                                    {oppParts.length > 0 ? (
+                                                      <><span style={{ fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", fontSize: "10px" }}>Their team: </span>{oppParts.map(p => p.name).join(", ")}</>
+                                                    ) : (
+                                                      <span style={{ color: TEXT3, fontSize: "11px" }}>Their team not recorded</span>
+                                                    )}
+                                                  </div>
+                                                  <button onClick={() => { setEditOppPartnersTarget({ entryId: entry.id, roundIdx: rIdx }); setEditOppPartnersVal(tie.oppPartners ? [...tie.oppPartners] : []); setEditOppPartnerSearch(""); }}
+                                                    style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "3px 8px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px", flexShrink: 0 }}>
+                                                    <Pencil size={10} strokeWidth={1.75} /> {oppParts.length > 0 ? "Edit" : "Add"}
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })()}
+
                                         {/* Date row for pending ties */}
                                         {tie && !tie.result && (
                                           <div style={{ background: tie.date ? `${GREEN}08` : SURFACE2, border: `1px solid ${tie.date ? `${GREEN}33` : BORDER}`, borderRadius: "8px", padding: "10px 12px", marginBottom: "12px" }}>
@@ -1725,6 +1831,40 @@ export default function BowlsTracker() {
                                     )}
                                   </div>
                                 )}
+                                {teamSizeFor(entry.tournamentId) > 0 && (
+                                  <div style={{ marginBottom: "12px" }}>
+                                    <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1.5px" }}>
+                                      Their partner{teamSizeFor(entry.tournamentId) > 1 ? "s" : ""} <span style={{ fontWeight: "400" }}>({nextOppPartners.length}/{teamSizeFor(entry.tournamentId)}) — optional</span>
+                                    </div>
+                                    {nextOppPartners.map((p, i) => (
+                                      <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                                        <MemberPill name={p.name} phone={p.phone} />
+                                        <button onClick={() => setNextOppPartners(prev => prev.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: TEXT2, cursor: "pointer" }}><X size={14} strokeWidth={2} /></button>
+                                      </div>
+                                    ))}
+                                    {nextOppPartners.length < teamSizeFor(entry.tournamentId) && (
+                                      <div>
+                                        <input value={nextOppPartnerSearch} onChange={e => setNextOppPartnerSearch(e.target.value)} placeholder="Search partner by surname…"
+                                          style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: `1px solid ${BORDER}`, borderRadius: "8px", fontSize: "14px", outline: "none", fontFamily: F_UI }} />
+                                        {nextOppPartnerSearch.length >= 2 && (
+                                          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", marginTop: "4px", overflow: "hidden" }}>
+                                            {nextOppPartnerResults.map(m => (
+                                              <div key={m.id} onClick={() => { setNextOppPartners(prev => [...prev, { name: m.name, phone: m.phone || "" }]); setNextOppPartnerSearch(""); }}
+                                                style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}`, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                                                <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_DISPLAY }}>{m.name}</span>
+                                                {m.phone && <span style={{ fontSize: "12px", color: GOLD }}>{m.phone}</span>}
+                                              </div>
+                                            ))}
+                                            <div onClick={() => { setNextOppPartners(prev => [...prev, { name: nextOppPartnerSearch.toUpperCase(), phone: "" }]); setNextOppPartnerSearch(""); }}
+                                              style={{ padding: "10px 14px", cursor: "pointer", fontSize: "12px", color: GOLD_MUTED, borderTop: `1px solid ${BORDER}` }}>
+                                              + Add &ldquo;{nextOppPartnerSearch.toUpperCase()}&rdquo; manually
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                                 {(() => {
                                   const nextIdx = entry.ties.length;
                                   const autoDate = getRoundDateForComp(entry.tournamentId, nextIdx);
@@ -1761,7 +1901,7 @@ export default function BowlsTracker() {
                       })()}
 
                       {/* ══ BOTTOM SHEET: Enter Tournament ══ */}
-                      <BottomSheet open={showEntrySheet} onClose={() => { setShowEntrySheet(false); setEntryRound1Bye(false); setEntryOppPicked(null); setEntryOppSearch(""); }} title="Enter Tournament">
+                      <BottomSheet open={showEntrySheet} onClose={() => { setShowEntrySheet(false); setEntryRound1Bye(false); setEntryOppPicked(null); setEntryOppSearch(""); setEntryMyPartners([]); setEntryPartnerSearch(""); }} title="Enter Tournament">
                         <div style={{ marginBottom: "16px" }}>
                           <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Competition</div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
@@ -1791,6 +1931,40 @@ export default function BowlsTracker() {
                             {Array.from({ length: entryRounds }, (_, i) => getRoundLabel(i, entryRounds)).join(" → ")}
                           </div>
                         </div>
+                        {entryTournId && teamSizeFor(entryTournId) > 0 && (
+                          <div style={{ marginBottom: "16px" }}>
+                            <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1.5px" }}>
+                              Your Partner{teamSizeFor(entryTournId) > 1 ? "s" : ""} <span style={{ color: TEXT3, fontWeight: "400" }}>({entryMyPartners.length}/{teamSizeFor(entryTournId)}) — optional</span>
+                            </div>
+                            {entryMyPartners.map((p, i) => (
+                              <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                                <MemberPill name={p.name} phone={p.phone} />
+                                <button onClick={() => setEntryMyPartners(prev => prev.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: TEXT2, cursor: "pointer" }}><X size={14} strokeWidth={2} /></button>
+                              </div>
+                            ))}
+                            {entryMyPartners.length < teamSizeFor(entryTournId) && (
+                              <div>
+                                <input value={entryPartnerSearch} onChange={e => setEntryPartnerSearch(e.target.value)} placeholder="Search partner by surname…"
+                                  style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: `1px solid ${BORDER}`, borderRadius: "8px", fontSize: "14px", outline: "none", fontFamily: F_UI }} />
+                                {entryPartnerSearch.length >= 2 && (
+                                  <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", marginTop: "4px", overflow: "hidden" }}>
+                                    {entryPartnerResults.map(m => (
+                                      <div key={m.id} onClick={() => { setEntryMyPartners(prev => [...prev, { name: m.name, phone: m.phone || "" }]); setEntryPartnerSearch(""); }}
+                                        style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}`, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                                        <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_DISPLAY }}>{m.name}</span>
+                                        {m.phone && <span style={{ fontSize: "12px", color: GOLD }}>{m.phone}</span>}
+                                      </div>
+                                    ))}
+                                    <div onClick={() => { setEntryMyPartners(prev => [...prev, { name: entryPartnerSearch.toUpperCase(), phone: "" }]); setEntryPartnerSearch(""); }}
+                                      style={{ padding: "10px 14px", cursor: "pointer", fontSize: "12px", color: GOLD_MUTED, borderTop: `1px solid ${BORDER}` }}>
+                                      + Add &ldquo;{entryPartnerSearch.toUpperCase()}&rdquo; manually
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div style={{ marginBottom: "16px" }}>
                           <div style={{ fontSize: "10px", color: TEXT2, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Round 1 Opponent</div>
                           {entryRound1Bye ? (
