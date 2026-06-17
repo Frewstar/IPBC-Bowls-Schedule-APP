@@ -65,6 +65,33 @@ export default function BowlsTracker() {
     });
   }
 
+  // ── iOS install banner ──
+  const [showIosBanner, setShowIosBanner] = useState(() => {
+    if (load("ipbc_ios_banner_dismissed", false)) return false;
+    const ua = navigator.userAgent;
+    const isIos = /iphone|ipad|ipod/i.test(ua);
+    const isStandalone = navigator.standalone === true ||
+      window.matchMedia("(display-mode: standalone)").matches;
+    return isIos && !isStandalone;
+  });
+  function dismissIosBanner() {
+    save("ipbc_ios_banner_dismissed", true);
+    setShowIosBanner(false);
+  }
+
+  // ── SW update banner ──
+  const [swWaiting, setSwWaiting] = useState(null); // holds the Workbox instance
+  useEffect(() => {
+    function onSwUpdate(e) { setSwWaiting(e.detail); }
+    window.addEventListener("swUpdateWaiting", onSwUpdate);
+    return () => window.removeEventListener("swUpdateWaiting", onSwUpdate);
+  }, []);
+  function applySwUpdate() {
+    if (!swWaiting) return;
+    swWaiting.messageSkipWaiting();
+    swWaiting.addEventListener("controlling", () => window.location.reload());
+  }
+
   // ── Section toggle (used across tabs) ──
   const [activeSection, setActiveSection] = useState(
     () => load(SETTINGS_KEY, { defaultSection: "gents" }).defaultSection || "gents"
@@ -839,6 +866,36 @@ export default function BowlsTracker() {
   return (
     <div style={{ minHeight: "100vh", background: BG, fontFamily: F_UI, color: TEXT, zoom: fontScale }}>
 
+      {/* ── iOS INSTALL BANNER ── */}
+      {showIosBanner && (
+        <div style={{ position: "fixed", bottom: "70px", left: "12px", right: "12px", zIndex: 200, background: GREEN, borderRadius: "14px", padding: "14px 16px", boxShadow: "0 4px 20px rgba(74,14,31,0.3)", display: "flex", alignItems: "flex-start", gap: "12px" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "700", color: "#fff", marginBottom: "3px" }}>Install this app</div>
+            <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.82)", lineHeight: 1.5 }}>
+              Tap <strong style={{ color: GOLD }}>Share</strong> then <strong style={{ color: GOLD }}>Add to Home Screen</strong> to install IPBC Bowls on your iPhone.
+            </div>
+          </div>
+          <button onClick={dismissIosBanner} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "8px", color: "#fff", padding: "6px 8px", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <X size={16} strokeWidth={2} />
+          </button>
+        </div>
+      )}
+
+      {/* ── SW UPDATE BANNER ── */}
+      {swWaiting && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 300, background: MID, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", boxShadow: "0 2px 8px rgba(74,14,31,0.2)" }}>
+          <div style={{ fontFamily: F_UI, fontSize: "13px", color: "#fff" }}>Update available</div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <button onClick={applySwUpdate} style={{ background: GOLD, border: "none", borderRadius: "6px", color: "#4a0e1f", padding: "7px 14px", fontSize: "12px", fontWeight: "700", cursor: "pointer", fontFamily: F_UI, whiteSpace: "nowrap" }}>
+              Tap to refresh
+            </button>
+            <button onClick={() => setSwWaiting(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.6)", cursor: "pointer", padding: "4px" }}>
+              <X size={15} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── HEADER ── */}
       <div style={{ background: SURFACE, borderBottom: `3px solid ${GREEN}`, boxShadow: "0 1px 4px rgba(74,14,31,0.08)" }}>
         <div style={{ padding: "0 16px", maxWidth: "680px", margin: "0 auto" }}>
@@ -862,7 +919,7 @@ export default function BowlsTracker() {
             </div>
 
             {/* Title — centred between crest and pill */}
-            <div style={{ flex: 1, textAlign: "center" }}>
+            <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
               <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN, letterSpacing: "0.08em", textTransform: "uppercase", lineHeight: 1.1 }}>
                 Irvine Park Bowling Club
               </div>
@@ -1957,7 +2014,7 @@ export default function BowlsTracker() {
                             )}
                           </div>
                           <button onClick={() => openEditHonour(h)}
-                            style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, cursor: "pointer", padding: "5px 8px", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "11px", fontFamily: F_UI }}>
+                            style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, cursor: "pointer", padding: "10px 12px", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "11px", fontFamily: F_UI, minHeight: "44px" }}>
                             <Pencil size={11} strokeWidth={1.75} /> Edit
                           </button>
                         </div>

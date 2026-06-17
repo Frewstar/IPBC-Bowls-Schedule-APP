@@ -42,10 +42,10 @@ export default function MembersTab({
           {filteredMembers.length} {activeSection} members
         </div>
         <div style={{ display: "flex", gap: "6px" }}>
-          <button onClick={downloadCSV} style={{ background: "transparent", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "6px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+          <button onClick={downloadCSV} style={{ background: "transparent", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "11px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}>
             <Download size={12} strokeWidth={1.75} /> CSV
           </button>
-          <button onClick={() => fileInputRef.current?.click()} style={{ background: "transparent", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "6px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+          <button onClick={() => fileInputRef.current?.click()} style={{ background: "transparent", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "11px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}>
             <Upload size={12} strokeWidth={1.75} /> Upload
           </button>
           <button onClick={() => { setShowAddMemberSheet(true); setNewName(""); setNewPhone(""); setNewSection(activeSection); }}
@@ -66,12 +66,12 @@ export default function MembersTab({
       {/* ── Member list with sticky letter index ── */}
       <div style={{ position: "relative" }}>
         {!memberSearch && (
-          <div style={{ position: "fixed", right: "4px", top: "50%", transform: "translateY(-50%)", zIndex: 50, display: "flex", flexDirection: "column", gap: "0" }}>
+          <div style={{ position: "fixed", right: "0px", top: "50%", transform: "translateY(-50%)", zIndex: 50, display: "flex", flexDirection: "column" }}>
             {Object.keys(groupedMembers).sort().map(letter => (
               <button key={letter} onClick={() => {
                 const el = document.getElementById(`member-letter-${letter}`);
                 if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-              }} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: F_UI, fontSize: "9px", fontWeight: "700", color: TEXT3, padding: "1.5px 3px", lineHeight: 1, letterSpacing: "0.02em" }}>
+              }} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: F_UI, fontSize: "9px", fontWeight: "700", color: TEXT3, padding: "3px 8px", lineHeight: 1, letterSpacing: "0.02em", minWidth: "28px", textAlign: "center" }}>
                 {letter}
               </button>
             ))}
@@ -120,8 +120,8 @@ export default function MembersTab({
                           : <span style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>No number</span>}
                       </div>
                       <div style={{ display: "flex", gap: "5px", flexShrink: 0 }}>
-                        <button onClick={() => startEdit(m)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "5px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px" }}><Pencil size={11} strokeWidth={1.75} />Edit</button>
-                        <button onClick={() => setConfirmDelete(m.id)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT3, padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontFamily: F_UI }}><X size={13} strokeWidth={1.75} /></button>
+                        <button onClick={() => startEdit(m)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "10px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}><Pencil size={11} strokeWidth={1.75} />Edit</button>
+                        <button onClick={() => setConfirmDelete(m.id)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT3, padding: "10px 10px", fontSize: "10px", cursor: "pointer", fontFamily: F_UI, minHeight: "44px", display: "inline-flex", alignItems: "center" }}><X size={13} strokeWidth={1.75} /></button>
                       </div>
                     </div>
                   )}
