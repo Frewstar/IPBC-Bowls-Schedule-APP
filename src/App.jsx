@@ -132,6 +132,7 @@ export default function BowlsTracker() {
   const [entryRounds, setEntryRounds]   = useState(4);
   const [entryOppSearch, setEntryOppSearch] = useState("");
   const [entryOppPicked, setEntryOppPicked] = useState(null);
+  const [entryRound1Bye, setEntryRound1Bye] = useState(false);
   const [entryDate, setEntryDate]       = useState("");
   const [entryTime, setEntryTime]       = useState("");
   const [scoringInfo, setScoringInfo]   = useState(null);
@@ -579,10 +580,12 @@ export default function BowlsTracker() {
   // ── Tournament entry handlers ──
   function createEntry() {
     if (!entryTournId || !myName) return;
-    const opp = entryOppPicked || null;
-    if (!opp) return;
+    if (!entryOppPicked && !entryRound1Bye) return;
     const t = TOURNAMENTS.find(t2 => t2.id === entryTournId);
     const rounds = Math.max(1, entryRounds);
+    const firstTie = entryRound1Bye
+      ? { roundIdx: 0, roundLabel: getRoundLabel(0, rounds), opponent: "", oppPhone: "", date: "", time: "", myScore: null, oppScore: null, result: "BYE" }
+      : { roundIdx: 0, roundLabel: getRoundLabel(0, rounds), opponent: entryOppPicked.name, oppPhone: entryOppPicked.phone || "", date: entryDate, time: entryTime, myScore: null, oppScore: null, result: null };
     setEntries(prev => [...prev, {
       id: `entry-${Date.now()}`,
       myName,
@@ -592,19 +595,11 @@ export default function BowlsTracker() {
       tournamentColor: t?.color || GOLD,
       totalRounds: rounds,
       status: "active",
-      ties: [{
-        roundIdx: 0,
-        roundLabel: getRoundLabel(0, rounds),
-        opponent: opp.name,
-        oppPhone: opp.phone || "",
-        date: entryDate,
-        time: entryTime,
-        myScore: null, oppScore: null, result: null,
-      }],
+      ties: [firstTie],
     }]);
     setAddingEntry(false);
     setEntryTournId(""); setEntryRounds(4);
-    setEntryOppSearch(""); setEntryOppPicked(null);
+    setEntryOppSearch(""); setEntryOppPicked(null); setEntryRound1Bye(false);
     setEntryDate(""); setEntryTime("");
   }
 
@@ -1733,7 +1728,7 @@ export default function BowlsTracker() {
                       })()}
 
                       {/* ══ BOTTOM SHEET: Enter Tournament ══ */}
-                      <BottomSheet open={showEntrySheet} onClose={() => setShowEntrySheet(false)} title="Enter Tournament">
+                      <BottomSheet open={showEntrySheet} onClose={() => { setShowEntrySheet(false); setEntryRound1Bye(false); setEntryOppPicked(null); setEntryOppSearch(""); }} title="Enter Tournament">
                         <div style={{ marginBottom: "16px" }}>
                           <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "10px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Competition</div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
@@ -1765,7 +1760,12 @@ export default function BowlsTracker() {
                         </div>
                         <div style={{ marginBottom: "16px" }}>
                           <div style={{ fontSize: "10px", color: TEXT2, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Round 1 Opponent</div>
-                          {entryOppPicked ? (
+                          {entryRound1Bye ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <div style={{ flex: 1, background: `${GOLD_MUTED}12`, border: `1px solid ${GOLD_MUTED}44`, borderRadius: "8px", padding: "10px 14px", fontFamily: F_UI, fontSize: "13px", color: GOLD_MUTED, fontWeight: "600" }}>Bye — advanced automatically</div>
+                              <button onClick={() => setEntryRound1Bye(false)} style={{ background: "none", border: "none", color: TEXT2, cursor: "pointer" }}><X size={14} strokeWidth={2} /></button>
+                            </div>
+                          ) : entryOppPicked ? (
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                               <MemberPill name={entryOppPicked.name} phone={entryOppPicked.phone} />
                               <button onClick={() => { setEntryOppPicked(null); setEntryOppSearch(""); }} style={{ background: "none", border: "none", color: TEXT2, cursor: "pointer" }}><X size={14} strokeWidth={2} /></button>
@@ -1789,28 +1789,39 @@ export default function BowlsTracker() {
                                   </div>
                                 </div>
                               )}
+                              <button onClick={() => { setEntryRound1Bye(true); setEntryOppPicked(null); setEntryOppSearch(""); }}
+                                style={{ marginTop: "8px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "9px 16px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", width: "100%" }}>
+                                Got a bye? Tap here
+                              </button>
                             </>
                           )}
                         </div>
-                        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: "10px", color: TEXT2, marginBottom: "4px", textTransform: "uppercase", letterSpacing: "1px" }}>
-                              Date {entryDate && entryTournId && entryDate === getRoundDateForComp(entryTournId, 0) && <span style={{ color: GREEN, textTransform: "none", letterSpacing: 0, display: "inline-flex", alignItems: "center", gap: "3px" }}><Check size={11} strokeWidth={2} /> from draw</span>}
+                        {!entryRound1Bye && (
+                          <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: "10px", color: TEXT2, marginBottom: "4px", textTransform: "uppercase", letterSpacing: "1px" }}>
+                                Date {entryDate && entryTournId && entryDate === getRoundDateForComp(entryTournId, 0) && <span style={{ color: GREEN, textTransform: "none", letterSpacing: 0, display: "inline-flex", alignItems: "center", gap: "3px" }}><Check size={11} strokeWidth={2} /> from draw</span>}
+                              </div>
+                              <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)}
+                                style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "13px", fontFamily: F_UI, outline: "none" }} />
                             </div>
-                            <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)}
-                              style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "13px", fontFamily: F_UI, outline: "none" }} />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: "10px", color: TEXT2, marginBottom: "4px", textTransform: "uppercase", letterSpacing: "1px" }}>Time</div>
+                              <input type="text" value={entryTime} onChange={e => setEntryTime(e.target.value)} placeholder="e.g. 6:30pm"
+                                style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "13px", fontFamily: F_UI, outline: "none" }} />
+                            </div>
                           </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: "10px", color: TEXT2, marginBottom: "4px", textTransform: "uppercase", letterSpacing: "1px" }}>Time</div>
-                            <input type="text" value={entryTime} onChange={e => setEntryTime(e.target.value)} placeholder="e.g. 6:30pm"
-                              style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "13px", fontFamily: F_UI, outline: "none" }} />
-                          </div>
-                        </div>
+                        )}
                         <div style={{ display: "flex", gap: "8px" }}>
-                          <button onClick={() => { createEntry(); setShowEntrySheet(false); }} disabled={!entryTournId || !entryOppPicked}
-                            style={{ flex: 1, background: entryTournId && entryOppPicked ? MID : BORDER, border: "none", borderRadius: "8px", color: entryTournId && entryOppPicked ? "#fff" : TEXT3, padding: "12px", fontSize: "13px", cursor: entryTournId && entryOppPicked ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
-                            Save
-                          </button>
+                          {(() => {
+                            const canSave = entryTournId && (entryOppPicked || entryRound1Bye);
+                            return (
+                              <button onClick={() => { createEntry(); setShowEntrySheet(false); }} disabled={!canSave}
+                                style={{ flex: 1, background: canSave ? MID : BORDER, border: "none", borderRadius: "8px", color: canSave ? "#fff" : TEXT3, padding: "12px", fontSize: "13px", cursor: canSave ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
+                                Save
+                              </button>
+                            );
+                          })()}
                           <button onClick={() => setShowEntrySheet(false)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "12px 16px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
                         </div>
                       </BottomSheet>
