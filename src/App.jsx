@@ -160,6 +160,9 @@ export default function BowlsTracker() {
   const [editOppPartnersTarget, setEditOppPartnersTarget] = useState(null);
   const [editOppPartnersVal, setEditOppPartnersVal] = useState([]);
   const [editOppPartnerSearch, setEditOppPartnerSearch] = useState("");
+  const [editMyPartnersEntryId, setEditMyPartnersEntryId] = useState(null);
+  const [editMyPartnersVal, setEditMyPartnersVal] = useState([]);
+  const [editMyPartnerSearch, setEditMyPartnerSearch] = useState("");
   const [scoringInfo, setScoringInfo]   = useState(null);
   const [scoreMy, setScoreMy]           = useState("");
   const [reorderMode, setReorderMode]   = useState(false);
@@ -196,6 +199,12 @@ export default function BowlsTracker() {
     const q = editOppPartnerSearch.toUpperCase();
     return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [editOppPartnerSearch, members, activeSection]);
+
+  const editMyPartnerResults = useMemo(() => {
+    if (!editMyPartnerSearch || editMyPartnerSearch.length < 2) return [];
+    const q = editMyPartnerSearch.toUpperCase();
+    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+  }, [editMyPartnerSearch, members, activeSection]);
 
   function teamSizeFor(tournamentId) {
     const t = TOURNAMENTS.find(t2 => t2.id === tournamentId);
@@ -1582,10 +1591,53 @@ export default function BowlsTracker() {
                                           const isEditingOppParts = editOppPartnersTarget?.entryId === entry.id && editOppPartnersTarget?.roundIdx === rIdx;
                                           return (
                                             <div style={{ marginBottom: "12px" }}>
-                                              {myParts.length > 0 && (
-                                                <div style={{ fontSize: "12px", color: TEXT2, fontFamily: F_UI, marginBottom: "4px" }}>
-                                                  <span style={{ fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", fontSize: "10px" }}>Your team: </span>
-                                                  {myParts.map(p => p.name).join(", ")}
+                                              {editMyPartnersEntryId === entry.id ? (
+                                                <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "10px 12px", marginBottom: "6px" }}>
+                                                  <div style={{ fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Your team members</div>
+                                                  {editMyPartnersVal.map((p, pi) => (
+                                                    <div key={pi} style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                                                      <span style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", color: TEXT }}>{p.name}</span>
+                                                      <button onClick={() => setEditMyPartnersVal(prev => prev.filter((_, j) => j !== pi))} style={{ background: "none", border: "none", color: TEXT3, cursor: "pointer" }}><X size={12} strokeWidth={2} /></button>
+                                                    </div>
+                                                  ))}
+                                                  {editMyPartnersVal.length < ts && (
+                                                    <div>
+                                                      <input value={editMyPartnerSearch} onChange={e => setEditMyPartnerSearch(e.target.value)} placeholder="Search name…"
+                                                        style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "13px", fontFamily: F_UI, outline: "none" }} />
+                                                      {editMyPartnerSearch.length >= 2 && (
+                                                        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", marginTop: "4px", overflow: "hidden" }}>
+                                                          {editMyPartnerResults.map(m => (
+                                                            <div key={m.id} onClick={() => { setEditMyPartnersVal(prev => [...prev, { name: m.name, phone: m.phone || "" }]); setEditMyPartnerSearch(""); }}
+                                                              style={{ padding: "8px 12px", cursor: "pointer", fontSize: "13px", fontFamily: F_UI, color: TEXT, borderBottom: `1px solid ${BORDER}` }}>{m.name}</div>
+                                                          ))}
+                                                          <div onClick={() => { setEditMyPartnersVal(prev => [...prev, { name: editMyPartnerSearch.toUpperCase(), phone: "" }]); setEditMyPartnerSearch(""); }}
+                                                            style={{ padding: "8px 12px", cursor: "pointer", fontSize: "12px", color: GOLD_MUTED }}>+ Add manually</div>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  )}
+                                                  <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
+                                                    <button onClick={() => {
+                                                      setEntries(prev => prev.map(e2 => e2.id !== entry.id ? e2 : { ...e2, myPartners: editMyPartnersVal }));
+                                                      setEditMyPartnersEntryId(null); setEditMyPartnerSearch("");
+                                                    }} style={{ flex: 1, background: MID, border: "none", borderRadius: "6px", color: "#fff", padding: "8px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>Save</button>
+                                                    <button onClick={() => { setEditMyPartnersEntryId(null); setEditMyPartnerSearch(""); }}
+                                                      style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "8px 12px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                                                  <div style={{ flex: 1, fontSize: "12px", color: TEXT2, fontFamily: F_UI }}>
+                                                    {myParts.length > 0 ? (
+                                                      <><span style={{ fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", fontSize: "10px" }}>Your team: </span>{myParts.map(p => p.name).join(", ")}</>
+                                                    ) : (
+                                                      <span style={{ color: TEXT3, fontSize: "11px" }}>Your team not set</span>
+                                                    )}
+                                                  </div>
+                                                  <button onClick={() => { setEditMyPartnersEntryId(entry.id); setEditMyPartnersVal(myParts.length > 0 ? [...myParts] : []); setEditMyPartnerSearch(""); }}
+                                                    style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "3px 8px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px", flexShrink: 0 }}>
+                                                    <Pencil size={10} strokeWidth={1.75} /> {myParts.length > 0 ? "Edit" : "Add"}
+                                                  </button>
                                                 </div>
                                               )}
                                               {isEditingOppParts ? (
