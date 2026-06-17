@@ -432,7 +432,7 @@ export default function BowlsTracker() {
   const losses = myTiesList.filter(t => t.result === "L").length;
 
   const myEntries = useMemo(
-    () => entries.filter(e => e && e.myName === myName && ((e.section || "gents") === activeSection)),
+    () => entries.filter(e => e && e.myName?.replace(/\s+/g,"").toUpperCase() === myName?.replace(/\s+/g,"").toUpperCase() && ((e.section || "gents") === activeSection)),
     [entries, myName, activeSection]
   );
 
