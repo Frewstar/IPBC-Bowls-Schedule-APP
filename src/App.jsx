@@ -888,6 +888,7 @@ export default function BowlsTracker() {
 
                   function closeEntrySheet() {
                     setSheetEntryId(null);
+                    setActiveRound(-1);
                     setScoringInfo(null); setScoreMy(""); setScoreOppV("");
                     setNextRoundFor(null); setNextOppSearch(""); setNextOppPicked(null);
                     setNextDate(""); setNextTime("");
@@ -1047,6 +1048,7 @@ export default function BowlsTracker() {
                               onClick={() => {
                                 if (!reorderMode) {
                                   setSheetEntryId(entry.id);
+                                  setActiveRound(entry.ties.length > 0 ? entry.ties.length - 1 : 0);
                                   return;
                                 }
                                 if (!reorderPickId) {
@@ -1257,309 +1259,299 @@ export default function BowlsTracker() {
                           <BottomSheet open={!!sheetEntryId} onClose={closeEntrySheet}
                             title={entry.tournamentName}
                             titleColor={entry.tournamentColor}>
-                            {/* Status + round summary */}
-                            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-                              <span style={{ fontSize: "10px", padding: "3px 9px", borderRadius: "4px", border: `1px solid ${entry.status === "active" ? BORDER : entry.status === "champion" ? GOLD : "#e8c5c5"}`, color: entry.status === "active" ? TEXT2 : entry.status === "champion" ? GOLD_MUTED : LOSS_RED, fontFamily: F_UI, fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                {entry.status === "active" ? "Active" : entry.status === "champion" ? "Champion" : "Eliminated"}
-                              </span>
-                              <span style={{ fontSize: "11px", color: TEXT3 }}>{entry.totalRounds} rounds</span>
+
+                            {/* ── Header: stats + remove ── */}
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "18px" }}>
+                              {/* W / L pills */}
+                              {(() => {
+                                const wins   = entry.ties.filter(t => t.result === "W" || t.result === "BYE").length;
+                                const losses = entry.ties.filter(t => t.result === "L").length;
+                                return (
+                                  <>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "5px", background: `${WIN_GOLD}18`, border: `1px solid ${WIN_GOLD}55`, borderRadius: "8px", padding: "5px 10px" }}>
+                                      <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: WIN_GOLD }}>{wins}</span>
+                                      <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: WIN_GOLD, textTransform: "uppercase", letterSpacing: "0.08em" }}>Won</span>
+                                    </div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "5px", background: `${LOSS_RED}10`, border: `1px solid ${LOSS_RED}44`, borderRadius: "8px", padding: "5px 10px" }}>
+                                      <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: LOSS_RED }}>{losses}</span>
+                                      <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: LOSS_RED, textTransform: "uppercase", letterSpacing: "0.08em" }}>Lost</span>
+                                    </div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "5px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "5px 10px" }}>
+                                      <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: TEXT2 }}>{entry.totalRounds}</span>
+                                      <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em" }}>Rounds</span>
+                                    </div>
+                                  </>
+                                );
+                              })()}
                               <button onClick={() => { setEntries(prev => prev.filter(e => e.id !== entry.id)); closeEntrySheet(); }}
-                                style={{ marginLeft: "auto", background: "none", border: `1px solid #e8c5c5`, borderRadius: "6px", color: LOSS_RED, cursor: "pointer", fontSize: "11px", padding: "4px 10px", fontFamily: F_UI }}>
+                                style={{ marginLeft: "auto", background: "none", border: `1px solid #e8c5c5`, borderRadius: "6px", color: LOSS_RED, cursor: "pointer", fontSize: "11px", padding: "5px 10px", fontFamily: F_UI }}>
                                 Remove
                               </button>
                             </div>
 
-                            {/* No ties yet prompt */}
-                            {entry.ties.length === 0 && nextRoundFor !== entry.id && (
-                              <div style={{ background: SURFACE2, border: `1px dashed ${BORDER}`, borderRadius: "10px", padding: "20px", textAlign: "center", marginBottom: "12px" }}>
-                                <div style={{ fontSize: "13px", color: TEXT2, marginBottom: "12px" }}>Round 1 opponent not set yet</div>
-                                <button onClick={() => { setNextRoundFor(entry.id); setNextOppSearch(""); setNextOppPicked(null); setNextDate(getRoundDateForComp(entry.tournamentId, 0)); setNextTime(""); }}
-                                  style={{ background: MID, border: "none", borderRadius: "8px", color: "#ffffff", padding: "10px 20px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>
-                                  + Add Round 1 Opponent
-                                </button>
-                              </div>
-                            )}
+                            {/* ── Round timeline ── */}
+                            <div style={{ marginBottom: "12px" }}>
+                              {Array.from({ length: entry.totalRounds }, (_, rIdx) => {
+                                const tie        = entry.ties.find(t => t.roundIdx === rIdx);
+                                const isNext     = !tie && entry.ties.length === rIdx; // next playable round
+                                const isFuture   = !tie && !isNext;
+                                const isExpanded = activeRound === rIdx && !isFuture;
+                                const isScoring  = scoringInfo?.entryId === entry.id && scoringInfo?.roundIdx === rIdx;
+                                const roundLabel = getRoundLabel(rIdx, entry.totalRounds);
 
-                            {/* Tie cards */}
-                            {entry.ties.map(tie => {
-                              const isScoring   = scoringInfo?.entryId === entry.id && scoringInfo?.roundIdx === tie.roundIdx;
-                              const isLastRound = tie.roundIdx === entry.totalRounds - 1;
-                              const canAdvance  = (tie.result === "W" || tie.result === "BYE") && !isLastRound && entry.ties.length === tie.roundIdx + 1;
-                              let cardBg = SURFACE, borderCol = BORDER;
-                              if (tie.result === "W")   { cardBg = WIN_BG;   borderCol = WIN_GOLD; }
-                              if (tie.result === "L")   { cardBg = LOSS_BG;  borderCol = LOSS_RED; }
-                              if (tie.result === "BYE") { cardBg = SURFACE2; borderCol = GOLD_MUTED; }
+                                // colours
+                                let accentCol = BORDER, rowBg = SURFACE, textCol = TEXT;
+                                if (tie?.result === "W")   { accentCol = WIN_GOLD; rowBg = WIN_BG; }
+                                if (tie?.result === "BYE") { accentCol = GOLD_MUTED; rowBg = SURFACE2; }
+                                if (tie?.result === "L")   { accentCol = LOSS_RED; rowBg = LOSS_BG; }
+                                if (isNext)                { accentCol = entry.tournamentColor || GREEN; rowBg = `${entry.tournamentColor || GREEN}08`; }
+                                if (isFuture)              { textCol = TEXT3; }
 
-                              return (
-                                <div key={tie.roundIdx} style={{ background: cardBg, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "14px", marginBottom: "10px", borderLeft: `3px solid ${borderCol}` }}>
-                                  {/* ── Opponent row ── */}
-                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: "10px", fontWeight: "700", color: TEXT2, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "3px" }}>{tie.roundLabel}</div>
-                                      {/* Opponent name + edit button */}
-                                      {editOppTarget?.entryId === entry.id && editOppTarget?.roundIdx === tie.roundIdx ? (
-                                        <div style={{ marginTop: "4px" }}>
-                                          <input
-                                            value={editOppSearch}
-                                            onChange={e => { setEditOppSearch(e.target.value.toUpperCase()); setEditOppPicked(null); }}
-                                            placeholder="Search or type name…"
-                                            autoFocus
-                                            style={{ width: "100%", boxSizing: "border-box", padding: "9px 11px", border: `2px solid ${GREEN}`, borderRadius: "8px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE, marginBottom: "6px" }}
-                                          />
-                                          {editOppResults.length > 0 && (
-                                            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden", marginBottom: "6px" }}>
-                                              {editOppResults.map(m => (
-                                                <div key={m.id} onMouseDown={() => { setEditOppPicked(m); setEditOppSearch(m.name); }}
-                                                  style={{ padding: "9px 12px", cursor: "pointer", fontFamily: F_UI, fontSize: "13px", color: TEXT, borderBottom: `1px solid ${BORDER}`, background: editOppPicked?.id === m.id ? `${GREEN}10` : "transparent" }}>
-                                                  {m.name}{m.phone ? <span style={{ color: TEXT3, marginLeft: "8px", fontSize: "11px" }}>{m.phone}</span> : ""}
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
-                                          <div style={{ display: "flex", gap: "6px" }}>
-                                            <button onMouseDown={saveEditOpp} style={{ flex: 1, background: MID, border: "none", borderRadius: "7px", color: "#fff", padding: "9px", fontSize: "13px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Save</button>
-                                            <button onMouseDown={() => setEditOppTarget(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT2, padding: "9px 12px", fontSize: "13px", fontFamily: F_UI, cursor: "pointer" }}>Cancel</button>
-                                          </div>
+                                const resultLabel = tie?.result === "W" ? `Won ${tie.myScore}–${tie.oppScore}`
+                                  : tie?.result === "L" ? `Lost ${tie.myScore}–${tie.oppScore}`
+                                  : tie?.result === "BYE" ? "Bye"
+                                  : null;
+
+                                const noteKey = tie?.opponent?.trim().toUpperCase();
+                                const note = noteKey ? oppNotes[noteKey] : null;
+                                const sched = getRoundDateForComp(entry.tournamentId, rIdx);
+                                const countdown = tie && !tie.result && tie.date ? countdownLabel(tie.date) : null;
+                                const isEditingOpp = editOppTarget?.entryId === entry.id && editOppTarget?.roundIdx === rIdx;
+                                const isEditingDate = editingTieDate?.entryId === entry.id && editingTieDate?.roundIdx === rIdx;
+                                const isEditingNoteHere = editingNote?.key === noteKey;
+
+                                return (
+                                  <div key={rIdx} style={{ marginBottom: "6px" }}>
+                                    {/* ── Compact row (always visible) ── */}
+                                    <div
+                                      onClick={() => !isFuture && setActiveRound(isExpanded ? -1 : rIdx)}
+                                      style={{
+                                        display: "flex", alignItems: "center", gap: "10px",
+                                        background: rowBg, borderRadius: isExpanded ? "10px 10px 0 0" : "10px",
+                                        border: `1px solid ${isExpanded ? accentCol : BORDER}`,
+                                        borderLeft: `3px solid ${accentCol}`,
+                                        padding: "11px 14px",
+                                        cursor: isFuture ? "default" : "pointer",
+                                        opacity: isFuture ? 0.45 : 1,
+                                        transition: "border-color 0.15s",
+                                      }}>
+                                      {/* Round number badge */}
+                                      <div style={{ width: "26px", height: "26px", borderRadius: "50%", background: isFuture ? BORDER : accentCol, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                        <span style={{ fontFamily: F_DISPLAY, fontSize: "11px", fontWeight: "700", color: isFuture ? TEXT3 : "#fff" }}>{rIdx + 1}</span>
+                                      </div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: textCol === TEXT ? TEXT3 : textCol, textTransform: "uppercase", letterSpacing: "0.08em" }}>{roundLabel}</div>
+                                        <div style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "600", color: textCol, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {tie ? `vs ${tie.opponent}` : isNext ? "Set opponent" : "Upcoming"}
                                         </div>
-                                      ) : (
-                                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                                          <div style={{ fontSize: "16px", fontWeight: "700", color: GREEN }}>vs {tie.opponent}</div>
-                                          <button onClick={() => openEditOpp(entry.id, tie.roundIdx, tie.opponent)}
-                                            style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "3px 8px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                            <Pencil size={10} strokeWidth={1.75} /> Edit
-                                          </button>
-                                        </div>
-                                      )}
-                                      {!editOppTarget || editOppTarget.entryId !== entry.id || editOppTarget.roundIdx !== tie.roundIdx
-                                        ? tie.oppPhone && <a href={`tel:${tie.oppPhone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "13px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500", marginTop: "4px" }}><Phone size={13} strokeWidth={1.75} />{tie.oppPhone}</a>
-                                        : null}
+                                      </div>
+                                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                        {resultLabel && <div style={{ fontFamily: F_UI, fontSize: "12px", fontWeight: "700", color: accentCol }}>{resultLabel}</div>}
+                                        {tie && !tie.result && tie.date && <div style={{ fontFamily: F_UI, fontSize: "11px", color: GREEN }}>{fmtDate(tie.date)}</div>}
+                                        {tie && !tie.result && !tie.date && sched && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>by {fmtDate(sched)}</div>}
+                                        {isNext && !tie && <div style={{ fontFamily: F_UI, fontSize: "11px", color: entry.tournamentColor || GREEN, fontWeight: "600" }}>▶ Next</div>}
+                                      </div>
+                                      {!isFuture && <ChevronRight size={14} strokeWidth={2} color={TEXT3} style={{ transform: isExpanded ? "rotate(90deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />}
                                     </div>
-                                    {/* Deadline badge (tournament scheduled date) */}
-                                    {!(editOppTarget?.entryId === entry.id && editOppTarget?.roundIdx === tie.roundIdx) && (() => {
-                                      const sched = getRoundDateForComp(entry.tournamentId, tie.roundIdx);
-                                      if (!sched) return null;
-                                      return (
-                                        <div style={{ textAlign: "right", flexShrink: 0 }}>
-                                          <div style={{ fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "2px" }}>Deadline</div>
-                                          <div style={{ fontSize: "12px", color: TEXT2, fontWeight: "500", display: "flex", alignItems: "center", gap: "3px", justifyContent: "flex-end" }}>
-                                            <Clock size={11} strokeWidth={1.75} color={TEXT3} />{fmtDate(sched)}
-                                          </div>
-                                        </div>
-                                      );
-                                    })()}
-                                  </div>
 
-                                  {/* ── Schedule section (only for pending ties) ── */}
-                                  {!tie.result && (() => {
-                                    const isEditing = editingTieDate?.entryId === entry.id && editingTieDate?.roundIdx === tie.roundIdx;
-                                    const countdown = tie.date ? countdownLabel(tie.date) : null;
-                                    return (
-                                      <div style={{ background: tie.date ? `${GREEN}08` : SURFACE2, border: `1px solid ${tie.date ? `${GREEN}33` : BORDER}`, borderRadius: "8px", padding: "10px 12px", marginBottom: "10px" }}>
-                                        {isEditing ? (
-                                          <div>
-                                            <div style={{ fontSize: "10px", fontWeight: "700", color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>When are you playing?</div>
-                                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                                              <div style={{ flex: 1, minWidth: "130px" }}>
-                                                <div style={{ fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "3px" }}>Date</div>
-                                                <input type="date" value={editDateVal} onChange={e => setEditDateVal(e.target.value)}
-                                                  style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
+                                    {/* ── Expanded panel ── */}
+                                    {isExpanded && (
+                                      <div style={{ background: rowBg, border: `1px solid ${accentCol}`, borderTop: "none", borderRadius: "0 0 10px 10px", padding: "14px" }}>
+
+                                        {/* Opponent row */}
+                                        {tie && (
+                                          <div style={{ marginBottom: "12px" }}>
+                                            {isEditingOpp ? (
+                                              <div>
+                                                <input value={editOppSearch} onChange={e => { setEditOppSearch(e.target.value.toUpperCase()); setEditOppPicked(null); }} placeholder="Search or type name…" autoFocus
+                                                  style={{ width: "100%", boxSizing: "border-box", padding: "9px 11px", border: `2px solid ${GREEN}`, borderRadius: "8px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE, marginBottom: "6px" }} />
+                                                {editOppResults.length > 0 && (
+                                                  <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden", marginBottom: "6px" }}>
+                                                    {editOppResults.map(m => (
+                                                      <div key={m.id} onMouseDown={() => { setEditOppPicked(m); setEditOppSearch(m.name); }}
+                                                        style={{ padding: "9px 12px", cursor: "pointer", fontFamily: F_UI, fontSize: "13px", color: TEXT, borderBottom: `1px solid ${BORDER}` }}>
+                                                        {m.name}{m.phone ? <span style={{ color: TEXT3, marginLeft: "8px", fontSize: "11px" }}>{m.phone}</span> : ""}
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                )}
+                                                <div style={{ display: "flex", gap: "6px" }}>
+                                                  <button onMouseDown={saveEditOpp} style={{ flex: 1, background: MID, border: "none", borderRadius: "7px", color: "#fff", padding: "9px", fontSize: "13px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Save</button>
+                                                  <button onMouseDown={() => setEditOppTarget(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT2, padding: "9px 12px", fontSize: "13px", fontFamily: F_UI, cursor: "pointer" }}>Cancel</button>
+                                                </div>
                                               </div>
-                                              <div style={{ flex: 1, minWidth: "110px" }}>
-                                                <div style={{ fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "3px" }}>Time (optional)</div>
-                                                <input type="text" value={editTimeVal} onChange={e => setEditTimeVal(e.target.value)} placeholder="e.g. 6:30pm"
-                                                  style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
+                                            ) : (
+                                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                                                <div>
+                                                  <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN }}>vs {tie.opponent}</div>
+                                                  {tie.oppPhone && <a href={`tel:${tie.oppPhone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "13px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500", marginTop: "3px" }}><Phone size={13} strokeWidth={1.75} />{tie.oppPhone}</a>}
+                                                </div>
+                                                <button onClick={() => openEditOpp(entry.id, tie.roundIdx, tie.opponent)}
+                                                  style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "4px 9px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                                                  <Pencil size={10} strokeWidth={1.75} /> Edit
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+
+                                        {/* Date row for pending ties */}
+                                        {tie && !tie.result && (
+                                          <div style={{ background: tie.date ? `${GREEN}08` : SURFACE2, border: `1px solid ${tie.date ? `${GREEN}33` : BORDER}`, borderRadius: "8px", padding: "10px 12px", marginBottom: "12px" }}>
+                                            {isEditingDate ? (
+                                              <div>
+                                                <div style={{ fontSize: "10px", fontWeight: "700", color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>When are you playing?</div>
+                                                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                                  <div style={{ flex: 1, minWidth: "130px" }}>
+                                                    <div style={{ fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "3px" }}>Date</div>
+                                                    <input type="date" value={editDateVal} onChange={e => setEditDateVal(e.target.value)}
+                                                      style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
+                                                  </div>
+                                                  <div style={{ flex: 1, minWidth: "110px" }}>
+                                                    <div style={{ fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "3px" }}>Time (optional)</div>
+                                                    <input type="text" value={editTimeVal} onChange={e => setEditTimeVal(e.target.value)} placeholder="e.g. 6:30pm"
+                                                      style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
+                                                  </div>
+                                                </div>
+                                                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                                                  <button onClick={() => saveTieDate(entry.id, tie.roundIdx)} style={{ flex: 1, background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "9px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>Save Date</button>
+                                                  <button onClick={() => setEditingTieDate(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "9px 14px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
+                                                </div>
+                                              </div>
+                                            ) : tie.date ? (
+                                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                                <div>
+                                                  <div style={{ fontSize: "9px", color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: "700", marginBottom: "2px" }}>Playing</div>
+                                                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                                                    <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: GREEN }}>{fmtDate(tie.date)}</span>
+                                                    {tie.time && <span style={{ fontSize: "13px", color: TEXT2 }}>{tie.time}</span>}
+                                                    {countdown && <span style={{ background: GREEN, color: "#fff", borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>{countdown}</span>}
+                                                  </div>
+                                                </div>
+                                                <button onClick={() => { setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx }); setEditDateVal(tie.date); setEditTimeVal(tie.time || ""); }}
+                                                  style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, cursor: "pointer", padding: "5px 10px", fontSize: "11px", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                                                  <Pencil size={11} strokeWidth={1.75} /> Change
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+                                                <div style={{ fontSize: "12px", color: TEXT3 }}>When are you playing this tie?</div>
+                                                <button onClick={() => { setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx }); setEditDateVal(sched || ""); setEditTimeVal(""); }}
+                                                  style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "7px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
+                                                  <Calendar size={13} strokeWidth={2} /> Set Date
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+
+                                        {/* Date display for completed ties */}
+                                        {tie?.result && tie.result !== "BYE" && tie.date && (
+                                          <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", color: TEXT3, marginBottom: "10px" }}>
+                                            <Clock size={11} strokeWidth={1.75} />{fmtDate(tie.date)}{tie.time ? ` · ${tie.time}` : ""}
+                                          </div>
+                                        )}
+
+                                        {/* Score section */}
+                                        {tie && (isScoring ? (
+                                          <div style={{ marginBottom: "12px" }}>
+                                            <div style={{ fontSize: "11px", color: TEXT2, marginBottom: "8px" }}>First to 21 wins</div>
+                                            <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", marginBottom: "10px" }}>
+                                              <div style={{ flex: 1, textAlign: "center" }}>
+                                                <div style={{ fontSize: "11px", color: TEXT2, marginBottom: "4px", fontWeight: "500" }}>{myName}</div>
+                                                <input type="number" min="0" value={scoreMy} onChange={e => setScoreMy(e.target.value)} autoFocus
+                                                  style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", fontSize: "48px", fontFamily: F_DISPLAY, fontWeight: "700", border: `2px solid ${GOLD}66`, borderRadius: "8px", textAlign: "center", outline: "none", color: GOLD }} />
+                                              </div>
+                                              <div style={{ fontSize: "20px", color: TEXT3, paddingBottom: "12px" }}>–</div>
+                                              <div style={{ flex: 1, textAlign: "center" }}>
+                                                <div style={{ fontSize: "11px", color: TEXT2, marginBottom: "4px", fontWeight: "500" }}>{tie.opponent}</div>
+                                                <input type="number" min="0" value={scoreOppV} onChange={e => setScoreOppV(e.target.value)}
+                                                  style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", fontSize: "48px", fontFamily: F_DISPLAY, fontWeight: "700", border: `1px solid ${BORDER}`, borderRadius: "8px", textAlign: "center", outline: "none", color: TEXT }} />
                                               </div>
                                             </div>
-                                            <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                                              <button onClick={() => saveTieDate(entry.id, tie.roundIdx)}
-                                                style={{ flex: 1, background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "9px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
-                                                Save Date
-                                              </button>
-                                              <button onClick={() => setEditingTieDate(null)}
-                                                style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "9px 14px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
-                                                Cancel
-                                              </button>
+                                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                              <button onClick={() => submitEntryScore(entry.id, tie.roundIdx)} style={{ flex: 1, background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "11px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>Save Score</button>
+                                              <button onClick={() => { markBye(entry.id, tie.roundIdx); setScoringInfo(null); setScoreMy(""); setScoreOppV(""); }} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 16px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>Bye</button>
+                                              <button onClick={() => { setScoringInfo(null); setScoreMy(""); setScoreOppV(""); }} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 12px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
                                             </div>
                                           </div>
-                                        ) : tie.date ? (
-                                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                            <div>
-                                              <div style={{ fontSize: "9px", color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: "700", marginBottom: "2px" }}>Playing</div>
-                                              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                                                <span style={{ fontFamily: F_DISPLAY, fontSize: "17px", fontWeight: "700", color: GREEN }}>
-                                                  {fmtDate(tie.date)}
-                                                </span>
-                                                {tie.time && <span style={{ fontSize: "13px", color: TEXT2 }}>{tie.time}</span>}
-                                                {countdown && (
-                                                  <span style={{ background: GREEN, color: "#fff", borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>
-                                                    {countdown}
-                                                  </span>
-                                                )}
+                                        ) : tie.result !== null ? (
+                                          <div style={{ marginBottom: "10px" }}>
+                                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "8px" }}>
+                                              <div style={{ fontSize: "15px", fontWeight: "700", color: tie.result === "W" ? WIN_GOLD : tie.result === "BYE" ? GOLD_MUTED : LOSS_RED }}>
+                                                {tie.result === "W" && `Won ${tie.myScore}–${tie.oppScore}`}
+                                                {tie.result === "L" && `Lost ${tie.myScore}–${tie.oppScore}`}
+                                                {tie.result === "BYE" && "Bye — advanced"}
+                                              </div>
+                                              <div style={{ display: "flex", gap: "5px" }}>
+                                                <button onClick={() => shareResult(tie, entry.tournamentName)} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "6px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                                                  <RefreshCw size={10} strokeWidth={2} /> Share
+                                                </button>
+                                                <button onClick={() => { setScoringInfo({ entryId: entry.id, roundIdx: tie.roundIdx }); setScoreMy(tie.myScore?.toString() || ""); setScoreOppV(tie.oppScore?.toString() || ""); }} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "6px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                                                  <Pencil size={11} strokeWidth={2} /> Edit
+                                                </button>
                                               </div>
                                             </div>
-                                            <button onClick={() => { setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx }); setEditDateVal(tie.date); setEditTimeVal(tie.time || ""); }}
-                                              style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, cursor: "pointer", padding: "5px 10px", fontSize: "11px", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                              <Pencil size={11} strokeWidth={1.75} /> Change
-                                            </button>
                                           </div>
                                         ) : (
-                                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-                                            <div style={{ fontSize: "12px", color: TEXT3 }}>When are you playing this tie?</div>
-                                            <button onClick={() => {
-                                              const sched = getRoundDateForComp(entry.tournamentId, tie.roundIdx);
-                                              setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx });
-                                              setEditDateVal(sched || "");
-                                              setEditTimeVal("");
-                                            }}
-                                              style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "7px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
-                                              <Calendar size={13} strokeWidth={2} /> Set Date
-                                            </button>
+                                          <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                                            <button onClick={() => { setScoringInfo({ entryId: entry.id, roundIdx: tie.roundIdx }); setScoreMy(""); setScoreOppV(""); }} style={{ flex: 1, background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "10px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>Enter Score</button>
+                                            <button onClick={() => markBye(entry.id, tie.roundIdx)} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "10px 14px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>Bye</button>
+                                          </div>
+                                        ))}
+
+                                        {/* Notes */}
+                                        {tie && noteKey && tie.result !== "BYE" && (
+                                          <div>
+                                            {isEditingNoteHere ? (
+                                              <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
+                                                <input value={editingNote.value} onChange={e => setEditingNote(n => ({ ...n, value: e.target.value }))} placeholder={`Note about ${tie.opponent}…`} autoFocus
+                                                  style={{ flex: 1, padding: "6px 9px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "12px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
+                                                <button onClick={() => saveOppNote(noteKey, editingNote.value)} style={{ background: MID, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>Save</button>
+                                                <button onClick={() => setEditingNote(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "6px 8px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI }}><X size={11} strokeWidth={2} /></button>
+                                              </div>
+                                            ) : note ? (
+                                              <div style={{ display: "flex", gap: "6px", alignItems: "flex-start", background: `${GOLD}0a`, borderRadius: "6px", padding: "8px 10px", border: `1px solid ${GOLD}22` }}>
+                                                <div style={{ flex: 1, fontSize: "12px", color: TEXT2, fontFamily: F_UI, lineHeight: 1.5 }}>{note}</div>
+                                                <button onClick={() => setEditingNote({ key: noteKey, value: note })} style={{ background: "none", border: "none", color: GOLD_MUTED, cursor: "pointer", padding: "0", flexShrink: 0 }}><Pencil size={11} strokeWidth={1.75} /></button>
+                                              </div>
+                                            ) : (
+                                              <button onClick={() => setEditingNote({ key: noteKey, value: "" })}
+                                                style={{ background: "none", border: `1px dashed ${BORDER}`, borderRadius: "6px", padding: "6px 10px", color: GOLD_MUTED, fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", width: "100%", justifyContent: "center" }}>
+                                                <Plus size={11} strokeWidth={2} /> Add note about {tie.opponent}
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
+
+                                        {/* Next round prompt (isNext panel) */}
+                                        {isNext && !tie && nextRoundFor !== entry.id && (
+                                          <button onClick={() => { setNextRoundFor(entry.id); setNextOppSearch(""); setNextOppPicked(null); setNextDate(getRoundDateForComp(entry.tournamentId, rIdx)); setNextTime(""); }}
+                                            style={{ width: "100%", background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "10px 20px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
+                                            + Set {roundLabel} Opponent
+                                          </button>
+                                        )}
+
+                                        {/* Advance button */}
+                                        {tie && (tie.result === "W" || tie.result === "BYE") && rIdx < entry.totalRounds - 1 && entry.ties.length === rIdx + 1 && nextRoundFor !== entry.id && (
+                                          <button onClick={() => { setNextRoundFor(entry.id); setNextOppSearch(""); setNextOppPicked(null); setNextDate(getRoundDateForComp(entry.tournamentId, rIdx + 1)); setNextTime(""); setActiveRound(rIdx + 1); }}
+                                            style={{ marginTop: "10px", width: "100%", background: GOLD, border: "none", borderRadius: "8px", color: "#4a0e1f", padding: "11px 20px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                                            Next Round <ChevronRight size={15} strokeWidth={2.5} /> {getRoundLabel(rIdx + 1, entry.totalRounds)}
+                                          </button>
+                                        )}
+
+                                        {/* Champion banner */}
+                                        {tie && (tie.result === "W" || tie.result === "BYE") && rIdx === entry.totalRounds - 1 && (
+                                          <div style={{ marginTop: "10px", padding: "10px 14px", background: "#fffbf0", border: `1px solid ${GOLD}`, borderRadius: "8px", fontSize: "14px", fontWeight: "700", color: "#4a0e1f", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                                            <Trophy size={18} strokeWidth={2} /> Tournament Winner!
                                           </div>
                                         )}
                                       </div>
-                                    );
-                                  })()}
-
-                                  {/* ── Date display for completed ties ── */}
-                                  {tie.result && tie.result !== "BYE" && tie.date && (
-                                    <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", color: TEXT3, marginBottom: "8px" }}>
-                                      <Clock size={11} strokeWidth={1.75} />{fmtDate(tie.date)}{tie.time ? ` · ${tie.time}` : ""}
-                                    </div>
-                                  )}
-
-                                  {isScoring ? (
-                                    <div>
-                                      <div style={{ fontSize: "11px", color: TEXT2, marginBottom: "8px" }}>First to 21 wins</div>
-                                      <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", marginBottom: "10px" }}>
-                                        <div style={{ flex: 1, textAlign: "center" }}>
-                                          <div style={{ fontSize: "11px", color: TEXT2, marginBottom: "4px", fontWeight: "500" }}>{myName}</div>
-                                          <input type="number" min="0" value={scoreMy} onChange={e => setScoreMy(e.target.value)} autoFocus
-                                            style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", fontSize: "48px", fontFamily: F_DISPLAY, fontWeight: "700", border: `2px solid ${GOLD}66`, borderRadius: "8px", textAlign: "center", outline: "none", color: GOLD }} />
-                                        </div>
-                                        <div style={{ fontSize: "20px", color: TEXT3, paddingBottom: "12px" }}>–</div>
-                                        <div style={{ flex: 1, textAlign: "center" }}>
-                                          <div style={{ fontSize: "11px", color: TEXT2, marginBottom: "4px", fontWeight: "500" }}>{tie.opponent}</div>
-                                          <input type="number" min="0" value={scoreOppV} onChange={e => setScoreOppV(e.target.value)}
-                                            style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", fontSize: "48px", fontFamily: F_DISPLAY, fontWeight: "700", border: `1px solid ${BORDER}`, borderRadius: "8px", textAlign: "center", outline: "none", color: TEXT }} />
-                                        </div>
-                                      </div>
-                                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                                        <button onClick={() => submitEntryScore(entry.id, tie.roundIdx)}
-                                          style={{ flex: 1, background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "11px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>Save Score</button>
-                                        <button onClick={() => { markBye(entry.id, tie.roundIdx); setScoringInfo(null); setScoreMy(""); setScoreOppV(""); }}
-                                          style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 16px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>Bye</button>
-                                        <button onClick={() => { setScoringInfo(null); setScoreMy(""); setScoreOppV(""); }}
-                                          style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 12px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
-                                      </div>
-                                    </div>
-                                  ) : tie.result !== null ? (
-                                    <div>
-                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "8px" }}>
-                                        <div style={{ fontSize: "15px", fontWeight: "700", color: tie.result === "W" ? WIN_GOLD : tie.result === "BYE" ? GOLD_MUTED : LOSS_RED }}>
-                                          {tie.result === "W"   && `Won ${tie.myScore}–${tie.oppScore}`}
-                                          {tie.result === "L"   && `Lost ${tie.myScore}–${tie.oppScore}`}
-                                          {tie.result === "BYE" && "Bye — advanced"}
-                                        </div>
-                                        <div style={{ display: "flex", gap: "5px" }}>
-                                          <button onClick={() => shareResult(tie, entry.tournamentName)}
-                                            style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "6px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                            <RefreshCw size={10} strokeWidth={2} /> Share
-                                          </button>
-                                          <button onClick={() => { setScoringInfo({ entryId: entry.id, roundIdx: tie.roundIdx }); setScoreMy(tie.myScore?.toString() || ""); setScoreOppV(tie.oppScore?.toString() || ""); }}
-                                            style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "6px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                            <Pencil size={11} strokeWidth={2} /> Edit
-                                          </button>
-                                        </div>
-                                      </div>
-                                      {/* Opponent note */}
-                                      {(() => {
-                                        const noteKey = tie.opponent?.trim().toUpperCase();
-                                        const note = noteKey ? oppNotes[noteKey] : null;
-                                        const isEditing = editingNote?.key === noteKey;
-                                        if (!noteKey || tie.result === "BYE") return null;
-                                        return (
-                                          <div style={{ marginTop: "6px" }}>
-                                            {isEditing ? (
-                                              <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
-                                                <input value={editingNote.value} onChange={e => setEditingNote(n => ({ ...n, value: e.target.value }))} placeholder="Note about this opponent…" autoFocus
-                                                  style={{ flex: 1, padding: "6px 9px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "12px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
-                                                <button onClick={() => saveOppNote(noteKey, editingNote.value)} style={{ background: MID, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>Save</button>
-                                                <button onClick={() => setEditingNote(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "6px 8px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI }}><X size={11} strokeWidth={2} /></button>
-                                              </div>
-                                            ) : note ? (
-                                              <div style={{ display: "flex", gap: "6px", alignItems: "flex-start", background: SURFACE2, borderRadius: "6px", padding: "6px 9px", border: `1px solid ${BORDER}` }}>
-                                                <div style={{ flex: 1, fontSize: "12px", color: TEXT2, fontFamily: F_UI }}>{note}</div>
-                                                <button onClick={() => setEditingNote({ key: noteKey, value: note })} style={{ background: "none", border: "none", color: GOLD_MUTED, cursor: "pointer", padding: "0", flexShrink: 0 }}><Pencil size={11} strokeWidth={1.75} /></button>
-                                              </div>
-                                            ) : (
-                                              <button onClick={() => setEditingNote({ key: noteKey, value: "" })}
-                                                style={{ background: "none", border: "none", color: GOLD_MUTED, fontSize: "11px", cursor: "pointer", fontFamily: F_UI, padding: "0", display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                                <Plus size={11} strokeWidth={2} /> Add note about {tie.opponent}
-                                              </button>
-                                            )}
-                                          </div>
-                                        );
-                                      })()}
-                                    </div>
-                                  ) : (
-                                    <div>
-                                      {/* Notes on pending tie */}
-                                      {(() => {
-                                        const noteKey = tie.opponent?.trim().toUpperCase();
-                                        const note = noteKey ? oppNotes[noteKey] : null;
-                                        const isEditing = editingNote?.key === noteKey;
-                                        if (!noteKey) return null;
-                                        return (
-                                          <div style={{ marginBottom: "8px" }}>
-                                            {isEditing ? (
-                                              <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
-                                                <input value={editingNote.value} onChange={e => setEditingNote(n => ({ ...n, value: e.target.value }))} placeholder="Note about this opponent…" autoFocus
-                                                  style={{ flex: 1, padding: "6px 9px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "12px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
-                                                <button onClick={() => saveOppNote(noteKey, editingNote.value)} style={{ background: MID, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>Save</button>
-                                                <button onClick={() => setEditingNote(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "6px 8px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI }}><X size={11} strokeWidth={2} /></button>
-                                              </div>
-                                            ) : note ? (
-                                              <div style={{ display: "flex", gap: "6px", alignItems: "flex-start", background: `${GOLD}0a`, borderRadius: "6px", padding: "6px 9px", border: `1px solid ${GOLD}22` }}>
-                                                <div style={{ flex: 1, fontSize: "12px", color: TEXT2, fontFamily: F_UI }}>{note}</div>
-                                                <button onClick={() => setEditingNote({ key: noteKey, value: note })} style={{ background: "none", border: "none", color: GOLD_MUTED, cursor: "pointer", padding: "0", flexShrink: 0 }}><Pencil size={11} strokeWidth={1.75} /></button>
-                                              </div>
-                                            ) : (
-                                              <button onClick={() => setEditingNote({ key: noteKey, value: "" })}
-                                                style={{ background: "none", border: "none", color: GOLD_MUTED, fontSize: "11px", cursor: "pointer", fontFamily: F_UI, padding: "0", display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                                <Plus size={11} strokeWidth={2} /> Add note about {tie.opponent}
-                                              </button>
-                                            )}
-                                          </div>
-                                        );
-                                      })()}
-                                      <div style={{ display: "flex", gap: "8px" }}>
-                                        <button onClick={() => { setScoringInfo({ entryId: entry.id, roundIdx: tie.roundIdx }); setScoreMy(""); setScoreOppV(""); }}
-                                          style={{ flex: 1, background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "10px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
-                                          Enter Score
-                                        </button>
-                                        <button onClick={() => markBye(entry.id, tie.roundIdx)}
-                                          style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "10px 14px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>
-                                          Bye
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {(tie.result === "W" || tie.result === "BYE") && isLastRound && (
-                                    <div style={{ marginTop: "10px", padding: "10px 14px", background: "#fffbf0", border: `1px solid ${GOLD}`, borderRadius: "8px", fontSize: "14px", fontWeight: "700", color: "#4a0e1f", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-                                      <Trophy size={18} strokeWidth={2} /> Tournament Winner!
-                                    </div>
-                                  )}
-
-                                  {canAdvance && nextRoundFor !== entry.id && (
-                                    <button onClick={() => { setNextRoundFor(entry.id); setNextOppSearch(""); setNextOppPicked(null); setNextDate(getRoundDateForComp(entry.tournamentId, tie.roundIdx + 1)); setNextTime(""); }}
-                                      style={{ marginTop: "10px", width: "100%", background: GOLD, border: "none", borderRadius: "8px", color: "#4a0e1f", padding: "11px 20px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                                      Next Round <ChevronRight size={15} strokeWidth={2.5} /> {getRoundLabel(tie.roundIdx + 1, entry.totalRounds)}
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })}
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
 
                             {/* Add next round form */}
                             {nextRoundFor === entry.id && (
