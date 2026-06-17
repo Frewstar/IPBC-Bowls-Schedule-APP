@@ -1476,6 +1476,9 @@ export default function BowlsTracker() {
                                                     {tie.time && <span style={{ fontSize: "13px", color: TEXT2 }}>{tie.time}</span>}
                                                     {countdown && <span style={{ background: GREEN, color: "#fff", borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>{countdown}</span>}
                                                   </div>
+                                                  {sched && sched !== tie.date && (
+                                                    <div style={{ fontSize: "11px", color: TEXT3, marginTop: "3px" }}>Round closes {fmtDate(sched)}</div>
+                                                  )}
                                                 </div>
                                                 <button onClick={() => { setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx }); setEditDateVal(tie.date); setEditTimeVal(tie.time || ""); }}
                                                   style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, cursor: "pointer", padding: "5px 10px", fontSize: "11px", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
@@ -1484,7 +1487,10 @@ export default function BowlsTracker() {
                                               </div>
                                             ) : (
                                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-                                                <div style={{ fontSize: "12px", color: TEXT3 }}>When are you playing this tie?</div>
+                                                <div>
+                                                  <div style={{ fontSize: "12px", color: TEXT3 }}>When are you playing this tie?</div>
+                                                  {sched && <div style={{ fontSize: "11px", color: TEXT3, marginTop: "2px" }}>Round closes {fmtDate(sched)}</div>}
+                                                </div>
                                                 <button onClick={() => { setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx }); setEditDateVal(sched || ""); setEditTimeVal(""); }}
                                                   style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "7px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
                                                   <Calendar size={13} strokeWidth={2} /> Set Date
