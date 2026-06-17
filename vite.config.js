@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["ipbc-badge.png", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon-32.png"],
+      includeAssets: ["ipbc-badge.png", "icon-192.png", "icon-512.png", "icon-512-maskable.png", "apple-touch-icon.png", "favicon-32.png"],
       manifest: {
         name: "Irvine Park Bowling Club",
         short_name: "IPBC Bowls",
@@ -32,7 +32,7 @@ export default defineConfig({
             purpose: "any"
           },
           {
-            src: "icon-512.png",
+            src: "icon-512-maskable.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable"
