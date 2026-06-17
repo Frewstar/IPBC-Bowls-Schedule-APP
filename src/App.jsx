@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import {
   Target, Search, Trophy, Calendar, Users,
   Phone, Check, X, Pencil, Plus, User,
-  ChevronLeft, ChevronRight, Download, Upload,
+  ChevronLeft, ChevronRight, ChevronDown, Download, Upload,
   Clock, MapPin, Settings, HelpCircle, Type,
   Shield, Info, RefreshCw, BookOpen, Crosshair,
   Star, Medal,
@@ -210,6 +210,27 @@ export default function BowlsTracker() {
   useEffect(() => { save(HONOURS_KEY, honours); }, [honours]);
 
   const myHonours = useMemo(() => honours.filter(h => h.player === myName).sort((a, b) => b.year - a.year), [honours, myName]);
+
+  const honoursGrouped = useMemo(() => {
+    const g = {};
+    myHonours.forEach(h => { if (!g[h.year]) g[h.year] = []; g[h.year].push(h); });
+    return g;
+  }, [myHonours]);
+  const honoursYears = useMemo(() => Object.keys(honoursGrouped).sort((a, b) => b - a), [honoursGrouped]);
+
+  const [openHonourYears, setOpenHonourYears] = useState(() => new Set(honoursYears.slice(0, 1)));
+
+  // Keep the most-recent year open whenever a new year appears (e.g. first win of the season)
+  useEffect(() => {
+    if (honoursYears.length > 0) {
+      setOpenHonourYears(prev => {
+        if (prev.has(honoursYears[0])) return prev;
+        const next = new Set(prev);
+        next.add(honoursYears[0]);
+        return next;
+      });
+    }
+  }, [honoursYears[0]]);
 
   function openAddHonour() {
     setEditHonourId(null);
@@ -568,29 +589,53 @@ export default function BowlsTracker() {
     return "active";
   }
 
+  function maybeAddHonour(entry, newStatus) {
+    if (newStatus !== "champion") return;
+    const comp = entry.tournamentName || entry.tournamentId || "";
+    const yr   = settings.seasonYear || new Date().getFullYear();
+    setHonours(prev => {
+      const dup = prev.some(h =>
+        h.player === myName &&
+        h.competition === comp &&
+        String(h.year) === String(yr) &&
+        h.position === "Winner"
+      );
+      if (dup) return prev;
+      return [...prev, { id: Date.now().toString(), player: myName, competition: comp, position: "Winner", year: yr, notes: "" }];
+    });
+  }
+
   function submitEntryScore(entryId, roundIdx) {
     const me = parseInt(scoreMy, 10);
     const opp = parseInt(scoreOppV, 10);
     if (isNaN(me) || isNaN(opp)) return;
     const result = me > opp ? "W" : me < opp ? "L" : null;
+    let champion = null;
     setEntries(prev => prev.map(e => {
       if (e.id !== entryId) return e;
       const newTies = e.ties.map(t =>
         t.roundIdx === roundIdx ? { ...t, myScore: me, oppScore: opp, result } : t
       );
-      return { ...e, ties: newTies, status: recomputeStatus(e, newTies) };
+      const newStatus = recomputeStatus(e, newTies);
+      if (newStatus === "champion") champion = { entry: e, newStatus };
+      return { ...e, ties: newTies, status: newStatus };
     }));
+    if (champion) maybeAddHonour(champion.entry, champion.newStatus);
     setScoringInfo(null); setScoreMy(""); setScoreOppV("");
   }
 
   function markBye(entryId, roundIdx) {
+    let champion = null;
     setEntries(prev => prev.map(e => {
       if (e.id !== entryId) return e;
       const newTies = e.ties.map(t =>
         t.roundIdx === roundIdx ? { ...t, myScore: null, oppScore: null, result: "BYE" } : t
       );
-      return { ...e, ties: newTies, status: recomputeStatus(e, newTies) };
+      const newStatus = recomputeStatus(e, newTies);
+      if (newStatus === "champion") champion = { entry: e, newStatus };
+      return { ...e, ties: newTies, status: newStatus };
     }));
+    if (champion) maybeAddHonour(champion.entry, champion.newStatus);
   }
 
   function doAddNextRound(entryId) {
@@ -1828,13 +1873,8 @@ export default function BowlsTracker() {
           const posBg   = p => p === "Winner" ? `${WIN_GOLD}12` : p === "Runner-Up" ? `${GOLD_MUTED}12` : SURFACE2;
           const posBorder = p => p === "Winner" ? `${WIN_GOLD}55` : p === "Runner-Up" ? `${GOLD_MUTED}55` : BORDER;
 
-          // Group by year
-          const grouped = myHonours.reduce((acc, h) => {
-            if (!acc[h.year]) acc[h.year] = [];
-            acc[h.year].push(h);
-            return acc;
-          }, {});
-          const years = Object.keys(grouped).sort((a, b) => b - a);
+          const grouped = honoursGrouped;
+          const years   = honoursYears;
 
           return (
             <div>
@@ -1882,37 +1922,44 @@ export default function BowlsTracker() {
                 </div>
               )}
 
-              {/* Honours by year */}
-              {years.map(year => (
-                <div key={year} style={{ marginBottom: "20px" }}>
-                  {/* Year header */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-                    <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: GREEN }}>{year}</div>
-                    <div style={{ flex: 1, height: "1px", background: BORDER }} />
-                    <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>{grouped[year].length} achievement{grouped[year].length !== 1 ? "s" : ""}</div>
-                  </div>
-
-                  {grouped[year].map(h => (
-                    <div key={h.id} style={{ background: SURFACE, border: `1px solid ${posBorder(h.position)}`, borderLeft: `4px solid ${posCol(h.position)}`, borderRadius: "12px", padding: "14px 16px", marginBottom: "8px", boxShadow: "0 1px 4px rgba(74,14,31,0.06)" }}>
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontFamily: F_DISPLAY, fontSize: "19px", fontWeight: "700", color: TEXT, lineHeight: 1.2, marginBottom: "5px" }}>{h.competition}</div>
-                          <span style={{ display: "inline-block", fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: posCol(h.position), background: posBg(h.position), border: `1px solid ${posCol(h.position)}33`, borderRadius: "10px", padding: "2px 9px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                            {h.position === "Winner" && "🏆 "}{h.position}
-                          </span>
-                          {h.notes && (
-                            <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginTop: "6px", lineHeight: 1.5 }}>{h.notes}</div>
-                          )}
+              {/* Honours by year — collapsible */}
+              {years.map(year => {
+                const isOpen = openHonourYears.has(year);
+                const toggle = () => setOpenHonourYears(prev => {
+                  const next = new Set(prev);
+                  if (next.has(year)) next.delete(year); else next.add(year);
+                  return next;
+                });
+                return (
+                  <div key={year} style={{ marginBottom: "12px" }}>
+                    <button onClick={toggle} style={{ width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: "10px", marginBottom: isOpen ? "8px" : "0" }}>
+                      <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: GREEN }}>{year}</div>
+                      <div style={{ flex: 1, height: "1px", background: BORDER }} />
+                      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>{grouped[year].length} achievement{grouped[year].length !== 1 ? "s" : ""}</div>
+                      <ChevronDown size={15} strokeWidth={2} color={TEXT3} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
+                    </button>
+                    {isOpen && grouped[year].map(h => (
+                      <div key={h.id} style={{ background: SURFACE, border: `1px solid ${posBorder(h.position)}`, borderLeft: `4px solid ${posCol(h.position)}`, borderRadius: "12px", padding: "14px 16px", marginBottom: "8px", boxShadow: "0 1px 4px rgba(74,14,31,0.06)" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontFamily: F_DISPLAY, fontSize: "19px", fontWeight: "700", color: TEXT, lineHeight: 1.2, marginBottom: "5px" }}>{h.competition}</div>
+                            <span style={{ display: "inline-block", fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: posCol(h.position), background: posBg(h.position), border: `1px solid ${posCol(h.position)}33`, borderRadius: "10px", padding: "2px 9px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                              {h.position === "Winner" && "🏆 "}{h.position}
+                            </span>
+                            {h.notes && (
+                              <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginTop: "6px", lineHeight: 1.5 }}>{h.notes}</div>
+                            )}
+                          </div>
+                          <button onClick={() => openEditHonour(h)}
+                            style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, cursor: "pointer", padding: "5px 8px", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "11px", fontFamily: F_UI }}>
+                            <Pencil size={11} strokeWidth={1.75} /> Edit
+                          </button>
                         </div>
-                        <button onClick={() => openEditHonour(h)}
-                          style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, cursor: "pointer", padding: "5px 8px", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "11px", fontFamily: F_UI }}>
-                          <Pencil size={11} strokeWidth={1.75} /> Edit
-                        </button>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
+                    ))}
+                  </div>
+                );
+              })}
 
               {/* Honours sheet */}
               <BottomSheet open={showHonoursSheet} onClose={() => setShowHonoursSheet(false)} title={editHonourId ? "Edit Honour" : "Add Honour"}>
