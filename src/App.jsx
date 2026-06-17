@@ -1294,8 +1294,10 @@ export default function BowlsTracker() {
                           const nextRoundIdx = nextPendingTie
                             ? nextPendingTie.roundIdx
                             : (entry.ties.length > 0 ? entry.ties[entry.ties.length - 1].roundIdx + 1 : 0);
-                          const nextRoundDate = nextPendingTie?.date || getRoundDateForComp(entry.tournamentId, nextRoundIdx);
-                          const nextRoundLabel = nextRoundDate ? fmtDate(nextRoundDate) : "No date set";
+                          const deadlineDate = getRoundDateForComp(entry.tournamentId, nextRoundIdx);
+                          const arrangedDate  = nextPendingTie?.date || null;
+                          const deadlineDays  = deadlineDate && entry.status === "active" && nextRoundIdx < entry.totalRounds
+                            ? countdownDays(deadlineDate) : null;
                           return (
                             <div
                               key={entry.id}
@@ -1340,9 +1342,26 @@ export default function BowlsTracker() {
                                     {lastTie && lastTie.result === "BYE" && ` · Bye`}
                                     {!lastTie && " · No opponent set"}
                                   </div>
-                                  <div style={{ fontSize: "10px", color: TEXT3, marginTop: "2px", fontFamily: F_UI }}>
-                                    Next round date: <span style={{ color: TEXT2, fontWeight: "600" }}>{nextRoundLabel}</span>
-                                  </div>
+                                  {entry.status === "active" && nextRoundIdx < entry.totalRounds && (
+                                    <div style={{ fontSize: "10px", color: TEXT3, marginTop: "2px", fontFamily: F_UI }}>
+                                      Must play by:{" "}
+                                      <span style={{ color: deadlineDays !== null && deadlineDays < 0 ? LOSS_RED : TEXT2, fontWeight: "600" }}>
+                                        {deadlineDate
+                                          ? deadlineDays < 0 ? `${fmtDate(deadlineDate)} · Overdue`
+                                            : countdownLabel(deadlineDate) ? `${fmtDate(deadlineDate)} · ${countdownLabel(deadlineDate)}`
+                                            : fmtDate(deadlineDate)
+                                          : "No date set"}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {arrangedDate && arrangedDate !== deadlineDate && (
+                                    <div style={{ fontSize: "10px", color: TEXT3, marginTop: "1px", fontFamily: F_UI }}>
+                                      Playing:{" "}
+                                      <span style={{ color: GREEN, fontWeight: "600" }}>
+                                        {fmtDate(arrangedDate)}{countdownLabel(arrangedDate) ? ` · ${countdownLabel(arrangedDate)}` : ""}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
                                   <span style={{ fontSize: "10px", padding: "2px 7px", borderRadius: "4px", border: `1px solid ${statusCol}44`, color: statusCol, fontFamily: F_UI, fontWeight: "600" }}>{statusLabel}</span>
@@ -1565,6 +1584,7 @@ export default function BowlsTracker() {
                                 const noteKey = tie?.opponent?.trim().toUpperCase();
                                 const note = noteKey ? oppNotes[noteKey] : null;
                                 const sched = getRoundDateForComp(entry.tournamentId, rIdx);
+                                const schedDays = sched ? countdownDays(sched) : null;
                                 const countdown = tie && !tie.result && tie.date ? countdownLabel(tie.date) : null;
                                 const isEditingOpp = editOppTarget?.entryId === entry.id && editOppTarget?.roundIdx === rIdx;
                                 const isEditingDate = editingTieDate?.entryId === entry.id && editingTieDate?.roundIdx === rIdx;
@@ -1758,57 +1778,67 @@ export default function BowlsTracker() {
 
                                         {/* Date row for pending ties */}
                                         {tie && !tie.result && (
-                                          <div style={{ background: tie.date ? `${GREEN}08` : SURFACE2, border: `1px solid ${tie.date ? `${GREEN}33` : BORDER}`, borderRadius: "8px", padding: "10px 12px", marginBottom: "12px" }}>
-                                            {isEditingDate ? (
-                                              <div>
-                                                <div style={{ fontSize: "10px", fontWeight: "700", color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>When are you playing?</div>
-                                                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                                                  <div style={{ flex: 1, minWidth: "130px" }}>
-                                                    <div style={{ fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "3px" }}>Date</div>
-                                                    <input type="date" value={editDateVal} onChange={e => setEditDateVal(e.target.value)}
-                                                      style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
-                                                  </div>
-                                                  <div style={{ flex: 1, minWidth: "110px" }}>
-                                                    <div style={{ fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "3px" }}>Time (optional)</div>
-                                                    <input type="text" value={editTimeVal} onChange={e => setEditTimeVal(e.target.value)} placeholder="e.g. 6:30pm"
-                                                      style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
-                                                  </div>
+                                          <div style={{ marginBottom: "12px" }}>
+                                            {/* Deadline block */}
+                                            {sched && (
+                                              <div style={{ background: schedDays < 0 ? `${LOSS_RED}08` : `${GOLD}08`, border: `1px solid ${schedDays < 0 ? `${LOSS_RED}33` : `${GOLD}33`}`, borderRadius: "8px", padding: "8px 12px", marginBottom: "8px" }}>
+                                                <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: "700", color: schedDays < 0 ? LOSS_RED : GOLD_MUTED, marginBottom: "2px" }}>Must be played by</div>
+                                                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                                                  <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: schedDays < 0 ? LOSS_RED : TEXT }}>{fmtDate(sched)}</span>
+                                                  {schedDays < 0
+                                                    ? <span style={{ background: `${LOSS_RED}15`, color: LOSS_RED, borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>Overdue</span>
+                                                    : countdownLabel(sched) && <span style={{ background: `${GOLD}22`, color: GOLD_MUTED, borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>{countdownLabel(sched)}</span>
+                                                  }
                                                 </div>
-                                                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                                                  <button onClick={() => saveTieDate(entry.id, tie.roundIdx)} style={{ flex: 1, background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "9px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>Save Date</button>
-                                                  <button onClick={() => setEditingTieDate(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "9px 14px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
-                                                </div>
-                                              </div>
-                                            ) : tie.date ? (
-                                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                                <div>
-                                                  <div style={{ fontSize: "9px", color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: "700", marginBottom: "2px" }}>Playing</div>
-                                                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                                                    <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: GREEN }}>{fmtDate(tie.date)}</span>
-                                                    {tie.time && <span style={{ fontSize: "13px", color: TEXT2 }}>{tie.time}</span>}
-                                                    {countdown && <span style={{ background: GREEN, color: "#fff", borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>{countdown}</span>}
-                                                  </div>
-                                                  {sched && sched !== tie.date && (
-                                                    <div style={{ fontSize: "11px", color: TEXT3, marginTop: "3px" }}>Round closes {fmtDate(sched)}</div>
-                                                  )}
-                                                </div>
-                                                <button onClick={() => { setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx }); setEditDateVal(tie.date); setEditTimeVal(tie.time || ""); }}
-                                                  style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, cursor: "pointer", padding: "5px 10px", fontSize: "11px", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                                  <Pencil size={11} strokeWidth={1.75} /> Change
-                                                </button>
-                                              </div>
-                                            ) : (
-                                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-                                                <div>
-                                                  <div style={{ fontSize: "12px", color: TEXT3 }}>When are you playing this tie?</div>
-                                                  {sched && <div style={{ fontSize: "11px", color: TEXT3, marginTop: "2px" }}>Round closes {fmtDate(sched)}</div>}
-                                                </div>
-                                                <button onClick={() => { setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx }); setEditDateVal(sched || ""); setEditTimeVal(""); }}
-                                                  style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "7px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
-                                                  <Calendar size={13} strokeWidth={2} /> Set Date
-                                                </button>
                                               </div>
                                             )}
+                                            {/* Personal date block */}
+                                            <div style={{ background: tie.date ? `${GREEN}08` : SURFACE2, border: `1px solid ${tie.date ? `${GREEN}33` : BORDER}`, borderRadius: "8px", padding: "10px 12px" }}>
+                                              {isEditingDate ? (
+                                                <div>
+                                                  <div style={{ fontSize: "10px", fontWeight: "700", color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>When are you playing?</div>
+                                                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                                    <div style={{ flex: 1, minWidth: "130px" }}>
+                                                      <div style={{ fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "3px" }}>Date</div>
+                                                      <input type="date" value={editDateVal} onChange={e => setEditDateVal(e.target.value)}
+                                                        style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
+                                                    </div>
+                                                    <div style={{ flex: 1, minWidth: "110px" }}>
+                                                      <div style={{ fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "3px" }}>Time (optional)</div>
+                                                      <input type="text" value={editTimeVal} onChange={e => setEditTimeVal(e.target.value)} placeholder="e.g. 6:30pm"
+                                                        style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "14px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
+                                                    </div>
+                                                  </div>
+                                                  <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                                                    <button onClick={() => saveTieDate(entry.id, tie.roundIdx)} style={{ flex: 1, background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "9px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>Save Date</button>
+                                                    <button onClick={() => setEditingTieDate(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "9px 14px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
+                                                  </div>
+                                                </div>
+                                              ) : tie.date ? (
+                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                                  <div>
+                                                    <div style={{ fontSize: "9px", color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: "700", marginBottom: "2px" }}>You&apos;re playing</div>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                                                      <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: GREEN }}>{fmtDate(tie.date)}</span>
+                                                      {tie.time && <span style={{ fontSize: "13px", color: TEXT2 }}>{tie.time}</span>}
+                                                      {countdown && <span style={{ background: GREEN, color: "#fff", borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>{countdown}</span>}
+                                                    </div>
+                                                  </div>
+                                                  <button onClick={() => { setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx }); setEditDateVal(tie.date); setEditTimeVal(tie.time || ""); }}
+                                                    style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, cursor: "pointer", padding: "5px 10px", fontSize: "11px", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                                                    <Pencil size={11} strokeWidth={1.75} /> Change
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+                                                  <div style={{ fontSize: "12px", color: TEXT3 }}>When are you playing this tie?</div>
+                                                  <button onClick={() => { setEditingTieDate({ entryId: entry.id, roundIdx: tie.roundIdx }); setEditDateVal(sched || ""); setEditTimeVal(""); }}
+                                                    style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "7px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
+                                                    <Calendar size={13} strokeWidth={2} /> Set Date
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
                                           </div>
                                         )}
 
