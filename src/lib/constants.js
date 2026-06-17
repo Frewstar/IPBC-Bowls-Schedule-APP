@@ -2,43 +2,43 @@
 export const DEFAULT_TOURNAMENTS = [
   {
     id: "championship", name: "Championship", type: "Singles", color: "#ef4444",
-    rounds: ["1st Round\n9th June","2nd Round\n30th June","3rd Round\n13th July","4th Round\n11th Aug","Semi Final\n21st Aug","Final"],
+    rounds: ["1st Round\n9th June","2nd Round\n30th June","3rd Round\n23rd July","4th Round\n11th Aug","Semi Final\n21st Aug","Final"],
   },
   {
     id: "presidents", name: "Presidents", type: "Singles", color: "#f59e0b",
-    rounds: ["1st Round\n1st June","2nd Round\n29th June","3rd Round\n29th July","4th Round\n10th Aug","Semi Final\n21st Aug","Final"],
+    rounds: ["1st Round\n11th June","2nd Round\n29th June","3rd Round\n20th July","4th Round\n10th Aug","Semi Final\n21st Aug","Final"],
   },
   {
     id: "morton", name: "Morton", type: "Singles", color: "#06b6d4",
-    rounds: ["1st Round\n25th May","2nd Round\n19th June","3rd Round\n9th July","4th Round\n30th July","Semi Final\n21st Aug","Final"],
+    rounds: ["1st Round\n28th May","2nd Round\n18th June","3rd Round\n9th July","4th Round\n30th July","Semi Final\n21st Aug","Final"],
   },
   {
     id: "donaldson", name: "Donaldson", type: "Singles", color: "#ec4899",
-    rounds: ["1st Round\n25th May","2nd Round\n17th June","3rd Round\n11th July","4th Round\n3rd Aug","Semi Final\n21st Aug","Final"],
+    rounds: ["1st Round\n28th May","2nd Round\n17th June","3rd Round\n14th July","4th Round\n3rd Aug","Semi Final\n21st Aug","Final"],
   },
   {
     id: "mitchell", name: "Mitchell Handicap", type: "Handicap", color: "#84cc16",
-    rounds: ["1st Round\n18th May","2nd Round\n8th June","3rd Round\n9th July","4th Round\n30th July","Semi Final\n21st Aug","Final"],
+    rounds: ["1st Round\n28th May","2nd Round\n18th June","3rd Round\n9th July","4th Round\n30th July","Semi Final\n21st Aug","Final"],
   },
   {
     id: "pairs", name: "Pairs", type: "Pairs", color: "#f97316",
-    rounds: ["1st Round\n19th June","2nd Round\n9th July","3rd Round\n27th July","Semi Final\n21st Dec","Final"],
+    rounds: ["1st Round\n18th June","2nd Round\n9th July","3rd Round\n27th July","Semi Final\n21st Aug","Final"],
   },
   {
     id: "triples", name: "Triples", type: "Triples", color: "#10b981",
-    rounds: ["1st Round\n9th June","2nd Round\n29th July","3rd Round\n27th July","Semi Final\n31st Aug","Final"],
+    rounds: ["1st Round\n4th June","2nd Round\n2nd July","3rd Round\n27th July","Semi Final\n21st Aug","Final"],
   },
   {
     id: "rinks", name: "Rinks", type: "Rinks", color: "#8b5cf6",
-    rounds: ["1st Round\n26th June","2nd Round\n28th July","Semi Final\n11th Aug","Final"],
+    rounds: ["1st Round","2nd Round","Semi Final","Final"],
   },
   {
     id: "mixed-pairs", name: "Mixed Pairs", type: "Mixed Pairs", color: "#a78bfa",
-    rounds: ["1st Round\n1st June","2nd Round\n29th June","3rd Round\n15th July","4th Round\n27th July"],
+    rounds: ["1st Round\n1st June","2nd Round\n23rd June","3rd Round\n13th July","4th Round\n27th July","Semi Final\n21st Aug","Final"],
   },
   {
     id: "balloted-pairs", name: "Balloted Pairs", type: "Pairs", color: "#c084fc",
-    rounds: ["1st Round","2nd Round","Semi Final","Final"],
+    rounds: ["1st Round\n26th May","2nd Round\n15th June","3rd Round\n6th July","4th Round\n3rd Aug","Final\n21st Aug"],
   },
 ];
 
