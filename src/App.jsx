@@ -5,13 +5,13 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Download, Upload,
   Clock, MapPin, Settings, HelpCircle, Type,
   Shield, Info, RefreshCw, BookOpen, Crosshair,
-  Star, Medal,
+  Star, Medal, Bell, AlertTriangle,
 } from "lucide-react";
 
 // ── lib imports ──────────────────────────────────────────────────────────────
 import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_UI } from "./lib/theme.js";
 import { MEMBERS_KEY, TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
-import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, getHeadToHead } from "./lib/utils.js";
+import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
 import { DEFAULT_TOURNAMENTS, FIXTURES, DRAW_ENTRIES, DEFAULT_MEMBERS } from "./lib/constants.js";
 
 // ── component imports ─────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ export default function BowlsTracker() {
 
   // ── Settings ──
   const [settings, setSettings] = useState(() =>
-    load(SETTINGS_KEY, { fontScale: 1, defaultSection: "gents", seasonYear: new Date().getFullYear() })
+    load(SETTINGS_KEY, { fontScale: 1, defaultSection: "gents", seasonYear: new Date().getFullYear(), showReminders: true })
   );
   const fontScale = settings.fontScale || 1;
   function updateSetting(key, val) {
@@ -551,6 +551,44 @@ export default function BowlsTracker() {
     () => entries.filter(e => e && e.myName?.replace(/\s+/g,"").toUpperCase() === myName?.replace(/\s+/g,"").toUpperCase() && ((e.section || "gents") === activeSection)),
     [entries, myName, activeSection]
   );
+
+  const [remindersExpanded, setRemindersExpanded] = useState(false);
+
+  const reminderItems = useMemo(() => {
+    if (!(settings.showReminders ?? true)) return [];
+    const items = [];
+    for (const entry of myEntries.filter(e => e.status === "active")) {
+      const nextRoundIdx = entry.ties.length;
+      if (nextRoundIdx >= entry.totalRounds) continue;
+      const tie = entry.ties.find(t => t.roundIdx === nextRoundIdx);
+      const sched = getRoundDateForComp(entry.tournamentId, nextRoundIdx);
+      if (!tie) {
+        // Trigger 1: no opponent set, round deadline ≤5 days or passed
+        if (sched) {
+          const d = countdownDays(sched);
+          if (d !== null && d <= 5) {
+            items.push({ entryName: entry.tournamentName, color: entry.tournamentColor,
+              message: d < 0 ? "Round date passed — opponent not yet set" : "Round date is soon — opponent not set yet" });
+          }
+        }
+      } else if (!tie.result) {
+        const checkDate = tie.date || sched;
+        if (checkDate) {
+          const d = countdownDays(checkDate);
+          if (d !== null && d < 0) {
+            // Trigger 3: date has passed, no score
+            items.push({ entryName: entry.tournamentName, color: entry.tournamentColor,
+              message: "Round date passed — if this wasn't played, check the clubhouse book" });
+          } else if (d !== null && d <= 1) {
+            // Trigger 2: today or tomorrow, no score
+            items.push({ entryName: entry.tournamentName, color: entry.tournamentColor,
+              message: d === 0 ? "Match today — enter the score after you play" : "Match tomorrow — good luck!" });
+          }
+        }
+      }
+    }
+    return items;
+  }, [myEntries, settings.showReminders, settings.seasonYear, masterRoundDates]);
 
   function placeEntryBefore(sourceId, targetId) {
     setEntries(prev => {
@@ -1169,6 +1207,34 @@ export default function BowlsTracker() {
                               <div style={{ fontSize: "10px", color: TEXT3, letterSpacing: "0.1em", textTransform: "uppercase", marginTop: "3px", fontWeight: "500" }}>{s.label}</div>
                             </div>
                           ))}
+                        </div>
+                      )}
+
+                      {/* ── Reminder banner ── */}
+                      {reminderItems.length > 0 && (
+                        <div style={{ marginBottom: "14px", background: "#fffbeb", border: "1px solid #f59e0b44", borderRadius: "10px", overflow: "hidden" }}>
+                          <button
+                            onClick={() => setRemindersExpanded(v => !v)}
+                            style={{ width: "100%", background: "none", border: "none", cursor: "pointer", padding: "11px 14px", display: "flex", alignItems: "center", gap: "10px", textAlign: "left" }}>
+                            <Bell size={15} strokeWidth={2} color="#b45309" style={{ flexShrink: 0 }} />
+                            <div style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: "#92400e" }}>
+                              {reminderItems.length === 1 ? "1 competition needs attention" : `${reminderItems.length} competitions need attention`}
+                            </div>
+                            <ChevronDown size={14} strokeWidth={2} color="#b45309" style={{ flexShrink: 0, transform: remindersExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+                          </button>
+                          {remindersExpanded && (
+                            <div style={{ borderTop: "1px solid #f59e0b33", padding: "4px 14px 12px" }}>
+                              {reminderItems.map((item, i) => (
+                                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "10px", paddingTop: "10px" }}>
+                                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: item.color || "#b45309", flexShrink: 0, marginTop: "4px" }} />
+                                  <div>
+                                    <div style={{ fontFamily: F_UI, fontSize: "12px", fontWeight: "700", color: "#92400e", marginBottom: "1px" }}>{item.entryName}</div>
+                                    <div style={{ fontFamily: F_UI, fontSize: "12px", color: "#b45309", lineHeight: 1.4 }}>{item.message}</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 

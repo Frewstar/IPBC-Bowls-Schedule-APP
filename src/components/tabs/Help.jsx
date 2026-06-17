@@ -1,5 +1,5 @@
-import { Target, Search, Trophy, Calendar, Users, Settings, BookOpen, Star } from "lucide-react";
-import { GREEN, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
+import { Target, Search, Trophy, Calendar, Users, Settings, BookOpen, Star, Bell, AlertTriangle } from "lucide-react";
+import { GREEN, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_DISPLAY, F_UI } from "../../lib/theme.js";
 
 function HelpSection({ icon: Icon, iconColor = GREEN, title, children }) {
   return (
@@ -110,6 +110,26 @@ export default function HelpTab({ seasonYear }) {
         <Tip text="If you get a new phone, use Backup on your old one and Restore on your new one." />
       </HelpSection>
 
+      <HelpSection icon={Bell} iconColor={GOLD_MUTED} title="Tie Reminders">
+        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
+          When a round needs your attention, an amber banner appears at the top of My Ties. Tap it to see which competitions are flagged and why.
+        </div>
+        <Step num="1" text="No opponent set and the round date is within 5 days — time to arrange the game." />
+        <Step num="2" text="Opponent and date are set, and the match is today or tomorrow." />
+        <Step num="3" text="The round date has passed with no score entered yet — see the note on round deadlines below." />
+        <Tip text="To turn reminders off, go to Settings and switch off 'Show tie reminders'." />
+      </HelpSection>
+
+      <HelpSection icon={AlertTriangle} iconColor={LOSS_RED} title="Round Deadlines">
+        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
+          Each round in IPBC competitions has a deadline date set by the club. It's important to know the rule.
+        </div>
+        <Step num="1" text="If a tie isn't played by its round date, both players are put out of that competition." />
+        <Step num="2" text="The only exception is if an extension has been agreed and logged in the manual draw book in the clubhouse." />
+        <Step num="3" text="The app will flag a passed round date, but it will never assume you're out — only you know whether an extension was arranged." />
+        <Tip text="If in doubt, check the draw book in the clubhouse or speak to the competition secretary." />
+      </HelpSection>
+
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "12px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
         <div style={{ background: SURFACE2, padding: "12px 16px", borderBottom: `1px solid ${BORDER}`, fontFamily: F_DISPLAY, fontSize: "17px", fontWeight: "600", color: TEXT }}>Common Questions</div>
         <div style={{ padding: "14px 16px" }}>
@@ -119,6 +139,7 @@ export default function HelpTab({ seasonYear }) {
             { q: "My opponent isn't in the member list — what do I do?", a: "Type their name into the opponent search box and tap Add manually. They'll be saved for that tie." },
             { q: "I entered the wrong score — can I fix it?", a: "Yes. Open the competition in My Ties and tap Edit Score on the tie card." },
             { q: "How do I add multiple competitions at once?", a: "In My Ties, tap Setup Season. You can select all your competitions and set first-round opponents in one go." },
+            { q: "What does the amber reminder banner mean?", a: "One of your competitions needs attention — either a round date is coming up with no opponent set, a match is today or tomorrow, or a round date has passed with no score entered. Tap the banner to see which competitions are flagged." },
           ].map(({ q, a }, i, arr) => (
             <div key={i} style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none", paddingBottom: i < arr.length - 1 ? "12px" : "0", marginBottom: i < arr.length - 1 ? "12px" : "0" }}>
               <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT, marginBottom: "4px" }}>{q}</div>

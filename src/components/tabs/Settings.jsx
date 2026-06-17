@@ -73,6 +73,20 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
             );
           })}
         </div>
+        <div style={{ borderTop: `1px solid ${BORDER}`, marginTop: "16px", paddingTop: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
+          <div>
+            <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "500", color: TEXT, marginBottom: "2px" }}>Show tie reminders</div>
+            <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>Amber banner when a round needs attention</div>
+          </div>
+          <button
+            onClick={() => updateSetting("showReminders", !(settings.showReminders ?? true))}
+            style={{ width: "46px", height: "27px", borderRadius: "14px", border: "none", cursor: "pointer", padding: 0, flexShrink: 0,
+              background: (settings.showReminders ?? true) ? GREEN : BORDER, position: "relative", transition: "background 0.2s" }}>
+            <div style={{ width: "21px", height: "21px", borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+              position: "absolute", top: "3px", transition: "left 0.15s",
+              left: (settings.showReminders ?? true) ? "22px" : "3px" }} />
+          </button>
+        </div>
       </div>
 
       {/* Account */}
