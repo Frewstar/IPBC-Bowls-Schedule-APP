@@ -11,13 +11,16 @@ export default function FindTab({ search, setSearch, playerGames, tournaments, o
         <input type="text" placeholder="e.g. FREW, SMITH, BOYD…" value={search} onChange={e => setSearch(e.target.value)} autoFocus
           style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "6px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, letterSpacing: "1px" }} />
       </div>
-      {search.length >= 2 && playerGames.length === 0 && (
-        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "32px", textAlign: "center" }}>
-          <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "600", color: GREEN, marginBottom: "6px" }}>No games found</div>
-          <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>No draw entry for &ldquo;{search}&rdquo;</div>
+      {search.length >= 2 && (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "28px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: "28px", marginBottom: "12px" }}>🔍</div>
+          <div style={{ fontFamily: F_DISPLAY, fontSize: "20px", fontWeight: "700", color: GREEN, marginBottom: "8px" }}>Draw lookup coming soon</div>
+          <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6 }}>
+            This will show real draw results once the club sets this up for the season. Check the draw book in the clubhouse in the meantime.
+          </div>
         </div>
       )}
-      {playerGames.map((g, i) => (
+      {Array.isArray(playerGames) && playerGames.map((g, i) => (
         <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${GOLD}`, borderRadius: "10px", padding: "14px", marginBottom: "8px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px", flexWrap: "wrap", gap: "5px" }}>
             <span style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "600", color: TEXT }}>{g.tournament}</span>

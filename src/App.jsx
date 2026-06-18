@@ -650,20 +650,23 @@ export default function BowlsTracker() {
     "mixed-pairs": ["WILLIAMSON / E FREW","J WLEAN / J WILLIAMSON","L KIRKLAND","M WILLIAMSON","J LYON / S CONNER","S SINCLAIR / S MILLAR","A EASDON / B HODALSKI","S DEVOY","D WILSON","A McLEOD / A DEUTSCH","S BROWN / S MATHIESON","J McMILLAN / T FINNIGAN","S BOYD / B KIRKPATRICK","J LAW / D MILLAR","W BROWN / J WADDELL","P KIRKLAND / D HARGREAVES","I McCLYMONT / A REID","STUART WILLIAMSON","W KIRKWOOD SNR"],
   };
 
+  // Draw lookup disabled — DRAW_ENTRIES is a frozen snapshot, not live data.
+  // To re-enable: replace `return null` with the flatMap block below and remove this comment.
+  // return TOURNAMENTS.flatMap(t => {
+  //   const entries = DRAW_ENTRIES[t.id] || [];
+  //   return entries.flatMap((entry, idx) => {
+  //     if (!entry.toUpperCase().includes(search.toUpperCase())) return [];
+  //     const isEven = idx % 2 === 0;
+  //     const opponent = entries[isEven ? idx + 1 : idx - 1];
+  //     const oppSurname = opponent ? opponent.trim().split(/\s+/).slice(-1)[0].toUpperCase() : "";
+  //     const phone = oppSurname ? members.find(m => getSurname(m.name) === oppSurname)?.phone : null;
+  //     return [{ tournament: t.name, color: t.color, date: t.rounds[0], opponent: opponent || "Bye", oppPhone: phone, entry }];
+  //   });
+  // });
   const playerGames = useMemo(() => {
     if (!search || search.length < 2) return [];
-    return TOURNAMENTS.flatMap(t => {
-      const entries = DRAW_ENTRIES[t.id] || [];
-      return entries.flatMap((entry, idx) => {
-        if (!entry.toUpperCase().includes(search.toUpperCase())) return [];
-        const isEven = idx % 2 === 0;
-        const opponent = entries[isEven ? idx + 1 : idx - 1];
-        const oppSurname = opponent ? opponent.trim().split(/\s+/).slice(-1)[0].toUpperCase() : "";
-        const phone = oppSurname ? members.find(m => getSurname(m.name) === oppSurname)?.phone : null;
-        return [{ tournament: t.name, color: t.color, date: t.rounds[0], opponent: opponent || "Bye", oppPhone: phone, entry }];
-      });
-    });
-  }, [search, members]);
+    return null; // draw lookup not yet live
+  }, [search]);
 
   // ── Handlers ──
   function saveName() {
