@@ -1622,6 +1622,7 @@ export default function BowlsTracker() {
                                         {tie && !tie.result && tie.date && <div style={{ fontFamily: F_UI, fontSize: "11px", color: GREEN }}>{fmtDate(tie.date)}</div>}
                                         {tie && !tie.result && !tie.date && sched && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>by {fmtDate(sched)}</div>}
                                         {isNext && !tie && <div style={{ fontFamily: F_UI, fontSize: "11px", color: entry.tournamentColor || GREEN, fontWeight: "600" }}>▶ Next</div>}
+                                        {isFuture && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>{sched ? fmtDate(sched) : "Date TBC"}</div>}
                                       </div>
                                       {!isFuture && <ChevronRight size={14} strokeWidth={2} color={TEXT3} style={{ transform: isExpanded ? "rotate(90deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />}
                                     </div>
