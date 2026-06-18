@@ -1,5 +1,5 @@
 import { GREEN, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
-import { Phone } from "lucide-react";
+import { Phone, Mail } from "lucide-react";
 
 const MATCH_SEC_PHONE = "+447402348205";
 
@@ -91,9 +91,22 @@ export default function HelpTab() {
         <QA q="How do I move the app to a new phone?" a="In Settings, tap Backup on your old phone to download your data. Then on the new phone, tap Restore and pick that file." />
         <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT, marginBottom: "5px" }}>❓ Question about the draw or your ties?</div>
         <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "10px" }}>Contact the Match Secretary — Matt Kirkland. He handles the draw, round dates, and competition queries.</div>
-        <a href={`tel:${MATCH_SEC_PHONE}`} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: `${GOLD}12`, border: `1px solid ${GOLD}40`, borderRadius: "10px", padding: "10px 16px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700" }}>
+        <a href={`tel:${MATCH_SEC_PHONE}`} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: `${GOLD}12`, border: `1px solid ${GOLD}40`, borderRadius: "10px", padding: "10px 16px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700", marginBottom: "14px" }}>
           <Phone size={14} strokeWidth={2} /> Call Matt Kirkland
         </a>
+
+        <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: "14px" }}>
+          <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT, marginBottom: "5px" }}>🛠️ Problem with the app itself?</div>
+          <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "10px" }}>Report bugs or feedback to Frewstar, who built and maintains this app.</div>
+          <a href="mailto:founder@frewstar.co.uk" style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: `${GOLD}12`, border: `1px solid ${GOLD}40`, borderRadius: "10px", padding: "10px 16px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700" }}>
+            <Mail size={14} strokeWidth={2} /> founder@frewstar.co.uk
+          </a>
+        </div>
+      </div>
+
+      {/* Powered by Frewstar */}
+      <div style={{ textAlign: "center", padding: "8px 0 4px", fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
+        Powered by <a href="https://frewstar.co.uk" target="_blank" rel="noreferrer" style={{ color: GOLD_MUTED, fontWeight: "700", textDecoration: "none" }}>Frewstar</a>
       </div>
 
     </div>

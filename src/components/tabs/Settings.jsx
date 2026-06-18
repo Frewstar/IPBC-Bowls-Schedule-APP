@@ -267,8 +267,13 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
       }}>
         {savedMsg ? <><Check size={18} strokeWidth={2.5} /> Settings Saved</> : "Save Settings"}
       </button>
-      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textAlign: "center", marginBottom: "8px" }}>
+      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textAlign: "center", marginBottom: "4px" }}>
         All changes are kept on this device
+      </div>
+      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textAlign: "center", marginBottom: "8px" }}>
+        Powered by <a href="https://frewstar.co.uk" target="_blank" rel="noreferrer" style={{ color: GOLD_MUTED, fontWeight: "700", textDecoration: "none" }}>Frewstar</a>
+        {" · "}
+        <a href="mailto:founder@frewstar.co.uk" style={{ color: GOLD_MUTED, fontWeight: "700", textDecoration: "none" }}>App enquiries</a>
       </div>
     </div>
   );
