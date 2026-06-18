@@ -775,34 +775,31 @@ export default function BowlsTracker() {
   }
 
   async function exportBackup() {
-    const data = JSON.stringify({ entries, myName, exportedAt: new Date().toISOString() }, null, 2);
-    const fileName = `ipbc-bowls-${new Date().toISOString().split("T")[0]}.json`;
+    const now = new Date();
+    const dateStr = now.toISOString().split("T")[0];
+    const timeStr = now.toTimeString().slice(0, 5).replace(":", "");
+    const fileName = `ipbc-bowls-${dateStr}-${timeStr}.json`;
+    const data = JSON.stringify({ entries, myName, exportedAt: now.toISOString() }, null, 2);
     const blob = new Blob([data], { type: "application/octet-stream" });
     const file = new File([blob], fileName, { type: "application/octet-stream" });
 
-    // Use native share sheet on mobile (lets user pick Google Drive, iCloud, WhatsApp, email etc.)
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    // Try native share sheet — lets user pick Google Drive, iCloud, WhatsApp etc.
+    if (navigator.share) {
       try {
-        await navigator.share({
-          title: "IPBC Bowls Backup",
-          text: "My IPBC Bowls tournament data",
-          files: [file],
-        });
+        await navigator.share({ title: "IPBC Bowls Backup", text: "My IPBC Bowls tournament data", files: [file] });
         setBackupMsg("Shared successfully");
         setTimeout(() => setBackupMsg(null), 3000);
         return;
       } catch (e) {
         if (e.name === "AbortError") return; // user cancelled — do nothing
-        // fall through to download if share fails
+        // fall through to direct download if share not supported
       }
     }
 
-    // Fallback: direct download (desktop or unsupported browsers)
+    // Fallback: direct download (desktop browsers)
     const url = URL.createObjectURL(blob);
     const a   = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    a.click();
+    a.href = url; a.download = fileName; a.click();
     URL.revokeObjectURL(url);
     setBackupMsg("File downloaded");
     setTimeout(() => setBackupMsg(null), 3000);
