@@ -1,22 +1,24 @@
 import { useState } from "react";
-import { Trophy, Phone, ChevronDown, Shield, Users, Star, MapPin } from "lucide-react";
-import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
+import { Trophy, Phone, ChevronDown, Shield, MapPin, Star } from "lucide-react";
+import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
+
+// ── Data ────────────────────────────────────────────────────────────────────
 
 export const COMMITTEE = [
-  { role: "President",           name: "TBC", phone: "" },
-  { role: "Vice President",      name: "TBC", phone: "" },
-  { role: "Secretary",           name: "TBC", phone: "" },
-  { role: "Treasurer",           name: "TBC", phone: "" },
-  { role: "Bar Convenor",        name: "TBC", phone: "" },
-  { role: "Match Secretary",     name: "TBC", phone: "" },
-  { role: "Social Convenor",     name: "TBC", phone: "" },
-  { role: "Past President",      name: "TBC", phone: "" },
-  { role: "Building Convenor",   name: "TBC", phone: "" },
-  { role: "Honorary President",  name: "TBC", phone: "" },
+  { role: "President",          name: "TBC", phone: "" },
+  { role: "Vice President",     name: "TBC", phone: "" },
+  { role: "Secretary",          name: "TBC", phone: "" },
+  { role: "Treasurer",          name: "TBC", phone: "" },
+  { role: "Bar Convenor",       name: "TBC", phone: "" },
+  { role: "Match Secretary",    name: "TBC", phone: "" },
+  { role: "Social Convenor",    name: "TBC", phone: "" },
+  { role: "Past President",     name: "TBC", phone: "" },
+  { role: "Building Convenor",  name: "TBC", phone: "" },
+  { role: "Honorary President", name: "TBC", phone: "" },
 ];
 
 export const MANAGEMENT_COMMITTEE = [
-  "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC",
+  "TBC","TBC","TBC","TBC","TBC","TBC","TBC","TBC","TBC","TBC","TBC",
 ];
 
 export const HONORARY_MEMBERS = [
@@ -24,71 +26,102 @@ export const HONORARY_MEMBERS = [
 ];
 
 export const ROLL_OF_HONOUR = [
-  { id: "championship",   name: "Championship",     color: "#ef4444", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "presidents",     name: "Presidents",       color: "#f59e0b", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "morton",         name: "Morton",           color: "#06b6d4", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "donaldson",      name: "Donaldson",        color: "#ec4899", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "mitchell",       name: "Mitchell Handicap",color: "#84cc16", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "pairs",          name: "Pairs",            color: "#f97316", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "triples",        name: "Triples",          color: "#10b981", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "rinks",          name: "Rinks",            color: "#8b5cf6", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "mixed-pairs",    name: "Mixed Pairs",      color: "#a78bfa", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "balloted-pairs", name: "Balloted Pairs",   color: "#c084fc", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "championship",   name: "Championship",      color: "#ef4444", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "presidents",     name: "Presidents",        color: "#f59e0b", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "morton",         name: "Morton",            color: "#06b6d4", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "donaldson",      name: "Donaldson",         color: "#ec4899", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "mitchell",       name: "Mitchell Handicap", color: "#84cc16", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "pairs",          name: "Pairs",             color: "#f97316", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "triples",        name: "Triples",           color: "#10b981", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "rinks",          name: "Rinks",             color: "#8b5cf6", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "mixed-pairs",    name: "Mixed Pairs",       color: "#a78bfa", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "balloted-pairs", name: "Balloted Pairs",    color: "#c084fc", winners: [{ year: 2026, winner: "TBC" }] },
 ];
 
-function SectionHeader({ icon: Icon, label }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", marginTop: "4px" }}>
-      <div style={{ width: "28px", height: "28px", borderRadius: "7px", background: `${GREEN}12`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Icon size={15} strokeWidth={2} color={GREEN} />
-      </div>
-      <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN }}>{label}</div>
-    </div>
-  );
-}
+const FACILITIES = [
+  "Two six-rink outdoor bowling greens",
+  "Main Hall (seats 140)",
+  "Lounge Hall (seats 100)",
+  "Main Bar & Lounge Bar",
+  "Kitchen",
+  "Separate Locker Room",
+  "Outdoor Seating Area",
+  "PA System & Dart Boards",
+  "Pool Table & Juke Box",
+  "Car Park (30+ spaces)",
+];
+
+// ── Component ────────────────────────────────────────────────────────────────
 
 export default function ClubTab() {
   const [expandedComp, setExpandedComp] = useState(null);
+  const [committeeOpen, setCommitteeOpen] = useState(false);
 
   return (
-    <div style={{ maxWidth: "520px", margin: "0 auto" }}>
+    <div style={{ maxWidth: "520px", margin: "0 auto", paddingBottom: "32px" }}>
 
-      {/* Hero */}
-      <div style={{ background: GREEN, borderRadius: "12px", padding: "20px", marginBottom: "20px", boxShadow: "0 4px 16px rgba(74,14,31,0.15)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "6px" }}>
-          <Shield size={24} strokeWidth={1.5} color={GOLD} />
-          <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: "#fff" }}>Irvine Park BC</div>
+      {/* ── Hero ── */}
+      <div style={{
+        background: `linear-gradient(150deg, ${GREEN} 0%, #3d0f1a 100%)`,
+        borderRadius: "16px", padding: "22px 20px 20px",
+        boxShadow: "0 6px 24px rgba(74,14,31,0.22)",
+        marginBottom: "16px", position: "relative", overflow: "hidden",
+      }}>
+        <div style={{ position: "absolute", right: -16, bottom: -16, opacity: 0.07 }}>
+          <Shield size={120} strokeWidth={0.8} color="#fff" />
         </div>
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: "rgba(255,255,255,0.75)" }}>Club information, roll of honour &amp; committee</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
+          <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: `${GOLD}25`, border: `1px solid ${GOLD}50`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Shield size={22} strokeWidth={1.5} color={GOLD} />
+          </div>
+          <div>
+            <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: "#fff", lineHeight: 1.1 }}>Irvine Park</div>
+            <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: GOLD, lineHeight: 1.1 }}>Bowling Club</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <div style={{ background: "rgba(255,255,255,0.12)", borderRadius: "20px", padding: "4px 10px", fontFamily: F_UI, fontSize: "11px", color: "rgba(255,255,255,0.85)", fontWeight: "500" }}>
+            📍 Woodlands Ave, Irvine KA12 0PZ
+          </div>
+          <a href="tel:01294272351" style={{ background: `${GOLD}25`, border: `1px solid ${GOLD}50`, borderRadius: "20px", padding: "4px 10px", fontFamily: F_UI, fontSize: "11px", color: GOLD_LIGHT, fontWeight: "600", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+            <Phone size={10} strokeWidth={2} /> 01294 272351
+          </a>
+        </div>
       </div>
 
       {/* ── Roll of Honour ── */}
-      <SectionHeader icon={Trophy} label="Roll of Honour" />
-      <div style={{ marginBottom: "24px" }}>
-        {ROLL_OF_HONOUR.map(comp => {
+      <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN, marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+        <Trophy size={16} strokeWidth={2} color={GOLD_MUTED} /> Roll of Honour
+      </div>
+
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 4px rgba(74,14,31,0.07)" }}>
+        {ROLL_OF_HONOUR.map((comp, idx) => {
           const isOpen = expandedComp === comp.id;
           const latest = comp.winners[0];
           return (
-            <div key={comp.id} style={{ marginBottom: "8px", borderRadius: "10px", overflow: "hidden", border: `1px solid ${BORDER}`, boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
+            <div key={comp.id} style={{ borderBottom: idx < ROLL_OF_HONOUR.length - 1 ? `1px solid ${BORDER}` : "none" }}>
               <button
                 onClick={() => setExpandedComp(isOpen ? null : comp.id)}
-                style={{ width: "100%", background: SURFACE, border: "none", cursor: "pointer", padding: "12px 14px", display: "flex", alignItems: "center", gap: "12px", textAlign: "left" }}>
-                <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: comp.color, flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "600", color: TEXT }}>{comp.name}</div>
-                  <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "1px" }}>
-                    {latest.year} · <span style={{ color: latest.winner === "TBC" ? TEXT3 : GOLD_MUTED, fontWeight: "600" }}>{latest.winner}</span>
+                style={{ width: "100%", background: "none", border: "none", cursor: "pointer", padding: "0", display: "flex", alignItems: "center", textAlign: "left" }}>
+                <div style={{ width: "3px", alignSelf: "stretch", background: comp.color, flexShrink: 0 }} />
+                <div style={{ flex: 1, padding: "11px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "600", color: TEXT }}>{comp.name}</span>
+                    <span style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginLeft: "8px" }}>
+                      {latest.year} · <span style={{ color: latest.winner === "TBC" ? TEXT3 : GOLD_MUTED, fontWeight: "700" }}>{latest.winner}</span>
+                    </span>
                   </div>
+                  <ChevronDown size={13} strokeWidth={2} color={TEXT3}
+                    style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
                 </div>
-                <ChevronDown size={15} strokeWidth={2} color={TEXT3} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
               </button>
               {isOpen && (
-                <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "10px 14px" }}>
-                  <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Past Winners</div>
+                <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "10px 14px 10px 17px" }}>
+                  <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Past Winners</div>
                   {comp.winners.map((w, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "7px", marginBottom: "7px", borderBottom: i < comp.winners.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-                      <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, fontWeight: "500" }}>{w.year}</div>
-                      <div style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "600", color: w.winner === "TBC" ? TEXT3 : TEXT }}>{w.winner}</div>
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < comp.winners.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                      <span style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, fontWeight: "600" }}>{w.year}</span>
+                      <span style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "700", color: w.winner === "TBC" ? TEXT3 : TEXT }}>{w.winner}</span>
                     </div>
                   ))}
                 </div>
@@ -98,87 +131,90 @@ export default function ClubTab() {
         })}
       </div>
 
-      {/* ── Committee ── */}
-      <SectionHeader icon={Star} label="Committee 2026" />
-      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
-        {COMMITTEE.map((m, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", borderBottom: i < COMMITTEE.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-            <div>
-              <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "1px" }}>{m.role}</div>
-              <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "600", color: TEXT }}>{m.name}</div>
+      {/* ── Committee (collapsible) ── */}
+      <button
+        onClick={() => setCommitteeOpen(o => !o)}
+        style={{
+          width: "100%", background: SURFACE, border: `1px solid ${BORDER}`,
+          borderRadius: committeeOpen ? "12px 12px 0 0" : "12px",
+          padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between",
+          cursor: "pointer", marginBottom: "0", boxShadow: "0 1px 4px rgba(74,14,31,0.07)",
+        }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <Star size={15} strokeWidth={2} color={GOLD_MUTED} />
+          <span style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN }}>Committee 2026</span>
+        </div>
+        <ChevronDown size={14} strokeWidth={2} color={TEXT3} style={{ transform: committeeOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+      </button>
+      {committeeOpen && (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderTop: "none", borderRadius: "0 0 12px 12px", overflow: "hidden", marginBottom: "0", boxShadow: "0 2px 8px rgba(74,14,31,0.08)" }}>
+          {/* Key officers 2-col grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: BORDER, borderBottom: `1px solid ${BORDER}` }}>
+            {COMMITTEE.slice(0, 4).map((m, i) => (
+              <div key={i} style={{ background: SURFACE2, padding: "12px 14px" }}>
+                <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700", marginBottom: "3px" }}>{m.role}</div>
+                <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "600", color: m.name === "TBC" ? TEXT3 : TEXT }}>{m.name}</div>
+                {m.phone ? <a href={`tel:${m.phone}`} style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, textDecoration: "none", fontWeight: "600" }}>{m.phone}</a> : null}
+              </div>
+            ))}
+          </div>
+          {/* Remaining committee */}
+          {COMMITTEE.slice(4).map((m, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", borderBottom: i < COMMITTEE.slice(4).length - 1 ? `1px solid ${BORDER}` : "none" }}>
+              <div>
+                <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700" }}>{m.role}</div>
+                <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "600", color: m.name === "TBC" ? TEXT3 : TEXT }}>{m.name}</div>
+              </div>
+              {m.phone ? (
+                <a href={`tel:${m.phone}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "20px", padding: "4px 10px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "11px", fontWeight: "600" }}>
+                  <Phone size={10} strokeWidth={2} />{m.phone}
+                </a>
+              ) : null}
             </div>
-            {m.phone ? (
-              <a href={`tel:${m.phone.replace(/\s/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontSize: "13px", fontWeight: "600" }}>
-                <Phone size={13} strokeWidth={1.75} />{m.phone}
-              </a>
-            ) : null}
+          ))}
+          {/* Management & Honorary */}
+          <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "12px 16px" }}>
+            <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Management Committee</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "14px" }}>
+              {MANAGEMENT_COMMITTEE.map((name, i) => (
+                <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: name === "TBC" ? TEXT3 : TEXT2 }}>{name}</div>
+              ))}
+            </div>
+            <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Honorary Members</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {HONORARY_MEMBERS.map((name, i) => (
+                <div key={i} style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED, fontWeight: "600" }}>{name}</div>
+              ))}
+            </div>
           </div>
-        ))}
-      </div>
-
-      {/* ── Management Committee ── */}
-      <SectionHeader icon={Users} label="Management Committee" />
-      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "12px 14px", marginBottom: "16px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-          {MANAGEMENT_COMMITTEE.map((name, i) => (
-            <div key={i} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "20px", padding: "5px 12px", fontFamily: F_UI, fontSize: "13px", color: TEXT2 }}>{name}</div>
-          ))}
         </div>
-      </div>
+      )}
 
-      {/* ── Honorary ── */}
-      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "24px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
-        <div style={{ background: SURFACE2, padding: "10px 14px", borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em" }}>Honorary Members</div>
+      {/* ── Find Us + Facilities ── */}
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", boxShadow: "0 1px 4px rgba(74,14,31,0.07)", marginTop: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "12px 16px", borderBottom: `1px solid ${BORDER}` }}>
+          <MapPin size={14} strokeWidth={2} color={GOLD_MUTED} />
+          <span style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN }}>Find Us</span>
         </div>
-        <div style={{ padding: "12px 14px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
-          {HONORARY_MEMBERS.map((name, i) => (
-            <div key={i} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "20px", padding: "5px 12px", fontFamily: F_UI, fontSize: "13px", color: TEXT2 }}>{name}</div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Location ── */}
-      <SectionHeader icon={MapPin} label="Find Us" />
-      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
         <div style={{ padding: "14px 16px", borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "600", color: TEXT, marginBottom: "4px" }}>Irvine Park Bowling Club</div>
-          <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.6 }}>
-            Woodlands Avenue<br />Irvine<br />KA12 0PZ
+          <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.9 }}>
+            Woodlands Avenue, Irvine &nbsp;<span style={{ fontWeight: "700", color: TEXT, letterSpacing: "0.04em" }}>KA12 0PZ</span>
           </div>
-        </div>
-        <div style={{ padding: "12px 16px" }}>
-          <a href="tel:01294272351" style={{ display: "inline-flex", alignItems: "center", gap: "7px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "600" }}>
-            <Phone size={14} strokeWidth={1.75} /> 01294 272351
+          <a href="tel:01294272351" style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "10px", background: `${GOLD}12`, border: `1px solid ${GOLD}40`, borderRadius: "10px", padding: "8px 14px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "13px", fontWeight: "700" }}>
+            <Phone size={13} strokeWidth={2} /> 01294 272351
           </a>
         </div>
-      </div>
-
-      {/* ── Facilities ── */}
-      <SectionHeader icon={Shield} label="Facilities" />
-      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "14px 16px", marginBottom: "24px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
-        {[
-          "Two six-rink outdoor bowling greens (including facilities for disabled bowlers)",
-          "Main Hall (seating 140)",
-          "Main Bar",
-          "Lounge Hall (seating 100)",
-          "Lounge Bar",
-          "Kitchen",
-          "Separate Locker Room",
-          "Outdoor Seating Area",
-          "Ladies and Gents Toilets",
-          "PA System",
-          "Dart Boards",
-          "Pool Table",
-          "Juke Box",
-          "Fruit Machines",
-          "Parking for 30+ cars",
-        ].map((item, i, arr) => (
-          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "10px", paddingBottom: i < arr.length - 1 ? "9px" : "0", marginBottom: i < arr.length - 1 ? "9px" : "0", borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: GREEN, flexShrink: 0, marginTop: "5px" }} />
-            <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5 }}>{item}</div>
+        <div style={{ padding: "12px 16px 14px" }}>
+          <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>Facilities</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px" }}>
+            {FACILITIES.map((item, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "6px" }}>
+                <div style={{ width: "5px", height: "5px", borderRadius: "50%", background: GOLD, flexShrink: 0, marginTop: "5px" }} />
+                <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.4 }}>{item}</div>
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
       </div>
 
     </div>
