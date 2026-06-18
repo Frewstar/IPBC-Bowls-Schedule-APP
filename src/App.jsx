@@ -226,7 +226,9 @@ export default function BowlsTracker() {
     if (!editOppTarget) return;
     const name = editOppPicked ? editOppPicked.name : editOppSearch.trim().toUpperCase();
     const phone = editOppPicked ? (editOppPicked.phone || "") : "";
-    if (!name) return;
+    // Allow saving empty name only on BYE ties (clears the incorrectly set opponent)
+    const targetTie = entries.find(e => e.id === editOppTarget.entryId)?.ties.find(t => t.roundIdx === editOppTarget.roundIdx);
+    if (!name && targetTie?.result !== "BYE") return;
     setEntries(prev => prev.map(e => {
       if (e.id !== editOppTarget.entryId) return e;
       return { ...e, ties: e.ties.map(t => t.roundIdx === editOppTarget.roundIdx ? { ...t, opponent: name, oppPhone: phone } : t) };
