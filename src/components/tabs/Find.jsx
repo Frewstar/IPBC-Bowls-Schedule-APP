@@ -16,7 +16,7 @@ export default function FindTab({ search, setSearch, playerGames, tournaments, o
           <div style={{ fontSize: "28px", marginBottom: "12px" }}>🔍</div>
           <div style={{ fontFamily: F_DISPLAY, fontSize: "20px", fontWeight: "700", color: GREEN, marginBottom: "8px" }}>Draw lookup coming soon</div>
           <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6 }}>
-            This will show real draw results once the club sets this up for the season. Check the draw book in the clubhouse in the meantime.
+            This will show real draw results once the club sets this up for the season. Check the tie board in the clubhouse in the meantime.
           </div>
         </div>
       )}
