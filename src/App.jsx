@@ -270,6 +270,7 @@ export default function BowlsTracker() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [uploadMsg, setUploadMsg]       = useState(null);
   const fileInputRef  = useRef(null);
+  const backupFileRef = useRef(null);
 
   // ── Tie date editing state ──
   const [editingTieDate, setEditingTieDate] = useState(null);
