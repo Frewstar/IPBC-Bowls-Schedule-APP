@@ -162,15 +162,17 @@ export default function BowlsTracker() {
   useEffect(() => {
     if (!myName) { setAdminRole(null); return; }
     const nameUpper = myName.toUpperCase();
-    supabase.from("admins").select("role")
-      .or(`player_name.eq.${nameUpper},cloud_key.eq.${cloudKey || "__none__"}`)
-      .then(({ data }) => {
-        const rows = data || [];
-        const role = rows.some(r => r.role === "super_admin") ? "super_admin"
-                   : rows.some(r => r.role === "admin")       ? "admin"
-                   : null;
-        setAdminRole(role);
-      });
+    const q1 = supabase.from("admins").select("role").eq("player_name", nameUpper);
+    const q2 = cloudKey
+      ? supabase.from("admins").select("role").eq("cloud_key", cloudKey)
+      : Promise.resolve({ data: [] });
+    Promise.all([q1, q2]).then(([r1, r2]) => {
+      const rows = [...(r1.data || []), ...(r2.data || [])];
+      const role = rows.some(r => r.role === "super_admin") ? "super_admin"
+                 : rows.some(r => r.role === "admin")       ? "admin"
+                 : null;
+      setAdminRole(role);
+    });
   }, [myName, cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isAdmin = adminRole === "admin" || adminRole === "super_admin";
