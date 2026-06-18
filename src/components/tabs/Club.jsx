@@ -10,7 +10,7 @@ export const COMMITTEE = [
   { role: "Secretary",          name: "TBC", phone: "" },
   { role: "Treasurer",          name: "TBC", phone: "" },
   { role: "Bar Convenor",       name: "TBC", phone: "" },
-  { role: "Match Secretary",    name: "TBC", phone: "" },
+  { role: "Match Secretary",    name: "Matt Kirkland", phone: "" },
   { role: "Social Convenor",    name: "TBC", phone: "" },
   { role: "Past President",     name: "TBC", phone: "" },
   { role: "Building Convenor",  name: "TBC", phone: "" },

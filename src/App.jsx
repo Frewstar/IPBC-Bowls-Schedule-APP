@@ -1242,6 +1242,18 @@ export default function BowlsTracker() {
                         </div>
                       )}
 
+                      {/* ── Match Secretary contact strip ── */}
+                      <a href="tel:07700900000" style={{ display: "flex", alignItems: "center", gap: "10px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", textDecoration: "none" }}>
+                        <div style={{ width: "34px", height: "34px", borderRadius: "8px", background: `${GREEN}10`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <Phone size={15} strokeWidth={2} color={GREEN} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em" }}>Match Secretary</div>
+                          <div style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: GREEN, lineHeight: 1.2 }}>Matt Kirkland</div>
+                        </div>
+                        <div style={{ fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED, fontWeight: "700" }}>Call</div>
+                      </a>
+
                       {/* ── View toggle ── */}
                       {myEntries.length > 0 && (
                         <div style={{ display: "flex", gap: "0", marginBottom: "14px", borderBottom: `1px solid ${BORDER}` }}>
