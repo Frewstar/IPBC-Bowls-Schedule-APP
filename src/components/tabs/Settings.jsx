@@ -273,7 +273,7 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textAlign: "center", marginBottom: "8px" }}>
         Powered by <a href="https://frewstar.co.uk" target="_blank" rel="noreferrer" style={{ color: GOLD_MUTED, fontWeight: "700", textDecoration: "none" }}>Frewstar</a>
         {" · "}
-        <a href="mailto:founder@frewstar.co.uk" style={{ color: GOLD_MUTED, fontWeight: "700", textDecoration: "none" }}>App enquiries</a>
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLSdElbpgUQRg4kpT2gAECgv50vnX299yrLGgUSyIShMa1bc9pg/viewform" target="_blank" rel="noreferrer" style={{ color: GOLD_MUTED, fontWeight: "700", textDecoration: "none" }}>Send feedback</a>
       </div>
     </div>
   );

@@ -97,9 +97,9 @@ export default function HelpTab() {
 
         <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: "14px" }}>
           <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT, marginBottom: "5px" }}>🛠️ Problem with the app itself?</div>
-          <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "10px" }}>Report bugs or feedback to Frewstar, who built and maintains this app.</div>
-          <a href="mailto:founder@frewstar.co.uk" style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: `${GOLD}12`, border: `1px solid ${GOLD}40`, borderRadius: "10px", padding: "10px 16px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700" }}>
-            <Mail size={14} strokeWidth={2} /> founder@frewstar.co.uk
+          <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "10px" }}>Leave feedback or report a problem — it goes straight to the app developer.</div>
+          <a href="https://docs.google.com/forms/d/e/1FAIpQLSdElbpgUQRg4kpT2gAECgv50vnX299yrLGgUSyIShMa1bc9pg/viewform" target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: GREEN, border: "none", borderRadius: "10px", padding: "12px 18px", color: "#fff", textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700" }}>
+            Send Feedback
           </a>
         </div>
       </div>
