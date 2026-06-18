@@ -1010,7 +1010,7 @@ export default function BowlsTracker() {
               <img
                 src="/ipbc-badge.png"
                 alt="Irvine Park Bowling Club"
-                style={{ height: "54px", width: "54px", objectFit: "contain" }}
+                style={{ height: "46px", width: "46px", objectFit: "contain" }}
                 onError={e => {
                   e.target.style.display = "none";
                   e.target.parentNode.querySelector(".crest-fallback").style.display = "flex";
