@@ -807,13 +807,28 @@ export default function BowlsTracker() {
     return null;
   }, [search]);
 
-  // ── Handlers ──
-  function saveSignIn() {
+  // ── Sign-in flow ──
+  const [pinConfirm, setPinConfirm]   = useState("");
+  const [signInState, setSignInState] = useState("idle"); // "idle" | "checking" | "confirm-new"
+
+  async function handleSignIn() {
     if (!nameInput.trim() || pinInput.length !== 4) return;
+    setSignInState("checking");
+    const key = `${nameInput.toUpperCase().trim()}-${pinInput}`;
+    const { data } = await supabase.from("player_data").select("player_name").eq("player_name", key).maybeSingle();
+    if (data) {
+      commitSignIn();
+    } else {
+      setPinConfirm("");
+      setSignInState("confirm-new");
+    }
+  }
+
+  function commitSignIn() {
     setMyName(nameInput.toUpperCase().trim());
     setMyPin(pinInput);
-    setNameInput("");
-    setPinInput("");
+    setNameInput(""); setPinInput(""); setPinConfirm("");
+    setSignInState("idle");
     setSettingName(false);
   }
   function saveExistingPin() {
@@ -1025,11 +1040,28 @@ export default function BowlsTracker() {
   }
 
   const [phoneRequests, setPhoneRequests] = useState([]);
+  const [joinRequests, setJoinRequests]   = useState([]);
   useEffect(() => {
     if (!isAdmin) return;
     supabase.from("phone_change_requests").select("*").order("requested_at")
       .then(({ data }) => { if (data) setPhoneRequests(data); });
+    supabase.from("member_join_requests").select("*").eq("status", "pending").order("requested_at")
+      .then(({ data }) => { if (data) setJoinRequests(data); });
   }, [isAdmin]);
+
+  async function approveJoinRequest(req) {
+    setJoinRequests(j => j.filter(r => r.id !== req.id));
+    await supabase.from("members").insert({ name: req.name, phone: req.phone || null, section: req.section, sort_order: 9999 });
+    await supabase.from("member_join_requests").update({ status: "approved" }).eq("id", req.id);
+    // Refresh members list
+    supabase.from("members").select("*").order("sort_order").order("name")
+      .then(({ data }) => { if (data) setMembers(data.map(m => ({ ...m, section: m.section || "gents" }))); });
+  }
+
+  async function declineJoinRequest(reqId) {
+    setJoinRequests(j => j.filter(r => r.id !== reqId));
+    await supabase.from("member_join_requests").update({ status: "declined" }).eq("id", reqId);
+  }
 
   async function approvePhoneRequest(req) {
     const prev = members;
@@ -1334,30 +1366,70 @@ export default function BowlsTracker() {
                   {settingName ? "Update Sign-in" : "Welcome"}
                 </div>
                 <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "24px", lineHeight: 1.5 }}>
-                  {settingName ? "Enter your name and PIN to switch account." : "Enter your name and PIN to get started. If you've used this app before, use the same details to restore your data."}
+                  {settingName ? "Enter your name and PIN to switch account." : "Enter your name and 4-digit PIN. If you've signed in before, use the same details to restore your data."}
                 </div>
-                <div style={{ textAlign: "left", marginBottom: "12px" }}>
-                  <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Your Name</div>
-                  <input value={nameInput} onChange={e => setNameInput(e.target.value.toUpperCase())}
-                    placeholder="e.g. J FREW" autoFocus
-                    onKeyDown={e => e.key === "Enter" && document.getElementById("pin-input")?.focus()}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, letterSpacing: "2px" }} />
-                </div>
-                <div style={{ textAlign: "left", marginBottom: "20px" }}>
-                  <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>4-Digit PIN</div>
-                  <input id="pin-input" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    placeholder="••••" inputMode="numeric" maxLength={4}
-                    onKeyDown={e => e.key === "Enter" && saveSignIn()}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px" }} />
-                  <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px" }}>Your PIN keeps your data private — you'll need it if you change phones.</div>
-                </div>
-                <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
-                  {settingName && <button onClick={() => { setSettingName(false); setNameInput(""); setPinInput(""); }} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>}
-                  <button onClick={saveSignIn} disabled={!nameInput.trim() || pinInput.length !== 4}
-                    style={{ flex: 1, background: nameInput.trim() && pinInput.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#ffffff", padding: "13px 28px", fontSize: "14px", cursor: nameInput.trim() && pinInput.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
-                    {settingName ? "Update" : "Sign In"}
-                  </button>
-                </div>
+
+                {signInState !== "confirm-new" ? (
+                  <>
+                    <div style={{ textAlign: "left", marginBottom: "12px" }}>
+                      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Your Name</div>
+                      <input value={nameInput} onChange={e => setNameInput(e.target.value.toUpperCase())}
+                        placeholder="e.g. J FREW" autoFocus
+                        onKeyDown={e => e.key === "Enter" && document.getElementById("pin-input")?.focus()}
+                        style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, letterSpacing: "2px" }} />
+                    </div>
+                    <div style={{ textAlign: "left", marginBottom: "20px" }}>
+                      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>4-Digit PIN</div>
+                      <input id="pin-input" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                        placeholder="••••" inputMode="numeric" maxLength={4}
+                        onKeyDown={e => e.key === "Enter" && handleSignIn()}
+                        style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px" }} />
+                      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px" }}>Your PIN keeps your data private — you'll need it if you change phones.</div>
+                    </div>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      {settingName && (
+                        <button onClick={() => { setSettingName(false); setNameInput(""); setPinInput(""); setSignInState("idle"); }}
+                          style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
+                          Cancel
+                        </button>
+                      )}
+                      <button onClick={handleSignIn} disabled={!nameInput.trim() || pinInput.length !== 4 || signInState === "checking"}
+                        style={{ flex: 1, background: nameInput.trim() && pinInput.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "13px 28px", fontSize: "14px", cursor: nameInput.trim() && pinInput.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
+                        {signInState === "checking" ? "Checking…" : settingName ? "Update" : "Sign In"}
+                      </button>
+                    </div>
+                    <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textAlign: "center", marginTop: "12px", lineHeight: 1.5 }}>
+                      Can't find your data? Make sure your name and PIN match exactly what you used before.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left" }}>
+                      <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT, marginBottom: "3px" }}>Looks like you're new here</div>
+                      <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>If you've signed in before, go back and check your name and PIN match exactly. Otherwise confirm your PIN below to create your account.</div>
+                    </div>
+                    <div style={{ textAlign: "left", marginBottom: "20px" }}>
+                      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Confirm PIN</div>
+                      <input autoFocus value={pinConfirm} onChange={e => setPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                        placeholder="••••" inputMode="numeric" maxLength={4}
+                        onKeyDown={e => e.key === "Enter" && pinConfirm === pinInput && commitSignIn()}
+                        style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${pinConfirm.length === 4 && pinConfirm !== pinInput ? "#e07070" : BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px" }} />
+                      {pinConfirm.length === 4 && pinConfirm !== pinInput && (
+                        <div style={{ fontFamily: F_UI, fontSize: "12px", color: "#c0392b", marginTop: "5px" }}>PINs don't match — try again</div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button onClick={() => { setPinConfirm(""); setSignInState("idle"); }}
+                        style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
+                        Back
+                      </button>
+                      <button onClick={commitSignIn} disabled={pinConfirm !== pinInput || pinConfirm.length !== 4}
+                        style={{ flex: 1, background: pinConfirm === pinInput && pinConfirm.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "13px 28px", fontSize: "14px", cursor: pinConfirm === pinInput && pinConfirm.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
+                        Create Account
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               /* ── TOURNAMENT TRACKER DASHBOARD ── */
@@ -2811,6 +2883,9 @@ export default function BowlsTracker() {
             phoneRequests={phoneRequests}
             approvePhoneRequest={approvePhoneRequest}
             declinePhoneRequest={declinePhoneRequest}
+            joinRequests={joinRequests}
+            approveJoinRequest={approveJoinRequest}
+            declineJoinRequest={declineJoinRequest}
           />
         )}
 
