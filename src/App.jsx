@@ -777,15 +777,16 @@ export default function BowlsTracker() {
   async function exportBackup() {
     const data = JSON.stringify({ entries, myName, exportedAt: new Date().toISOString() }, null, 2);
     const fileName = `ipbc-bowls-${new Date().toISOString().split("T")[0]}.json`;
-    const blob = new Blob([data], { type: "application/json" });
+    const blob = new Blob([data], { type: "application/octet-stream" });
+    const file = new File([blob], fileName, { type: "application/octet-stream" });
 
     // Use native share sheet on mobile (lets user pick Google Drive, iCloud, WhatsApp, email etc.)
-    if (navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: "application/json" })] })) {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({
           title: "IPBC Bowls Backup",
           text: "My IPBC Bowls tournament data",
-          files: [new File([blob], fileName, { type: "application/json" })],
+          files: [file],
         });
         setBackupMsg("Shared successfully");
         setTimeout(() => setBackupMsg(null), 3000);
