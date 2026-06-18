@@ -939,8 +939,17 @@ export default function BowlsTracker() {
     e.target.value = "";
   }
 
+  function BowlsBallIcon({ size = 22, strokeWidth = 1.5, color = "currentColor" }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="9" cy="9" r="2" fill={color} stroke="none" />
+      </svg>
+    );
+  }
+
   const TABS = [
-    { id: "myties",      label: "My Ties",   Icon: Crosshair  },
+    { id: "myties",      label: "My Ties",   Icon: BowlsBallIcon },
     { id: "search",      label: "Find",      Icon: Binoculars },
     { id: "honours",     label: "Honours",   Icon: Award      },
     { id: "fixtures",    label: "Fixtures",  Icon: Calendar   },
