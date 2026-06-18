@@ -1243,7 +1243,7 @@ export default function BowlsTracker() {
                       )}
 
                       {/* ── Match Secretary contact strip ── */}
-                      <a href="tel:07700900000" style={{ display: "flex", alignItems: "center", gap: "10px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", textDecoration: "none" }}>
+                      <a href="tel:+447402348205" style={{ display: "flex", alignItems: "center", gap: "10px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", textDecoration: "none" }}>
                         <div style={{ width: "34px", height: "34px", borderRadius: "8px", background: `${GREEN}10`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                           <Phone size={15} strokeWidth={2} color={GREEN} />
                         </div>
