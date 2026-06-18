@@ -1006,18 +1006,17 @@ export default function BowlsTracker() {
           <div style={{ display: "flex", alignItems: "center", gap: "12px", paddingTop: "12px", paddingBottom: "12px" }}>
 
             {/* Club crest */}
-            <img
-              src="/ipbc-badge.png"
-              alt="Irvine Park Bowling Club"
-              style={{ height: "52px", width: "auto", flexShrink: 0, objectFit: "contain" }}
-              onError={e => {
-                e.target.style.display = "none";
-                e.target.nextSibling.style.display = "flex";
-              }}
-            />
-            {/* Fallback monogram */}
-            <div style={{ display: "none", width: "44px", height: "44px", borderRadius: "50%", background: GREEN, alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: GOLD, letterSpacing: "1px" }}>IP</span>
+            <div style={{ width: "62px", height: "62px", borderRadius: "50%", border: `1.5px solid ${GOLD}`, background: `${GREEN}0a`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 2px 8px rgba(74,14,31,0.12)" }}>
+              <img
+                src="/ipbc-badge.png"
+                alt="Irvine Park Bowling Club"
+                style={{ height: "54px", width: "54px", objectFit: "contain" }}
+                onError={e => {
+                  e.target.style.display = "none";
+                  e.target.parentNode.querySelector(".crest-fallback").style.display = "flex";
+                }}
+              />
+              <span className="crest-fallback" style={{ display: "none", fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: GOLD, letterSpacing: "1px" }}>IP</span>
             </div>
 
             {/* Title — centred between crest and pill */}
