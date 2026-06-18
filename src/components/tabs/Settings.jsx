@@ -129,17 +129,17 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", marginBottom: "14px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", overflow: "hidden" }}>
         <SecHeader icon={Shield} label="Data & Backup" />
         <div style={{ padding: "14px 16px", borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "500", color: TEXT, marginBottom: "2px" }}>Backup All Data</div>
-          <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px" }}>Downloads a JSON file with all your tournament ties. Keep it safe.</div>
+          <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "500", color: TEXT, marginBottom: "2px" }}>Save a copy to your phone</div>
+          <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px" }}>Downloads your tournament ties as a file. Keep it somewhere safe — like your Downloads folder or iCloud.</div>
           <button onClick={exportBackup} style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "10px 20px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "inline-flex", alignItems: "center", gap: "8px", minHeight: "44px" }}>
-            <Download size={15} strokeWidth={2} /> Download Backup
+            <Download size={15} strokeWidth={2} /> Save a Copy
           </button>
         </div>
         <div style={{ padding: "14px 16px", borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "500", color: TEXT, marginBottom: "2px" }}>Restore from Backup</div>
-          <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px" }}>Load a previously saved backup file.</div>
+          <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "500", color: TEXT, marginBottom: "2px" }}>Load a saved copy</div>
+          <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px" }}>Got a copy from a previous backup? Load it here to restore your data.</div>
           <button onClick={() => backupFileRef.current?.click()} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT, padding: "10px 20px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "500", display: "inline-flex", alignItems: "center", gap: "8px", minHeight: "44px" }}>
-            <Upload size={15} strokeWidth={2} /> Restore Backup
+            <Upload size={15} strokeWidth={2} /> Load a Saved Copy
           </button>
           <input ref={backupFileRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleBackupImport} />
           {backupMsg && (

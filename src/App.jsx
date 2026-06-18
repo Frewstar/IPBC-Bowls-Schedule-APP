@@ -2546,7 +2546,7 @@ export default function BowlsTracker() {
                 {/* ══════════════════════════════════════════
             HELP TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "help" && <HelpTab seasonYear={settings.seasonYear || new Date().getFullYear()} />}
+        {activeTab === "help" && <HelpTab seasonYear={settings.seasonYear || new Date().getFullYear()} onBackup={exportBackup} />}
 
         {/* ══════════════════════════════════════════
             CLUB TAB

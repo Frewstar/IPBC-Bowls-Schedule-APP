@@ -33,7 +33,7 @@ function QA({ q, a }) {
   );
 }
 
-export default function HelpTab() {
+export default function HelpTab({ onBackup }) {
   return (
     <div style={{ maxWidth: "520px", margin: "0 auto", paddingBottom: "32px" }}>
 
@@ -78,7 +78,25 @@ export default function HelpTab() {
       <Card emoji="⚙️" title="Settings & text size">
         <Step num="1" text="Tap the ⚙️ gear icon at the top right of the screen." />
         <Step num="2" text="If the text is too small, tap Large or Extra Large under Text Size." />
-        <Step num="3" text='Use "Backup" to save your data. Use "Restore" to get it back on a new phone.' />
+      </Card>
+
+      <Card emoji="💾" title="Saving your data">
+        <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "14px" }}>
+          This app saves everything automatically on your phone — you don't need to do anything day to day. But if you ever get a new phone or accidentally clear your browser, your data could be lost.
+        </div>
+        <div style={{ background: `${GOLD}10`, border: `1px solid ${GOLD}30`, borderRadius: "8px", padding: "12px 14px", marginBottom: "16px" }}>
+          <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT, marginBottom: "6px" }}>💡 We recommend saving a copy at the end of each month</div>
+          <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5 }}>Tap the button below. On iPhone, the file will appear in your <strong>Downloads</strong> folder inside the Files app. On Android it goes straight to your Downloads.</div>
+        </div>
+        <button
+          onClick={onBackup}
+          style={{ width: "100%", background: GREEN, border: "none", borderRadius: "10px", color: "#fff", padding: "14px", fontSize: "15px", fontWeight: "700", cursor: "pointer", fontFamily: F_UI, display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginBottom: "12px", minHeight: "52px" }}>
+          💾 Save a Copy Now
+        </button>
+        <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT, marginBottom: "6px" }}>Moving to a new phone?</div>
+        <Step num="1" text="On this phone — tap Save a Copy Now above. The file downloads to your phone." />
+        <Step num="2" text="Move that file to your new phone — share it via WhatsApp, email, or AirDrop." />
+        <Step num="3" text='On the new phone — open this app, go to Settings, and tap "Load a Saved Copy".' />
       </Card>
 
       {/* Common questions */}
@@ -88,7 +106,7 @@ export default function HelpTab() {
         <QA q="My opponent isn't in the member list." a="Type their name into the search box and tap Add manually. They'll be saved for that tie." />
         <QA q="I entered the wrong score." a="Open the competition in My Ties and tap Edit Score on the round." />
         <QA q="What is the amber banner at the top?" a="It means one of your competitions needs attention — a round date is coming up, a match is today, or a date has passed. Tap it to see which competition." />
-        <QA q="How do I move the app to a new phone?" a="In Settings, tap Backup on your old phone to download your data. Then on the new phone, tap Restore and pick that file." />
+        <QA q="How do I move the app to a new phone?" a='In the Help tab, tap "Save a Copy Now". Send that file to your new phone (WhatsApp, email, or AirDrop all work). On the new phone, open Settings and tap "Load a Saved Copy".' />
         <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT, marginBottom: "5px" }}>❓ Question about the draw or your ties?</div>
         <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "10px" }}>Contact the Match Secretary — Matt Kirkland. He handles the draw, round dates, and competition queries.</div>
         <a href={`tel:${MATCH_SEC_PHONE}`} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: `${GOLD}12`, border: `1px solid ${GOLD}40`, borderRadius: "10px", padding: "10px 16px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700", marginBottom: "14px" }}>
