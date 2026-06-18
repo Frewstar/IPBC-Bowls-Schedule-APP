@@ -41,11 +41,8 @@ export default function HelpTab() {
       <div style={{ background: `linear-gradient(135deg, #6b1d2e, #3d0f1a)`, borderRadius: "16px", padding: "22px 20px", marginBottom: "16px", boxShadow: "0 4px 16px rgba(74,14,31,0.2)" }}>
         <div style={{ fontFamily: F_DISPLAY, fontSize: "26px", fontWeight: "700", color: "#fff", marginBottom: "6px" }}>How to use the app</div>
         <div style={{ fontFamily: F_UI, fontSize: "14px", color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>
-          Simple steps to get started. If you're stuck, call the Match Secretary — Matt Kirkland.
+          Simple steps to get started. If you have a question about your draw or a tie, contact the Match Secretary.
         </div>
-        <a href={`tel:${MATCH_SEC_PHONE}`} style={{ display: "inline-flex", alignItems: "center", gap: "7px", marginTop: "12px", background: "rgba(201,168,76,0.25)", border: "1px solid rgba(201,168,76,0.5)", borderRadius: "10px", padding: "9px 16px", color: "#e8c56a", textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700" }}>
-          <Phone size={14} strokeWidth={2} /> Call Matt Kirkland
-        </a>
       </div>
 
       <Card emoji="🎯" title="Tracking your ties">
@@ -92,8 +89,8 @@ export default function HelpTab() {
         <QA q="I entered the wrong score." a="Open the competition in My Ties and tap Edit Score on the round." />
         <QA q="What is the amber banner at the top?" a="It means one of your competitions needs attention — a round date is coming up, a match is today, or a date has passed. Tap it to see which competition." />
         <QA q="How do I move the app to a new phone?" a="In Settings, tap Backup on your old phone to download your data. Then on the new phone, tap Restore and pick that file." />
-        <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT, marginBottom: "5px" }}>❓ I'm still stuck.</div>
-        <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "10px" }}>Call the Match Secretary — Matt Kirkland.</div>
+        <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT, marginBottom: "5px" }}>❓ Question about the draw or your ties?</div>
+        <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "10px" }}>Contact the Match Secretary — Matt Kirkland. He handles the draw, round dates, and competition queries.</div>
         <a href={`tel:${MATCH_SEC_PHONE}`} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: `${GOLD}12`, border: `1px solid ${GOLD}40`, borderRadius: "10px", padding: "10px 16px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700" }}>
           <Phone size={14} strokeWidth={2} /> Call Matt Kirkland
         </a>
