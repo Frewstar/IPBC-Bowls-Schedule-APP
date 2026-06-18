@@ -66,6 +66,14 @@ export default function BowlsTracker() {
     });
   }
 
+  // ── First-time welcome overlay ──
+  const [showWelcome, setShowWelcome] = useState(() => !load("ipbc_welcome_seen", false));
+  const [welcomeStep, setWelcomeStep] = useState(0);
+  function dismissWelcome() {
+    save("ipbc_welcome_seen", true);
+    setShowWelcome(false);
+  }
+
   // ── iOS install banner ──
   const [showIosBanner, setShowIosBanner] = useState(() => {
     if (load("ipbc_ios_banner_dismissed", false)) return false;
@@ -1022,6 +1030,68 @@ export default function BowlsTracker() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── WELCOME OVERLAY ── */}
+      {showWelcome && (() => {
+        const steps = [
+          {
+            icon: "🎯",
+            title: "Track your ties",
+            body: "Add your competitions and record each round as you play. Your whole tournament journey in one place.",
+          },
+          {
+            icon: "📋",
+            title: "Find members",
+            body: "Look up any club member's name and phone number instantly. Tap a number to call them directly.",
+          },
+          {
+            icon: "📅",
+            title: "Check the draw",
+            body: "See this season's fixtures and check your round deadlines so you never miss a tie.",
+          },
+        ];
+        const step = steps[welcomeStep];
+        const isLast = welcomeStep === steps.length - 1;
+        return (
+          <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+            <div style={{ background: SURFACE, borderRadius: "20px", width: "100%", maxWidth: "360px", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
+              {/* Progress dots */}
+              <div style={{ display: "flex", justifyContent: "center", gap: "6px", paddingTop: "20px" }}>
+                {steps.map((_, i) => (
+                  <div key={i} style={{ width: i === welcomeStep ? "20px" : "7px", height: "7px", borderRadius: "4px", background: i === welcomeStep ? GREEN : BORDER, transition: "all 0.25s" }} />
+                ))}
+              </div>
+              {/* Content */}
+              <div style={{ padding: "24px 28px 20px", textAlign: "center" }}>
+                <div style={{ fontSize: "52px", lineHeight: 1, marginBottom: "16px" }}>{step.icon}</div>
+                <div style={{ fontFamily: F_DISPLAY, fontSize: "26px", fontWeight: "700", color: GREEN, marginBottom: "10px" }}>{step.title}</div>
+                <div style={{ fontFamily: F_UI, fontSize: "15px", color: TEXT2, lineHeight: 1.6 }}>{step.body}</div>
+              </div>
+              {/* Buttons */}
+              <div style={{ padding: "0 24px 28px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                <button
+                  onClick={() => isLast ? dismissWelcome() : setWelcomeStep(s => s + 1)}
+                  style={{ width: "100%", background: GREEN, border: "none", borderRadius: "12px", color: "#fff", padding: "15px", fontSize: "16px", fontWeight: "700", cursor: "pointer", fontFamily: F_UI, letterSpacing: "0.02em" }}>
+                  {isLast ? "Get Started" : "Next"}
+                </button>
+                <button onClick={dismissWelcome} style={{ background: "none", border: "none", color: TEXT3, fontSize: "13px", cursor: "pointer", fontFamily: F_UI, padding: "4px" }}>
+                  Skip intro
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── FLOATING HELP BUTTON ── */}
+      {!showWelcome && (
+        <button
+          onClick={() => setActiveTab("help")}
+          aria-label="Help"
+          style={{ position: "fixed", bottom: "80px", right: "16px", zIndex: 100, width: "46px", height: "46px", borderRadius: "50%", background: GREEN, border: `2px solid ${GOLD}`, boxShadow: "0 4px 16px rgba(74,14,31,0.3)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          <HelpCircle size={22} strokeWidth={1.75} color={GOLD} />
+        </button>
       )}
 
       {/* ── HEADER ── */}

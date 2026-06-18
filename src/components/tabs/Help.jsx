@@ -1,157 +1,104 @@
-import { Target, Search, Trophy, Calendar, Users, Settings, BookOpen, Star, Bell, AlertTriangle } from "lucide-react";
-import { GREEN, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_DISPLAY, F_UI } from "../../lib/theme.js";
+import { GREEN, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
+import { Phone } from "lucide-react";
 
-function HelpSection({ icon: Icon, iconColor = GREEN, title, children }) {
+const MATCH_SEC_PHONE = "+447402348205";
+
+function Card({ emoji, title, children }) {
   return (
-    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", marginBottom: "12px", overflow: "hidden", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
-      <div style={{ background: SURFACE2, padding: "12px 16px", display: "flex", alignItems: "center", gap: "10px", borderBottom: `1px solid ${BORDER}` }}>
-        <div style={{ width: "28px", height: "28px", borderRadius: "7px", background: `${iconColor}14`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <Icon size={15} strokeWidth={2} color={iconColor} />
-        </div>
-        <div style={{ fontFamily: F_DISPLAY, fontSize: "17px", fontWeight: "600", color: TEXT }}>{title}</div>
+    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "14px", marginBottom: "12px", overflow: "hidden", boxShadow: "0 1px 4px rgba(74,14,31,0.06)" }}>
+      <div style={{ background: SURFACE2, padding: "14px 16px", display: "flex", alignItems: "center", gap: "12px", borderBottom: `1px solid ${BORDER}` }}>
+        <span style={{ fontSize: "22px", lineHeight: 1 }}>{emoji}</span>
+        <div style={{ fontFamily: F_DISPLAY, fontSize: "19px", fontWeight: "700", color: GREEN }}>{title}</div>
       </div>
-      <div style={{ padding: "14px 16px" }}>{children}</div>
+      <div style={{ padding: "16px" }}>{children}</div>
     </div>
   );
 }
 
 function Step({ num, text }) {
   return (
-    <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", marginBottom: "10px" }}>
-      <div style={{ width: "22px", height: "22px", borderRadius: "50%", background: GREEN, color: "#fff", fontFamily: F_UI, fontSize: "11px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: "1px" }}>{num}</div>
-      <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT, lineHeight: 1.5 }}>{text}</div>
+    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", marginBottom: "12px" }}>
+      <div style={{ width: "26px", height: "26px", borderRadius: "50%", background: GREEN, color: "#fff", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{num}</div>
+      <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT, lineHeight: 1.6, paddingTop: "3px" }}>{text}</div>
     </div>
   );
 }
 
-function Tip({ text }) {
+function QA({ q, a }) {
   return (
-    <div style={{ display: "flex", gap: "8px", alignItems: "flex-start", padding: "8px 10px", background: `${GOLD}08`, borderRadius: "7px", marginBottom: "8px", border: `1px solid ${GOLD}22` }}>
-      <Star size={13} strokeWidth={2} color={GOLD_MUTED} style={{ flexShrink: 0, marginTop: "2px" }} />
-      <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>{text}</div>
+    <div style={{ borderBottom: `1px solid ${BORDER}`, paddingBottom: "14px", marginBottom: "14px" }}>
+      <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT, marginBottom: "5px" }}>❓ {q}</div>
+      <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6 }}>{a}</div>
     </div>
   );
 }
 
-export default function HelpTab({ seasonYear }) {
+export default function HelpTab() {
   return (
-    <div style={{ maxWidth: "520px", margin: "0 auto" }}>
-      <div style={{ background: GREEN, borderRadius: "12px", padding: "20px", marginBottom: "16px", boxShadow: "0 4px 16px rgba(74,14,31,0.15)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-          <BookOpen size={24} strokeWidth={1.5} color={GOLD} />
-          <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: "#fff" }}>How to Use the App</div>
+    <div style={{ maxWidth: "520px", margin: "0 auto", paddingBottom: "32px" }}>
+
+      {/* Hero */}
+      <div style={{ background: `linear-gradient(135deg, #6b1d2e, #3d0f1a)`, borderRadius: "16px", padding: "22px 20px", marginBottom: "16px", boxShadow: "0 4px 16px rgba(74,14,31,0.2)" }}>
+        <div style={{ fontFamily: F_DISPLAY, fontSize: "26px", fontWeight: "700", color: "#fff", marginBottom: "6px" }}>How to use the app</div>
+        <div style={{ fontFamily: F_UI, fontSize: "14px", color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>
+          Simple steps to get started. If you're stuck, call the Match Secretary — Matt Kirkland.
         </div>
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>
-          This app helps you track your tournament ties, find draw games, and view the {seasonYear || new Date().getFullYear()} fixture list — all in one place on your phone.
-        </div>
+        <a href={`tel:${MATCH_SEC_PHONE}`} style={{ display: "inline-flex", alignItems: "center", gap: "7px", marginTop: "12px", background: "rgba(201,168,76,0.25)", border: "1px solid rgba(201,168,76,0.5)", borderRadius: "10px", padding: "9px 16px", color: "#e8c56a", textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700" }}>
+          <Phone size={14} strokeWidth={2} /> Call Matt Kirkland
+        </a>
       </div>
 
-      <HelpSection icon={Target} title="My Ties — Your Tournament Tracker">
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
-          This is your main page. It tracks every competition you're playing in and who you face each round.
-        </div>
-        <Step num="1" text="Tap + Enter Tournament and pick your competition (e.g. Championship, Mitchell Handicap)." />
-        <Step num="2" text="Choose how many rounds the competition has — usually 4 to 6." />
-        <Step num="3" text="Search for your opponent by surname, or type their name if they're not in the list." />
-        <Step num="4" text="After you play, tap Enter Score to record the result." />
+      <Card emoji="🎯" title="Tracking your ties">
+        <Step num="1" text='Tap "My Ties" at the bottom of the screen.' />
+        <Step num="2" text='Tap the big burgundy "+ Enter Tournament" button and pick your competition.' />
+        <Step num="3" text="Search for your first-round opponent by their surname." />
+        <Step num="4" text="After your match, open the competition and tap Enter Score." />
         <Step num="5" text="If you win, tap Next Round to add your next opponent." />
-        <Tip text="Got a bye? Tap the Bye button instead of entering a score — you'll advance automatically." />
-        <Tip text="Tap History to see your full head-to-head record against any player." />
-        <Tip text="Use Setup Season at the start of the year to enter all your competitions at once." />
-      </HelpSection>
-
-      <HelpSection icon={Search} title="Find — Search Draw Results">
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
-          Look up draw games by a player's surname. See who played who and when.
+        <div style={{ background: `${GOLD}10`, border: `1px solid ${GOLD}30`, borderRadius: "8px", padding: "10px 12px", fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5 }}>
+          💡 <strong>Got a bye?</strong> Tap the Bye button instead of entering a score. You'll move on automatically.
         </div>
-        <Step num="1" text="Type any player's surname into the search box." />
-        <Step num="2" text="All their draw games appear below, sorted by competition." />
-        <Step num="3" text="Tap a player's name on any card to search for them instead." />
-        <Tip text="Great for checking who you've been drawn against before the game." />
-      </HelpSection>
+      </Card>
 
-      <HelpSection icon={Trophy} title="Draws — Your Competition Entries">
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
-          See all the competitions you are entered in — your personal tournament journey.
-        </div>
-        <Step num="1" text="Tap any competition card to see your full round-by-round progress." />
-        <Step num="2" text="Active = still in. Champion = tournament winner. Eliminated = knocked out." />
-        <Tip text="Add competitions in My Ties using the + Enter Tournament button." />
-      </HelpSection>
+      <Card emoji="👥" title="Finding a member's number">
+        <Step num="1" text='Tap "Members" at the bottom of the screen.' />
+        <Step num="2" text="Type their surname in the search box." />
+        <Step num="3" text="Tap the gold phone number to call them directly." />
+      </Card>
 
-      <HelpSection icon={Calendar} title={`Fixtures — ${seasonYear || new Date().getFullYear()} Match Calendar`}>
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
-          The full {seasonYear || new Date().getFullYear()} fixture list for Irvine Park BC — home and away games, club events, and competitions.
+      <Card emoji="📅" title="Checking fixtures & deadlines">
+        <Step num="1" text="Tap Fixtures to see this season's full match calendar." />
+        <Step num="2" text="On your tie card in My Ties, the Must play by date is the club deadline for that round." />
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 12px", fontFamily: F_UI, fontSize: "13px", color: "#b91c1c", lineHeight: 1.5 }}>
+          ⚠️ <strong>Important:</strong> If a tie isn't played by the deadline, both players are put out. If you've agreed an extension, make sure it's logged in the draw book in the clubhouse.
         </div>
-        <Step num="1" text="Your next upcoming fixture appears at the top in burgundy." />
-        <Step num="2" text="The next 5 upcoming fixtures are shown by default." />
-        <Step num="3" text="Tap See all fixtures to view the full season." />
-        <Tip text="Green badge = Home. Gold badge = Away." />
-      </HelpSection>
+      </Card>
 
-      <HelpSection icon={Users} title="Members — Club Directory">
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
-          Browse and search the full club membership list. Tap a phone number to call directly.
-        </div>
-        <Step num="1" text="Type in the search box to instantly find any member by surname." />
-        <Step num="2" text="Tap the letter index on the right to jump to a surname section." />
-        <Step num="3" text="Tap a gold phone number to call that member directly." />
-        <Tip text="You can import a member list from a CSV file — columns should be Name, Phone, Section." />
-      </HelpSection>
+      <Card emoji="🔍" title="Searching the draw">
+        <Step num="1" text='Tap "Find" at the bottom.' />
+        <Step num="2" text="Type any player's surname to see who they've been drawn against." />
+      </Card>
 
-      <HelpSection icon={Settings} title="Settings — Personalise the App">
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
-          Access Settings using the gear icon at the top right of the screen.
-        </div>
-        <Step num="1" text="Change your name — this appears on all your tie cards." />
-        <Step num="2" text="Set your default section (Gents or Ladies)." />
-        <Step num="3" text="Increase text size if the app is hard to read — try Large or Extra Large." />
-        <Step num="4" text="Use Backup to download your tournament data regularly." />
-        <Tip text="If you get a new phone, use Backup on your old one and Restore on your new one." />
-      </HelpSection>
+      <Card emoji="⚙️" title="Settings & text size">
+        <Step num="1" text="Tap the ⚙️ gear icon at the top right of the screen." />
+        <Step num="2" text="If the text is too small, tap Large or Extra Large under Text Size." />
+        <Step num="3" text='Use "Backup" to save your data. Use "Restore" to get it back on a new phone.' />
+      </Card>
 
-      <HelpSection icon={Bell} iconColor={GOLD_MUTED} title="Tie Reminders">
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
-          When a round needs your attention, an amber banner appears at the top of My Ties. Tap it to see which competitions are flagged and why.
-        </div>
-        <Step num="1" text="No opponent set and the round date is within 5 days — time to arrange the game." />
-        <Step num="2" text="Opponent and date are set, and the match is today or tomorrow." />
-        <Step num="3" text="The round date has passed with no score entered yet — see the note on round deadlines below." />
-        <Tip text="To turn reminders off, go to Settings and switch off 'Show tie reminders'." />
-      </HelpSection>
-
-      <HelpSection icon={AlertTriangle} iconColor={LOSS_RED} title="Round Deadlines">
-        <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
-          Each round in IPBC competitions has a deadline date set by the club. It's important to know the rule.
-        </div>
-        <Step num="1" text="If a tie isn't played by its round date, both players are put out of that competition." />
-        <Step num="2" text="The only exception is if an extension has been agreed and logged in the manual draw book in the clubhouse." />
-        <Step num="3" text="The app will flag a passed round date, but it will never assume you're out — only you know whether an extension was arranged." />
-        <Tip text="If in doubt, check the draw book in the clubhouse or speak to the competition secretary." />
-      </HelpSection>
-
-      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "12px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
-        <div style={{ background: SURFACE2, padding: "12px 16px", borderBottom: `1px solid ${BORDER}`, fontFamily: F_DISPLAY, fontSize: "17px", fontWeight: "600", color: TEXT }}>Common Questions</div>
-        <div style={{ padding: "14px 16px" }}>
-          {[
-            { q: "Will I lose my data if I close the app?", a: "No — everything is saved automatically to your phone. As long as you don't clear your browser data, it'll be there next time." },
-            { q: "Can I use it on a different phone?", a: "Use the Backup button to download your data, then use Restore on the new phone. Data doesn't sync between devices automatically." },
-            { q: "My opponent isn't in the member list — what do I do?", a: "Type their name into the opponent search box and tap Add manually. They'll be saved for that tie." },
-            { q: "I entered the wrong score — can I fix it?", a: "Yes. Open the competition in My Ties and tap Edit Score on the tie card." },
-            { q: "How do I add multiple competitions at once?", a: "In My Ties, tap Setup Season. You can select all your competitions and set first-round opponents in one go." },
-            { q: "What does the amber reminder banner mean?", a: "One of your competitions needs attention — either a round date is coming up with no opponent set, a match is today or tomorrow, or a round date has passed with no score entered. Tap the banner to see which competitions are flagged." },
-          ].map(({ q, a }, i, arr) => (
-            <div key={i} style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none", paddingBottom: i < arr.length - 1 ? "12px" : "0", marginBottom: i < arr.length - 1 ? "12px" : "0" }}>
-              <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT, marginBottom: "4px" }}>{q}</div>
-              <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.6 }}>{a}</div>
-            </div>
-          ))}
-        </div>
+      {/* Common questions */}
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "14px", padding: "16px", marginBottom: "12px", boxShadow: "0 1px 4px rgba(74,14,31,0.06)" }}>
+        <div style={{ fontFamily: F_DISPLAY, fontSize: "19px", fontWeight: "700", color: GREEN, marginBottom: "14px" }}>Common questions</div>
+        <QA q="Will I lose my data?" a="No — everything saves automatically to your phone. As long as you don't clear your browser data, it'll be there next time you open the app." />
+        <QA q="My opponent isn't in the member list." a="Type their name into the search box and tap Add manually. They'll be saved for that tie." />
+        <QA q="I entered the wrong score." a="Open the competition in My Ties and tap Edit Score on the round." />
+        <QA q="What is the amber banner at the top?" a="It means one of your competitions needs attention — a round date is coming up, a match is today, or a date has passed. Tap it to see which competition." />
+        <QA q="How do I move the app to a new phone?" a="In Settings, tap Backup on your old phone to download your data. Then on the new phone, tap Restore and pick that file." />
+        <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT, marginBottom: "5px" }}>❓ I'm still stuck.</div>
+        <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "10px" }}>Call the Match Secretary — Matt Kirkland.</div>
+        <a href={`tel:${MATCH_SEC_PHONE}`} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: `${GOLD}12`, border: `1px solid ${GOLD}40`, borderRadius: "10px", padding: "10px 16px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "700" }}>
+          <Phone size={14} strokeWidth={2} /> Call Matt Kirkland
+        </a>
       </div>
 
-      <div style={{ textAlign: "center", padding: "8px", fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
-        Need more help? Ask at the clubhouse.
-      </div>
     </div>
   );
 }
