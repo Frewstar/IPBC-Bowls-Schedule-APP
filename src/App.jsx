@@ -141,6 +141,9 @@ export default function BowlsTracker() {
   const [activeSection, setActiveSection] = useState(
     () => load(SETTINGS_KEY, { defaultSection: "gents" }).defaultSection || "gents"
   );
+  const [seniorMode, setSeniorMode] = useState(false);
+  // seniorMode modifies activeSection: gents+senior → "gents-seniors", ladies+senior → "ladies-seniors"
+  const effectiveSection = seniorMode ? `${activeSection}-seniors` : activeSection;
   const accentColor = activeSection === "ladies" ? LADIES_MID : GOLD;
   const accentDark  = activeSection === "ladies" ? LADIES     : GREEN;
 
@@ -237,7 +240,7 @@ export default function BowlsTracker() {
     if (!editOppSearch || editOppSearch.length < 2) return [];
     const q = editOppSearch.toUpperCase();
     return members
-      .filter(m => (m.section || "gents") === activeSection)
+      .filter(m => (m.section || "gents") === memberSection)
       .filter(m => m.name.toUpperCase().includes(q))
       .slice(0, 6);
   }, [editOppSearch, members, activeSection]);
@@ -245,25 +248,25 @@ export default function BowlsTracker() {
   const entryPartnerResults = useMemo(() => {
     if (!entryPartnerSearch || entryPartnerSearch.length < 2) return [];
     const q = entryPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === memberSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [entryPartnerSearch, members, activeSection]);
 
   const nextOppPartnerResults = useMemo(() => {
     if (!nextOppPartnerSearch || nextOppPartnerSearch.length < 2) return [];
     const q = nextOppPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === memberSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [nextOppPartnerSearch, members, activeSection]);
 
   const editOppPartnerResults = useMemo(() => {
     if (!editOppPartnerSearch || editOppPartnerSearch.length < 2) return [];
     const q = editOppPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === memberSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [editOppPartnerSearch, members, activeSection]);
 
   const editMyPartnerResults = useMemo(() => {
     if (!editMyPartnerSearch || editMyPartnerSearch.length < 2) return [];
     const q = editMyPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === memberSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [editMyPartnerSearch, members, activeSection]);
 
   function teamSizeFor(tournamentId) {
@@ -423,12 +426,18 @@ export default function BowlsTracker() {
   const [personalComps, setPersonalComps] = useState(() => load(PERSONAL_COMPS_KEY, []));
   useEffect(() => { save(PERSONAL_COMPS_KEY, personalComps); }, [personalComps]);
 
+  const memberSection = activeSection; // seniors are still gents or ladies members
+
   const TOURNAMENTS = useMemo(() => {
     const personal = personalComps
-      .filter(c => c.owner === myName && ((c.section || "gents") === activeSection))
+      .filter(c => c.owner === myName && ((c.section || "gents") === effectiveSection))
       .map(c => ({ ...c, source: "personal", sourceLabel: "Personal" }));
-    return [...baseTournaments, ...personal];
-  }, [baseTournaments, personalComps, myName, activeSection]);
+    // seniors see their base section comps + seniors-specific comps
+    const base = seniorMode
+      ? baseTournaments.filter(t => t.section === activeSection || t.section === effectiveSection)
+      : baseTournaments.filter(t => t.section === activeSection);
+    return [...base, ...personal];
+  }, [baseTournaments, personalComps, myName, activeSection, seniorMode, effectiveSection]);
 
   // ── Fixtures (Supabase-first, fallback to hardcoded) ──
   const [fixtures, setFixtures] = useState(() => FIXTURES.map(f => ({ ...f })));
@@ -453,6 +462,49 @@ export default function BowlsTracker() {
     supabase.from("club_config").select("value").eq("key", "honorary_members").maybeSingle()
       .then(({ data }) => { if (data?.value) setHonoraryMembers(data.value); });
   }, []);
+
+  // ── Fixture mutations ──
+  async function addFixture(data) {
+    const tempId = `temp-${Date.now()}`;
+    const newFix = { ...data, id: tempId, date: new Date(data.event_date + "T12:00:00") };
+    setFixtures(prev => [...prev, newFix].sort((a, b) => a.date - b.date));
+    const { data: inserted, error } = await supabase.from("club_fixtures").insert(data).select().single();
+    if (error) { setFixtures(prev => prev.filter(f => f.id !== tempId)); return; }
+    setFixtures(prev => prev.map(f => f.id === tempId ? { ...inserted, date: new Date(inserted.event_date + "T12:00:00") } : f));
+  }
+  async function editFixture(id, data) {
+    const prev = fixtures.find(f => f.id === id);
+    setFixtures(f => f.map(x => x.id === id ? { ...x, ...data, date: new Date(data.event_date + "T12:00:00") } : x));
+    const { error } = await supabase.from("club_fixtures").update(data).eq("id", id);
+    if (error) setFixtures(f => f.map(x => x.id === id ? prev : x));
+  }
+  async function deleteFixture(id) {
+    setFixtures(prev => prev.filter(f => f.id !== id));
+    await supabase.from("club_fixtures").delete().eq("id", id);
+  }
+
+  // ── Roll of Honour mutations ──
+  async function recordWinner(compId, year, winner) {
+    const comp = rollOfHonour.find(c => c.id === compId);
+    if (!comp) return;
+    const existing = comp.winners.filter(w => w.year !== year);
+    const updated = [{ year, winner }, ...existing].sort((a, b) => b.year - a.year);
+    setRollOfHonour(prev => prev.map(c => c.id === compId ? { ...c, winners: updated } : c));
+    await supabase.from("roll_of_honour").update({ winners: updated }).eq("id", compId);
+  }
+
+  // ── Honorary Members mutations ──
+  async function addHonoraryMember(name) {
+    if (!name.trim()) return;
+    const updated = [...honoraryMembers, name.trim()];
+    setHonoraryMembers(updated);
+    await supabase.from("club_config").upsert({ key: "honorary_members", value: updated }, { onConflict: "key" });
+  }
+  async function removeHonoraryMember(name) {
+    const updated = honoraryMembers.filter(n => n !== name);
+    setHonoraryMembers(updated);
+    await supabase.from("club_config").upsert({ key: "honorary_members", value: updated }, { onConflict: "key" });
+  }
 
   const [showManageCompsSheet, setShowManageCompsSheet] = useState(false);
   const [editCompId, setEditCompId] = useState(null);
@@ -496,7 +548,7 @@ export default function BowlsTracker() {
     } else if (editCompId && editCompSource === "personal") {
       setPersonalComps(prev => prev.map(c => c.id === editCompId && c.owner === myName ? { ...c, name: compFormName.trim(), type: compFormType, color: compFormColor } : c));
     } else if (editCompSource === "personal") {
-      setPersonalComps(prev => [...prev, { id: `personal-${Date.now()}`, owner: myName, section: activeSection, name: compFormName.trim(), type: compFormType, color: compFormColor, rounds: [], custom: true, source: "personal" }]);
+      setPersonalComps(prev => [...prev, { id: `personal-${Date.now()}`, owner: myName, section: effectiveSection, name: compFormName.trim(), type: compFormType, color: compFormColor, rounds: [], custom: true, source: "personal" }]);
     } else {
       // New IPBC competition — insert to Supabase
       const newId = `custom-${Date.now()}`;
@@ -659,20 +711,20 @@ export default function BowlsTracker() {
   }, [activeSection]);
 
   // ── Derived ──
-  const sectionMembers = useMemo(() => members.filter(m => (m.section || "gents") === activeSection), [members, activeSection]);
+  const sectionMembers = useMemo(() => members.filter(m => (m.section || "gents") === memberSection), [members, activeSection]);
 
   const myTiesList = useMemo(() =>
     Object.values(ties)
-      .filter(t => t.myName === myName && ((t.section || "gents") === activeSection))
+      .filter(t => t.myName === myName && ((t.section || "gents") === effectiveSection))
       .sort((a, b) => a.tournamentId.localeCompare(b.tournamentId) || a.roundIdx - b.roundIdx),
-    [ties, myName, activeSection]
+    [ties, myName, effectiveSection]
   );
   const wins   = myTiesList.filter(t => t.result === "W").length;
   const losses = myTiesList.filter(t => t.result === "L").length;
 
   const myEntries = useMemo(
-    () => entries.filter(e => e && e.myName?.replace(/\s+/g,"").toUpperCase() === myName?.replace(/\s+/g,"").toUpperCase() && ((e.section || "gents") === activeSection)),
-    [entries, myName, activeSection]
+    () => entries.filter(e => e && e.myName?.replace(/\s+/g,"").toUpperCase() === myName?.replace(/\s+/g,"").toUpperCase() && ((e.section || "gents") === effectiveSection)),
+    [entries, myName, effectiveSection]
   );
 
   const [remindersExpanded, setRemindersExpanded] = useState(false);
@@ -788,7 +840,7 @@ export default function BowlsTracker() {
     setEntries(prev => [...prev, {
       id: `entry-${Date.now()}`,
       myName,
-      section: activeSection,
+      section: effectiveSection,
       tournamentId: entryTournId,
       tournamentName: tournName,
       tournamentColor: t?.color || GOLD,
@@ -972,6 +1024,29 @@ export default function BowlsTracker() {
       if (error) setMembers(prevMembers);
     });
   }
+  async function requestPhoneChange(memberId, memberName, currentPhone, requestedPhone) {
+    await supabase.from("phone_change_requests").insert({ member_id: memberId, member_name: memberName, current_phone: currentPhone, requested_phone: requestedPhone });
+  }
+
+  const [phoneRequests, setPhoneRequests] = useState([]);
+  useEffect(() => {
+    if (!isAdmin) return;
+    supabase.from("phone_change_requests").select("*").order("requested_at")
+      .then(({ data }) => { if (data) setPhoneRequests(data); });
+  }, [isAdmin]);
+
+  async function approvePhoneRequest(req) {
+    const prev = members;
+    setMembers(m => m.map(x => x.id === req.member_id ? { ...x, phone: req.requested_phone } : x));
+    setPhoneRequests(p => p.filter(r => r.id !== req.id));
+    await supabase.from("members").update({ phone: req.requested_phone, updated_at: new Date().toISOString() }).eq("id", req.member_id);
+    await supabase.from("phone_change_requests").delete().eq("id", req.id);
+  }
+
+  async function declinePhoneRequest(reqId) {
+    setPhoneRequests(p => p.filter(r => r.id !== reqId));
+    await supabase.from("phone_change_requests").delete().eq("id", reqId);
+  }
   function deleteMember(id) {
     const prevMembers = members;
     setMembers(prev => prev.filter(m => m.id !== id));
@@ -1042,18 +1117,30 @@ export default function BowlsTracker() {
   // ── Section toggle ──
   function SectionToggle({ style = {} }) {
     return (
-      <div style={{ display: "inline-flex", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "2px", ...style }}>
-        {["gents","ladies"].map(s => (
-          <button key={s} onClick={() => setActiveSection(s)} style={{
-            background: activeSection === s ? MID : "transparent",
-            border: "none", borderRadius: "4px",
-            color: activeSection === s ? "#ffffff" : TEXT2,
-            padding: "5px 14px", fontSize: "11px", cursor: "pointer",
-            fontFamily: F_UI, fontWeight: activeSection === s ? "600" : "400",
-            letterSpacing: "0.08em", textTransform: "uppercase",
-            transition: "all 0.15s",
-          }}>{s === "gents" ? "Gents" : "Ladies"}</button>
-        ))}
+      <div style={{ display: "inline-flex", flexDirection: "column", gap: "4px", ...style }}>
+        <div style={{ display: "inline-flex", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "2px" }}>
+          {[["gents","Gents"],["ladies","Ladies"]].map(([s, label]) => (
+            <button key={s} onClick={() => setActiveSection(s)} style={{
+              background: activeSection === s ? MID : "transparent",
+              border: "none", borderRadius: "4px",
+              color: activeSection === s ? "#ffffff" : TEXT2,
+              padding: "5px 14px", fontSize: "11px", cursor: "pointer",
+              fontFamily: F_UI, fontWeight: activeSection === s ? "600" : "400",
+              letterSpacing: "0.08em", textTransform: "uppercase",
+              transition: "all 0.15s",
+            }}>{label}</button>
+          ))}
+        </div>
+        <button onClick={() => setSeniorMode(v => !v)} style={{
+          background: seniorMode ? `${GOLD}22` : "transparent",
+          border: `1px solid ${seniorMode ? GOLD : BORDER}`,
+          borderRadius: "5px", padding: "3px 10px",
+          fontSize: "10px", cursor: "pointer", fontFamily: F_UI,
+          fontWeight: seniorMode ? "700" : "400",
+          color: seniorMode ? GOLD : TEXT3,
+          letterSpacing: "0.1em", textTransform: "uppercase",
+          transition: "all 0.15s", alignSelf: "stretch", textAlign: "center",
+        }}>Seniors</button>
       </div>
     );
   }
@@ -1196,7 +1283,7 @@ export default function BowlsTracker() {
                 Irvine Park Bowling Club
               </div>
               <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "500", color: GOLD_MUTED, letterSpacing: "0.15em", textTransform: "uppercase", marginTop: "3px" }}>
-                {activeSection === "ladies" ? "Ladies Section" : "Gents Section"} · {settings.seasonYear || new Date().getFullYear()}
+                {activeSection === "ladies" ? (seniorMode ? "Ladies Seniors" : "Ladies Section") : (seniorMode ? "Gents Seniors" : "Gents Section")} · {settings.seasonYear || new Date().getFullYear()}
               </div>
             </div>
 
@@ -2693,7 +2780,7 @@ export default function BowlsTracker() {
             FIXTURES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "fixtures" && (
-          <FixturesTab fixtures={fixtures} fixturesExpanded={fixturesExpanded} setFixturesExpanded={setFixturesExpanded} seasonYear={settings.seasonYear || new Date().getFullYear()} />
+          <FixturesTab fixtures={fixtures} fixturesExpanded={fixturesExpanded} setFixturesExpanded={setFixturesExpanded} seasonYear={settings.seasonYear || new Date().getFullYear()} isAdmin={isAdmin} addFixture={addFixture} editFixture={editFixture} deleteFixture={deleteFixture} />
         )}
                 {/* ══════════════════════════════════════════
             MEMBERS TAB
@@ -2723,6 +2810,11 @@ export default function BowlsTracker() {
             addMember={addMember}
             isAdmin={isAdmin}
             isSuperAdmin={isSuperAdmin}
+            myName={myName}
+            requestPhoneChange={requestPhoneChange}
+            phoneRequests={phoneRequests}
+            approvePhoneRequest={approvePhoneRequest}
+            declinePhoneRequest={declinePhoneRequest}
           />
         )}
 
@@ -2775,7 +2867,7 @@ export default function BowlsTracker() {
         {/* ══════════════════════════════════════════
             CLUB TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "club" && <ClubTab members={members} rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} />}
+        {activeTab === "club" && <ClubTab members={members} rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} isAdmin={isAdmin} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
               </div>
 
       {/* ── MANAGE COMPETITIONS SHEET ── */}

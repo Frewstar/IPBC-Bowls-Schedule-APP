@@ -1,4 +1,5 @@
-import { Search, Download, Upload, Plus, Phone, Pencil, X } from "lucide-react";
+import { useState } from "react";
+import { Search, Download, Upload, Plus, Phone, Pencil, X, Check } from "lucide-react";
 import BottomSheet from "../BottomSheet.jsx";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { getSurname } from "../../lib/utils.js";
@@ -42,7 +43,23 @@ export default function MembersTab({
   addMember,
   isAdmin = false,
   isSuperAdmin = false,
+  myName = "",
+  requestPhoneChange,
+  phoneRequests = [],
+  approvePhoneRequest,
+  declinePhoneRequest,
 }) {
+  const [reqId, setReqId] = useState(null);
+  const [reqPhone, setReqPhone] = useState("");
+  const [reqSent, setReqSent] = useState(null); // member_id of last sent request
+
+  async function submitRequest(m) {
+    if (!reqPhone.trim()) return;
+    await requestPhoneChange(m.id, m.name, m.phone || "", reqPhone.trim());
+    setReqSent(m.id);
+    setReqId(null);
+  }
+
   return (
     <div style={{ position: "relative" }}>
       {/* ── Search-first header ── */}
@@ -60,18 +77,18 @@ export default function MembersTab({
           {filteredMembers.length} {activeSection} members
         </div>
         <div style={{ display: "flex", gap: "6px" }}>
-          <button onClick={downloadCSV} style={{ background: "transparent", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "11px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}>
-            <Download size={12} strokeWidth={1.75} /> CSV
-          </button>
-          <button onClick={() => fileInputRef.current?.click()} style={{ background: "transparent", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "11px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}>
-            <Upload size={12} strokeWidth={1.75} /> Upload
-          </button>
-          {isAdmin && (
+          {isAdmin && (<>
+            <button onClick={downloadCSV} style={{ background: "transparent", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "11px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}>
+              <Download size={12} strokeWidth={1.75} /> CSV
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} style={{ background: "transparent", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "11px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}>
+              <Upload size={12} strokeWidth={1.75} /> Import
+            </button>
             <button onClick={() => { setShowAddMemberSheet(true); setNewName(""); setNewPhone(""); setNewSection(activeSection); }}
               style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "7px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "inline-flex", alignItems: "center", gap: "5px" }}>
               <Plus size={14} strokeWidth={2.5} /> Add
             </button>
-          )}
+          </>)}
         </div>
       </div>
 
@@ -80,6 +97,30 @@ export default function MembersTab({
       {uploadMsg && (
         <div style={{ background: uploadMsg.startsWith("Error") ? "#fdf5f5" : "#f0fdf4", border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: uploadMsg.startsWith("Error") ? LOSS_RED : "#2d6a4f", marginBottom: "12px" }}>
           {uploadMsg}
+        </div>
+      )}
+
+      {/* ── Admin: pending phone change requests ── */}
+      {isAdmin && phoneRequests.length > 0 && (
+        <div style={{ background: `${GOLD}0d`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "14px" }}>
+          <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>
+            Pending Number Changes ({phoneRequests.length})
+          </div>
+          {phoneRequests.map(req => (
+            <div key={req.id} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", paddingBottom: "10px", marginBottom: "10px", borderBottom: `1px solid ${BORDER}` }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{req.member_name}</div>
+                <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginTop: "2px" }}>
+                  {req.current_phone ? <><span style={{ textDecoration: "line-through" }}>{req.current_phone}</span> → </> : "New: "}
+                  <span style={{ color: GREEN, fontWeight: "600" }}>{req.requested_phone}</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                <button onClick={() => approvePhoneRequest(req)} style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 12px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Approve</button>
+                <button onClick={() => declinePhoneRequest(req.id)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "6px 10px", fontSize: "12px", fontFamily: F_UI, cursor: "pointer" }}>Decline</button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -149,9 +190,39 @@ export default function MembersTab({
                             </span>
                           )}
                         </div>
-                        {m.phone
-                          ? <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "13px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500", minHeight: "30px" }}><Phone size={13} strokeWidth={1.75} />{m.phone}</a>
-                          : <span style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>No number</span>}
+                        {(() => {
+                          const isMe = myName && m.name === myName && !isAdmin;
+                          const requesting = reqId === m.id;
+                          const sent = reqSent === m.id;
+                          return (
+                            <>
+                              {m.phone
+                                ? <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "13px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500", minHeight: "30px" }}><Phone size={13} strokeWidth={1.75} />{m.phone}</a>
+                                : <span style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>No number</span>}
+                              {isMe && sent && (
+                                <div style={{ fontFamily: F_UI, fontSize: "11px", color: "#2d6a4f", marginTop: "4px" }}>Request sent — awaiting admin approval.</div>
+                              )}
+                              {isMe && !sent && !requesting && (
+                                <button onClick={() => { setReqId(m.id); setReqPhone(m.phone || ""); }} style={{ background: "none", border: "none", padding: "2px 0", cursor: "pointer", fontFamily: F_UI, fontSize: "11px", color: TEXT3, display: "inline-flex", alignItems: "center", gap: "4px", marginTop: "2px" }}>
+                                  <Pencil size={10} strokeWidth={1.75} /> {m.phone ? "Request number change" : "Add my number"}
+                                </button>
+                              )}
+                              {isMe && requesting && (
+                                <div style={{ display: "flex", gap: "6px", marginTop: "6px", alignItems: "center" }}>
+                                  <input autoFocus type="tel" value={reqPhone} onChange={e => setReqPhone(e.target.value)}
+                                    placeholder="07xxx xxxxxx"
+                                    style={{ flex: 1, padding: "7px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "14px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT, minWidth: 0 }} />
+                                  <button onClick={() => submitRequest(m)} disabled={!reqPhone.trim()} style={{ background: reqPhone.trim() ? GREEN : BORDER, border: "none", borderRadius: "7px", color: "#fff", padding: "7px 10px", cursor: reqPhone.trim() ? "pointer" : "default", display: "flex", alignItems: "center" }}>
+                                    <Check size={14} strokeWidth={2.5} />
+                                  </button>
+                                  <button onClick={() => setReqId(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT3, padding: "7px 10px", cursor: "pointer", display: "flex", alignItems: "center" }}>
+                                    <X size={14} strokeWidth={2} />
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                       {isAdmin && (
                         <div style={{ display: "flex", gap: "5px", flexShrink: 0 }}>

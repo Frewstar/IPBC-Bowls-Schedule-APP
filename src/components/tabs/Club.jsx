@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Trophy, Phone, ChevronDown, Shield, MapPin, Star, Clock } from "lucide-react";
-import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
+import { Trophy, Phone, ChevronDown, Shield, MapPin, Star, Clock, Plus, X } from "lucide-react";
+import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
 import { CLUB_POSITIONS } from "./Members.jsx";
 
-// Position display order for the committee section (Management Committee handled separately)
 const OFFICER_POSITIONS = CLUB_POSITIONS.filter(p => p && p !== "Management Committee");
 const POSITION_ORDER = Object.fromEntries(OFFICER_POSITIONS.map((p, i) => [p, i]));
 
@@ -37,18 +36,48 @@ const FACILITIES = [
   "Car Park (30+ spaces)",
 ];
 
-// ── Component ────────────────────────────────────────────────────────────────
-
-export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, honoraryMembers = HONORARY_MEMBERS }) {
+export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, honoraryMembers = HONORARY_MEMBERS, isAdmin = false, recordWinner, addHonoraryMember, removeHonoraryMember }) {
   const [expandedComp, setExpandedComp] = useState(null);
   const [committeeOpen, setCommitteeOpen] = useState(false);
 
-  // Build committee lists from member positions
-  const officers = members
-    .filter(m => m.position && m.position !== "Management Committee")
-    .sort((a, b) => (POSITION_ORDER[a.position] ?? 99) - (POSITION_ORDER[b.position] ?? 99));
-  const managementCommittee = members.filter(m => m.position === "Management Committee");
-  const hasAnyPositions = officers.length > 0 || managementCommittee.length > 0;
+  // Roll of Honour: recording winner
+  const [recordingComp, setRecordingComp] = useState(null);
+  const [winnerYear, setWinnerYear] = useState(String(new Date().getFullYear()));
+  const [winnerName, setWinnerName] = useState("");
+
+  // Honorary Members: adding
+  const [addingHon, setAddingHon] = useState(false);
+  const [newHonName, setNewHonName] = useState("");
+
+  function buildSection(section) {
+    const officers = members
+      .filter(m => m.section === section && m.position && m.position !== "Management Committee")
+      .sort((a, b) => (POSITION_ORDER[a.position] ?? 99) - (POSITION_ORDER[b.position] ?? 99));
+    const committee = members.filter(m => m.section === section && m.position === "Management Committee");
+    return { officers, committee };
+  }
+  const gents = buildSection("gents");
+  const ladies = buildSection("ladies");
+  const hasAnyPositions = gents.officers.length > 0 || gents.committee.length > 0 || ladies.officers.length > 0 || ladies.committee.length > 0;
+
+  function openRecord(comp) {
+    setRecordingComp(comp.id);
+    setWinnerYear(String(new Date().getFullYear()));
+    setWinnerName("");
+  }
+
+  async function saveWinner() {
+    if (!winnerName.trim()) return;
+    await recordWinner(recordingComp, parseInt(winnerYear, 10), winnerName.trim());
+    setRecordingComp(null);
+  }
+
+  async function saveHonMember() {
+    if (!newHonName.trim()) return;
+    await addHonoraryMember(newHonName.trim());
+    setNewHonName("");
+    setAddingHon(false);
+  }
 
   return (
     <div style={{ maxWidth: "520px", margin: "0 auto", paddingBottom: "32px" }}>
@@ -87,7 +116,6 @@ export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, h
         <Trophy size={16} strokeWidth={2} color={GOLD_MUTED} /> Roll of Honour
       </div>
 
-      {/* season-pending note */}
       <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px", paddingLeft: "2px" }}>
         Winners will appear here as this season's competitions conclude.
       </div>
@@ -95,8 +123,9 @@ export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, h
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 4px rgba(74,14,31,0.07)" }}>
         {rollOfHonour.map((comp, idx) => {
           const isOpen = expandedComp === comp.id;
+          const isRecording = recordingComp === comp.id;
           const latest = comp.winners[0];
-          const isPending = latest.winner === "TBC";
+          const isPending = !latest || latest.winner === "TBC";
           return (
             <div key={comp.id} style={{ borderBottom: idx < rollOfHonour.length - 1 ? `1px solid ${BORDER}` : "none" }}>
               <button
@@ -116,11 +145,42 @@ export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, h
                       </span>
                     )}
                   </div>
+                  {isAdmin && (
+                    <button
+                      onClick={e => { e.stopPropagation(); isRecording ? setRecordingComp(null) : openRecord(comp); }}
+                      style={{ background: isRecording ? SURFACE2 : `${GOLD}18`, border: `1px solid ${GOLD}44`, borderRadius: "6px", color: GOLD_MUTED, padding: "4px 10px", fontSize: "11px", fontFamily: F_UI, fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                      {isRecording ? "Cancel" : "Record Winner"}
+                    </button>
+                  )}
                   <ChevronDown size={13} strokeWidth={2} color={TEXT3}
                     style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
                 </div>
               </button>
-              {isOpen && (
+
+              {/* Record winner inline form */}
+              {isRecording && (
+                <div style={{ background: `${GOLD}0a`, borderTop: `1px solid ${GOLD}33`, padding: "12px 14px 14px 17px" }}>
+                  <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>Record {comp.name} Winner</div>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <div style={{ fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em" }}>Year</div>
+                      <input value={winnerYear} onChange={e => setWinnerYear(e.target.value)} type="number" min="1900" max="2100"
+                        style={{ width: "80px", padding: "9px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "14px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }} />
+                    </div>
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px", minWidth: "140px" }}>
+                      <div style={{ fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em" }}>Winner</div>
+                      <input placeholder="Member name" value={winnerName} onChange={e => setWinnerName(e.target.value)}
+                        style={{ width: "100%", boxSizing: "border-box", padding: "9px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "14px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }} />
+                    </div>
+                    <button onClick={saveWinner} disabled={!winnerName.trim()}
+                      style={{ background: winnerName.trim() ? MID : BORDER, border: "none", borderRadius: "7px", color: winnerName.trim() ? "#fff" : TEXT3, padding: "9px 14px", fontSize: "13px", fontFamily: F_UI, fontWeight: "700", cursor: winnerName.trim() ? "pointer" : "default", whiteSpace: "nowrap" }}>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isOpen && !isRecording && (
                 <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "10px 14px 10px 17px" }}>
                   <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Past Winners</div>
                   {isPending ? (
@@ -161,53 +221,88 @@ export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, h
             </div>
           ) : (
             <>
-              {/* Key officers — 2-col grid for first four */}
-              {officers.slice(0, 4).length > 0 && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: BORDER, borderBottom: `1px solid ${BORDER}` }}>
-                  {officers.slice(0, 4).map((m, i) => (
-                    <div key={m.id} style={{ background: SURFACE2, padding: "12px 14px" }}>
-                      <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700", marginBottom: "3px" }}>{m.position}</div>
-                      <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT }}>{m.name}</div>
-                      {m.phone ? <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, textDecoration: "none", fontWeight: "600" }}>{m.phone}</a> : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* Remaining officers */}
-              {officers.slice(4).map((m, i) => (
-                <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", borderBottom: i < officers.slice(4).length - 1 ? `1px solid ${BORDER}` : "none" }}>
-                  <div>
-                    <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700" }}>{m.position}</div>
-                    <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT }}>{m.name}</div>
-                  </div>
-                  {m.phone ? (
-                    <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "20px", padding: "4px 10px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "11px", fontWeight: "600" }}>
-                      <Phone size={10} strokeWidth={2} />{m.phone}
-                    </a>
-                  ) : null}
-                </div>
-              ))}
-              {/* Management Committee chips */}
-              {managementCommittee.length > 0 && (
-                <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "12px 16px", marginBottom: "0" }}>
-                  <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Management Committee</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {managementCommittee.map(m => (
-                      <div key={m.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: TEXT2 }}>{m.name}</div>
+              {[{ label: "Gents Section", data: gents }, { label: "Ladies Section", data: ladies }].map(({ label, data }) => {
+                if (data.officers.length === 0 && data.committee.length === 0) return null;
+                return (
+                  <div key={label} style={{ borderBottom: `1px solid ${BORDER}` }}>
+                    <div style={{ padding: "8px 16px", background: SURFACE2, fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.12em" }}>{label}</div>
+                    {data.officers.slice(0, 4).length > 0 && (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: BORDER, borderBottom: data.officers.length > 4 || data.committee.length > 0 ? `1px solid ${BORDER}` : "none" }}>
+                        {data.officers.slice(0, 4).map(m => (
+                          <div key={m.id} style={{ background: SURFACE, padding: "12px 14px" }}>
+                            <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700", marginBottom: "3px" }}>{m.position}</div>
+                            <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT }}>{m.name}</div>
+                            {m.phone ? <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, textDecoration: "none", fontWeight: "600" }}>{m.phone}</a> : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {data.officers.slice(4).map((m, i) => (
+                      <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", borderBottom: i < data.officers.slice(4).length - 1 || data.committee.length > 0 ? `1px solid ${BORDER}` : "none" }}>
+                        <div>
+                          <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700" }}>{m.position}</div>
+                          <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT }}>{m.name}</div>
+                        </div>
+                        {m.phone ? (
+                          <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "20px", padding: "4px 10px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "11px", fontWeight: "600" }}>
+                            <Phone size={10} strokeWidth={2} />{m.phone}
+                          </a>
+                        ) : null}
+                      </div>
                     ))}
+                    {data.committee.length > 0 && (
+                      <div style={{ background: SURFACE2, padding: "12px 16px" }}>
+                        <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Management Committee</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                          {data.committee.map(m => (
+                            <div key={m.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: TEXT2 }}>{m.name}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })}
             </>
           )}
-          {/* Honorary Members — always shown, still hardcoded */}
+
+          {/* Honorary Members */}
           <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "12px 16px" }}>
-            <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Honorary Members</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+              <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em" }}>Honorary Members</div>
+              {isAdmin && !addingHon && (
+                <button onClick={() => { setAddingHon(true); setNewHonName(""); }}
+                  style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "3px 9px", fontSize: "11px", fontFamily: F_UI, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                  <Plus size={11} strokeWidth={2.5} /> Add
+                </button>
+              )}
+            </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
               {honoraryMembers.map((name, i) => (
-                <div key={i} style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED, fontWeight: "600" }}>{name}</div>
+                <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: "4px", background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED, fontWeight: "600" }}>
+                  {name}
+                  {isAdmin && (
+                    <button onClick={() => removeHonoraryMember(name)} style={{ background: "none", border: "none", padding: "0 0 0 2px", cursor: "pointer", color: GOLD_MUTED, display: "flex", alignItems: "center", lineHeight: 1 }}>
+                      <X size={11} strokeWidth={2.5} />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
+            {addingHon && (
+              <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
+                <input autoFocus placeholder="e.g. A. Smith" value={newHonName} onChange={e => setNewHonName(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") saveHonMember(); if (e.key === "Escape") setAddingHon(false); }}
+                  style={{ flex: 1, padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "14px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }} />
+                <button onClick={saveHonMember} disabled={!newHonName.trim()}
+                  style={{ background: newHonName.trim() ? MID : BORDER, border: "none", borderRadius: "7px", color: newHonName.trim() ? "#fff" : TEXT3, padding: "8px 13px", fontSize: "13px", fontFamily: F_UI, fontWeight: "700", cursor: newHonName.trim() ? "pointer" : "default" }}>
+                  Add
+                </button>
+                <button onClick={() => setAddingHon(false)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT2, padding: "8px 10px", fontSize: "13px", fontFamily: F_UI, cursor: "pointer" }}>
+                  <X size={13} strokeWidth={2} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
