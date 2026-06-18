@@ -18,6 +18,7 @@ import { DEFAULT_TOURNAMENTS, FIXTURES, DRAW_ENTRIES, DEFAULT_MEMBERS } from "./
 import BottomSheet from "./components/BottomSheet.jsx";
 import SettingsTab from "./components/tabs/Settings.jsx";
 import HelpTab from "./components/tabs/Help.jsx";
+import ClubTab from "./components/tabs/Club.jsx";
 import FixturesTab from "./components/tabs/Fixtures.jsx";
 import FindTab from "./components/tabs/Find.jsx";
 import DrawsTab from "./components/tabs/Draws.jsx";
@@ -933,6 +934,7 @@ export default function BowlsTracker() {
     { id: "honours",     label: "Honours",   Icon: Medal    },
     { id: "fixtures",    label: "Fixtures",  Icon: Calendar },
     { id: "members",     label: "Members",   Icon: Users    },
+    { id: "club",        label: "Club",      Icon: Shield   },
   ];
 
   const selectedT = activeTournament ? TOURNAMENTS.find(t => t.id === activeTournament) : null;
@@ -2656,6 +2658,11 @@ export default function BowlsTracker() {
             HELP TAB
         ══════════════════════════════════════════ */}
         {activeTab === "help" && <HelpTab seasonYear={settings.seasonYear || new Date().getFullYear()} />}
+
+        {/* ══════════════════════════════════════════
+            CLUB TAB
+        ══════════════════════════════════════════ */}
+        {activeTab === "club" && <ClubTab />}
               </div>
 
       {/* ── MANAGE COMPETITIONS SHEET ── */}
