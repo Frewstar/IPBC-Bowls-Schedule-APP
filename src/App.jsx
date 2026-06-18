@@ -808,15 +808,11 @@ export default function BowlsTracker() {
   }, [search]);
 
   // ── Handlers ──
-  function saveName() {
-    if (!nameInput.trim()) return;
-    setNameStep("pin");
-  }
-  function savePin() {
-    if (!/^\d{4}$/.test(pinInput)) return;
+  function saveSignIn() {
+    if (!nameInput.trim() || pinInput.length !== 4) return;
     setMyName(nameInput.toUpperCase().trim());
     setMyPin(pinInput);
-    setNameStep("name");
+    setNameInput("");
     setPinInput("");
     setSettingName(false);
   }
@@ -1334,34 +1330,34 @@ export default function BowlsTracker() {
           <div>
             {(!myName || settingName) ? (
               <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "32px 24px", boxShadow: "0 2px 12px rgba(74,14,31,0.08)", textAlign: "center" }}>
-                {nameStep === "name" ? (
-                  <>
-                    <div style={{ fontFamily: F_SANS, fontSize: "28px", fontWeight: "600", color: GREEN, marginBottom: "6px" }}>Welcome</div>
-                    <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "24px" }}>Enter your name to track your tournament ties</div>
-                    <input value={nameInput} onChange={e => setNameInput(e.target.value.toUpperCase())}
-                      placeholder="e.g. J FREW" autoFocus
-                      onKeyDown={e => e.key === "Enter" && saveName()}
-                      style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "2px", marginBottom: "12px" }} />
-                    <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
-                      <button onClick={saveName} style={{ background: MID, border: "none", borderRadius: "8px", color: "#ffffff", padding: "11px 28px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", letterSpacing: "0.05em" }}>Next</button>
-                      {settingName && <button onClick={() => { setSettingName(false); setNameStep("name"); }} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontFamily: F_SANS, fontSize: "24px", fontWeight: "600", color: GREEN, marginBottom: "6px" }}>Choose a PIN</div>
-                    <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "6px" }}>Pick any 4-digit number — you'll need this if you switch phones or want to keep your data private.</div>
-                    <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "20px" }}>Setting up as: <strong>{nameInput.toUpperCase().trim()}</strong></div>
-                    <input value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                      placeholder="e.g. 1234" autoFocus inputMode="numeric" maxLength={4}
-                      onKeyDown={e => e.key === "Enter" && savePin()}
-                      style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px", marginBottom: "12px" }} />
-                    <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
-                      <button onClick={() => setNameStep("name")} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Back</button>
-                      <button onClick={savePin} disabled={pinInput.length !== 4} style={{ background: pinInput.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#ffffff", padding: "11px 28px", fontSize: "13px", cursor: pinInput.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "600", letterSpacing: "0.05em" }}>Confirm</button>
-                    </div>
-                  </>
-                )}
+                <div style={{ fontFamily: F_SANS, fontSize: "28px", fontWeight: "600", color: GREEN, marginBottom: "4px" }}>
+                  {settingName ? "Update Sign-in" : "Welcome"}
+                </div>
+                <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "24px", lineHeight: 1.5 }}>
+                  {settingName ? "Enter your name and PIN to switch account." : "Enter your name and PIN to get started. If you've used this app before, use the same details to restore your data."}
+                </div>
+                <div style={{ textAlign: "left", marginBottom: "12px" }}>
+                  <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Your Name</div>
+                  <input value={nameInput} onChange={e => setNameInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. J FREW" autoFocus
+                    onKeyDown={e => e.key === "Enter" && document.getElementById("pin-input")?.focus()}
+                    style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, letterSpacing: "2px" }} />
+                </div>
+                <div style={{ textAlign: "left", marginBottom: "20px" }}>
+                  <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>4-Digit PIN</div>
+                  <input id="pin-input" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="••••" inputMode="numeric" maxLength={4}
+                    onKeyDown={e => e.key === "Enter" && saveSignIn()}
+                    style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px" }} />
+                  <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px" }}>Your PIN keeps your data private — you'll need it if you change phones.</div>
+                </div>
+                <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+                  {settingName && <button onClick={() => { setSettingName(false); setNameInput(""); setPinInput(""); }} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>}
+                  <button onClick={saveSignIn} disabled={!nameInput.trim() || pinInput.length !== 4}
+                    style={{ flex: 1, background: nameInput.trim() && pinInput.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#ffffff", padding: "13px 28px", fontSize: "14px", cursor: nameInput.trim() && pinInput.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
+                    {settingName ? "Update" : "Sign In"}
+                  </button>
+                </div>
               </div>
             ) : (
               /* ── TOURNAMENT TRACKER DASHBOARD ── */
