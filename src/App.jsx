@@ -1006,7 +1006,7 @@ export default function BowlsTracker() {
           <div style={{ display: "flex", alignItems: "center", gap: "12px", paddingTop: "12px", paddingBottom: "12px" }}>
 
             {/* Club crest */}
-            <div style={{ width: "62px", height: "62px", borderRadius: "50%", border: `1.5px solid ${GOLD}`, background: `${GREEN}0a`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 2px 8px rgba(74,14,31,0.12)" }}>
+            <div style={{ width: "62px", height: "62px", borderRadius: "50%", border: `1.5px solid ${GOLD}`, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 2px 8px rgba(74,14,31,0.12)", overflow: "hidden" }}>
               <img
                 src="/ipbc-badge.png"
                 alt="Irvine Park Bowling Club"
