@@ -65,7 +65,7 @@ function MemberPill({ name, phone, color = GOLD }) {
 // ── MAIN APP ───────────────────────────────────────────────────────────────
 export default function BowlsTracker() {
   const [members, setMembers] = useState(() =>
-    load(MEMBERS_KEY, DEFAULT_MEMBERS).map(m => ({ ...m, section: m.section || "gents" }))
+    DEFAULT_MEMBERS.map(m => ({ ...m, section: m.section || "gents" }))
   );
   const [ties, setTies]       = useState(() => load(TIES_KEY, {}));
   const [activeTab, setActiveTab] = useState("myties");
@@ -151,18 +151,40 @@ export default function BowlsTracker() {
   const [nameInput, setNameInput] = useState("");
   const [pinInput, setPinInput]   = useState("");
   const [nameStep, setNameStep]   = useState("name"); // "name" | "pin"
-  const SUPER_ADMIN_KEY = "bowls_super_admin_name_v1";
-  const [superAdminName, setSuperAdminName] = useState(() => load(SUPER_ADMIN_KEY, ""));
-  const isSuperAdmin = !!myName && myName.toUpperCase() === (superAdminName || "");
-  useEffect(() => { save(SUPER_ADMIN_KEY, superAdminName); }, [superAdminName]);
-  // Bootstrap: first named user becomes super admin
+  // ── Admin role (Supabase-backed) ──
+  const [adminRole, setAdminRole] = useState(null); // null | "admin" | "super_admin"
+  const [adminClaimMsg, setAdminClaimMsg] = useState(null);
+
   useEffect(() => {
-    if (myName && !superAdminName) setSuperAdminName(myName.toUpperCase());
-  }, [myName, superAdminName]);
-  function makeMeSuperAdmin() {
-    if (!myName) return;
-    setSuperAdminName(myName.toUpperCase());
+    if (!cloudKey) { setAdminRole(null); return; }
+    supabase.from("admins").select("role").eq("cloud_key", cloudKey).maybeSingle()
+      .then(({ data }) => setAdminRole(data?.role || null));
+  }, [cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isAdmin = adminRole === "admin" || adminRole === "super_admin";
+  const isSuperAdmin = adminRole === "super_admin";
+
+  async function claimSuperAdmin() {
+    if (!cloudKey || !myName) return;
+    const { data: existing } = await supabase.from("admins").select("cloud_key").eq("role", "super_admin").neq("cloud_key", "SUPER_ADMIN_BOOTSTRAP");
+    if (existing && existing.length > 0) {
+      setAdminClaimMsg("A super admin already exists.");
+      setTimeout(() => setAdminClaimMsg(null), 4000);
+      return;
+    }
+    const { error } = await supabase.from("admins").upsert({ cloud_key: cloudKey, role: "super_admin", display_name: myName.toUpperCase() }, { onConflict: "cloud_key" });
+    if (!error) {
+      setAdminRole("super_admin");
+      setAdminClaimMsg("You are now super admin!");
+    } else {
+      setAdminClaimMsg("Error claiming super admin.");
+    }
+    setTimeout(() => setAdminClaimMsg(null), 4000);
   }
+
+  // Legacy compat: superAdminName not used any more but passed to Settings for display
+  const superAdminName = "";
+  function makeMeSuperAdmin() { claimSuperAdmin(); }
   const [addingTie, setAddingTie] = useState(false);
   const [tieComp, setTieComp]     = useState("");
   const [tieRound, setTieRound]   = useState(0);
@@ -537,7 +559,7 @@ export default function BowlsTracker() {
     });
   }
 
-  useEffect(() => { save(MEMBERS_KEY, members); }, [members]);
+  // Members are now sourced from Supabase; no localStorage save needed
   useEffect(() => { save(TIES_KEY, ties); },       [ties]);
   useEffect(() => { save("bowls_myname", myName); }, [myName]);
   useEffect(() => { save("bowls_mypin", myPin); }, [myPin]);
@@ -546,6 +568,16 @@ export default function BowlsTracker() {
   // ── Supabase cloud sync ──
   const [syncStatus, setSyncStatus] = useState("idle"); // "idle"|"syncing"|"synced"|"error"
   const cloudKey = myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null;
+
+  // Load members from Supabase (falls back to DEFAULT_MEMBERS if offline)
+  useEffect(() => {
+    supabase.from("members").select("*").order("sort_order").order("name")
+      .then(({ data, error }) => {
+        if (!error && data?.length > 0) {
+          setMembers(data.map(m => ({ ...m, section: m.section || "gents" })));
+        }
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // On load: pull entries from cloud and merge with local
   useEffect(() => {
@@ -903,15 +935,32 @@ export default function BowlsTracker() {
   }
 
   function startEdit(m) { setEditingId(m.id); setEditName(m.name); setEditPhone(m.phone); setEditSection(m.section || "gents"); setAddMode(false); }
-  function saveEdit()  {
-    setMembers(prev => prev.map(m => m.id === editingId ? { ...m, name: editName.toUpperCase(), phone: editPhone, section: editSection } : m));
+  function saveEdit() {
+    const updated = { name: editName.toUpperCase(), phone: editPhone, section: editSection, updated_at: new Date().toISOString() };
+    const prevMembers = members;
+    setMembers(prev => prev.map(m => m.id === editingId ? { ...m, ...updated } : m));
     setEditingId(null);
+    supabase.from("members").update(updated).eq("id", editingId).then(({ error }) => {
+      if (error) setMembers(prevMembers); // revert on error
+    });
   }
-  function deleteMember(id) { setMembers(prev => prev.filter(m => m.id !== id)); setConfirmDelete(null); }
+  function deleteMember(id) {
+    const prevMembers = members;
+    setMembers(prev => prev.filter(m => m.id !== id));
+    setConfirmDelete(null);
+    supabase.from("members").delete().eq("id", id).then(({ error }) => {
+      if (error) setMembers(prevMembers); // revert on error
+    });
+  }
   function addMember() {
     if (!newName.trim()) return;
-    setMembers(prev => [...prev, { id: Date.now().toString(), name: newName.toUpperCase(), phone: newPhone, section: newSection }]);
+    const newId = Date.now().toString();
+    const newMember = { id: newId, name: newName.toUpperCase(), phone: newPhone, section: newSection, sort_order: 999 };
+    setMembers(prev => [...prev, newMember]);
     setNewName(""); setNewPhone(""); setAddMode(false);
+    supabase.from("members").insert(newMember).then(({ error }) => {
+      if (error) setMembers(prev => prev.filter(m => m.id !== newId)); // revert on error
+    });
   }
 
   // ── CSV download ──
@@ -2643,6 +2692,8 @@ export default function BowlsTracker() {
             newPhone={newPhone} setNewPhone={setNewPhone}
             newSection={newSection} setNewSection={setNewSection}
             addMember={addMember}
+            isAdmin={isAdmin}
+            isSuperAdmin={isSuperAdmin}
           />
         )}
 
@@ -2674,8 +2725,12 @@ export default function BowlsTracker() {
               onEditCompDates={openRoundDatesEditor}
               masterRoundDates={masterRoundDates}
               isSuperAdmin={isSuperAdmin}
+              isAdmin={isAdmin}
+              cloudKey={cloudKey}
               superAdminName={superAdminName}
               makeMeSuperAdmin={makeMeSuperAdmin}
+              claimSuperAdmin={claimSuperAdmin}
+              adminClaimMsg={adminClaimMsg}
               onBack={() => navigateTo(prevTab)}
             />
           );

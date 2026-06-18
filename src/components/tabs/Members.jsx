@@ -24,6 +24,8 @@ export default function MembersTab({
   newPhone, setNewPhone,
   newSection, setNewSection,
   addMember,
+  isAdmin = false,
+  isSuperAdmin = false,
 }) {
   return (
     <div style={{ position: "relative" }}>
@@ -48,10 +50,12 @@ export default function MembersTab({
           <button onClick={() => fileInputRef.current?.click()} style={{ background: "transparent", border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "11px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}>
             <Upload size={12} strokeWidth={1.75} /> Upload
           </button>
-          <button onClick={() => { setShowAddMemberSheet(true); setNewName(""); setNewPhone(""); setNewSection(activeSection); }}
-            style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "7px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "inline-flex", alignItems: "center", gap: "5px" }}>
-            <Plus size={14} strokeWidth={2.5} /> Add
-          </button>
+          {isAdmin && (
+            <button onClick={() => { setShowAddMemberSheet(true); setNewName(""); setNewPhone(""); setNewSection(activeSection); }}
+              style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "7px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+              <Plus size={14} strokeWidth={2.5} /> Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -119,10 +123,14 @@ export default function MembersTab({
                           ? <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "13px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500", minHeight: "30px" }}><Phone size={13} strokeWidth={1.75} />{m.phone}</a>
                           : <span style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>No number</span>}
                       </div>
-                      <div style={{ display: "flex", gap: "5px", flexShrink: 0 }}>
-                        <button onClick={() => startEdit(m)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "10px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}><Pencil size={11} strokeWidth={1.75} />Edit</button>
-                        <button onClick={() => setConfirmDelete(m.id)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT3, padding: "10px 10px", fontSize: "10px", cursor: "pointer", fontFamily: F_UI, minHeight: "44px", display: "inline-flex", alignItems: "center" }}><X size={13} strokeWidth={1.75} /></button>
-                      </div>
+                      {isAdmin && (
+                        <div style={{ display: "flex", gap: "5px", flexShrink: 0 }}>
+                          <button onClick={() => startEdit(m)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "10px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px", minHeight: "44px" }}><Pencil size={11} strokeWidth={1.75} />Edit</button>
+                          {isSuperAdmin && (
+                            <button onClick={() => setConfirmDelete(m.id)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT3, padding: "10px 10px", fontSize: "10px", cursor: "pointer", fontFamily: F_UI, minHeight: "44px", display: "inline-flex", alignItems: "center" }}><X size={13} strokeWidth={1.75} /></button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

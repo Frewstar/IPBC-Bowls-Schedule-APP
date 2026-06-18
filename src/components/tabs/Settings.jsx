@@ -1,10 +1,51 @@
-import { useState } from "react";
-import { Settings, User, Shield, Info, Type, Download, Upload, Check, Trophy, Plus, Pencil, Calendar, Crown, Lock, ChevronLeft } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Settings, User, Shield, Info, Type, Download, Upload, Check, Trophy, Plus, Pencil, Calendar, Crown, Lock, ChevronLeft, Trash2, UserCheck } from "lucide-react";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI, LOSS_RED } from "../../lib/theme.js";
 import { save } from "../../lib/storage.js";
+import { supabase } from "../../lib/supabase.js";
 
-export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], defaultTournamentIds = [], compOverrides = {}, onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, masterRoundDates = {}, isSuperAdmin = false, superAdminName = "", makeMeSuperAdmin, onBack }) {
+export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], defaultTournamentIds = [], compOverrides = {}, onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, masterRoundDates = {}, isSuperAdmin = false, isAdmin = false, cloudKey = null, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack }) {
   const [savedMsg, setSavedMsg] = useState(false);
+
+  // Admin management state (super admin only)
+  const [adminList, setAdminList] = useState([]);
+  const [grantKeyInput, setGrantKeyInput] = useState("");
+  const [grantNameInput, setGrantNameInput] = useState("");
+  const [adminMgmtMsg, setAdminMgmtMsg] = useState(null);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    supabase.from("admins").select("*").then(({ data }) => {
+      if (data) setAdminList(data);
+    });
+  }, [isSuperAdmin]);
+
+  async function grantAdmin() {
+    const key = grantKeyInput.trim().toUpperCase();
+    const name = grantNameInput.trim().toUpperCase();
+    if (!key || !name) return;
+    const { error } = await supabase.from("admins").insert({ cloud_key: key, role: "admin", display_name: name });
+    if (!error) {
+      setAdminList(prev => [...prev, { cloud_key: key, role: "admin", display_name: name }]);
+      setGrantKeyInput(""); setGrantNameInput("");
+      setAdminMgmtMsg("Admin granted.");
+    } else {
+      setAdminMgmtMsg("Error: " + (error.message || "could not grant admin"));
+    }
+    setTimeout(() => setAdminMgmtMsg(null), 3500);
+  }
+
+  async function revokeAdmin(key) {
+    if (key === cloudKey) return; // cannot revoke self
+    const { error } = await supabase.from("admins").delete().eq("cloud_key", key);
+    if (!error) {
+      setAdminList(prev => prev.filter(a => a.cloud_key !== key));
+      setAdminMgmtMsg("Admin revoked.");
+    } else {
+      setAdminMgmtMsg("Error revoking admin.");
+    }
+    setTimeout(() => setAdminMgmtMsg(null), 3500);
+  }
 
   function handleSaveAll() {
     // Persist name if there's a pending nameInput
@@ -184,10 +225,13 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
               <Crown size={12} strokeWidth={1.8} />
               {isSuperAdmin ? `Super Admin: ${myName}` : `Super Admin: ${superAdminName || "Not set"}`}
             </div>
-            {!isSuperAdmin && makeMeSuperAdmin && (
-              <button onClick={makeMeSuperAdmin} style={{ background: MID, border: "none", borderRadius: "6px", color: "#fff", padding: "5px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
-                Make Me Admin
+            {!isSuperAdmin && claimSuperAdmin && myName && cloudKey && (
+              <button onClick={claimSuperAdmin} style={{ background: MID, border: "none", borderRadius: "6px", color: "#fff", padding: "5px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
+                Claim Super Admin
               </button>
+            )}
+            {adminClaimMsg && (
+              <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, marginTop: "6px" }}>{adminClaimMsg}</div>
             )}
           </div>
           {isSuperAdmin && (
@@ -241,6 +285,46 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
           })}
         </div>
       </div>
+
+      {/* Admin Management — super admin only */}
+      {isSuperAdmin && (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", marginBottom: "14px" }}>
+          <SecHeader icon={UserCheck} label="Admin Access" />
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}` }}>
+            <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px" }}>Grant admin access using a member's cloud key (NAME-PIN format).</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <input value={grantKeyInput} onChange={e => setGrantKeyInput(e.target.value.toUpperCase())} placeholder="Cloud key e.g. J SMITH-1234"
+                style={{ width: "100%", boxSizing: "border-box", padding: "9px 12px", border: `1px solid ${BORDER}`, borderRadius: "8px", fontSize: "13px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }} />
+              <input value={grantNameInput} onChange={e => setGrantNameInput(e.target.value.toUpperCase())} placeholder="Display name e.g. J SMITH"
+                style={{ width: "100%", boxSizing: "border-box", padding: "9px 12px", border: `1px solid ${BORDER}`, borderRadius: "8px", fontSize: "13px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }} />
+              <button onClick={grantAdmin} disabled={!grantKeyInput.trim() || !grantNameInput.trim()}
+                style={{ background: grantKeyInput.trim() && grantNameInput.trim() ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "10px 16px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
+                Grant Admin
+              </button>
+              {adminMgmtMsg && <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED }}>{adminMgmtMsg}</div>}
+            </div>
+          </div>
+          <div>
+            {adminList.length === 0 ? (
+              <div style={{ padding: "12px 16px", fontFamily: F_UI, fontSize: "12px", color: TEXT3 }}>No admins yet.</div>
+            ) : adminList.map((a, i) => (
+              <div key={a.cloud_key} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 16px", borderBottom: i < adminList.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                <Crown size={13} strokeWidth={1.75} color={a.role === "super_admin" ? GOLD_MUTED : TEXT3} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{a.display_name}</div>
+                  <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>{a.role === "super_admin" ? "Super Admin" : "Admin"} · {a.cloud_key}</div>
+                </div>
+                {a.cloud_key !== cloudKey && (
+                  <button onClick={() => revokeAdmin(a.cloud_key)}
+                    style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: LOSS_RED, padding: "5px 9px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                    <Trash2 size={11} strokeWidth={1.75} /> Revoke
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* About */}
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", marginBottom: "20px" }}>
