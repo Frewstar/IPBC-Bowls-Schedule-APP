@@ -150,6 +150,7 @@ export default function BowlsTracker() {
   // ── My Ties state ──
   const [myName, setMyName]       = useState(() => load("bowls_myname", "") || "");
   const [myPin, setMyPin]         = useState(() => load("bowls_mypin", "") || "");
+  const cloudKey = myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null;
   const [settingName, setSettingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [pinInput, setPinInput]   = useState("");
@@ -647,7 +648,6 @@ export default function BowlsTracker() {
 
   // ── Supabase cloud sync ──
   const [syncStatus, setSyncStatus] = useState("idle"); // "idle"|"syncing"|"synced"|"error"
-  const cloudKey = myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null;
 
   // Load members from Supabase (falls back to DEFAULT_MEMBERS if offline)
   useEffect(() => {
@@ -763,7 +763,7 @@ export default function BowlsTracker() {
       }
     }
     return items;
-  }, [myEntries, settings.showReminders, settings.seasonYear, masterRoundDates]);
+  }, [myEntries, settings.showReminders, settings.seasonYear]);
 
   function placeEntryBefore(sourceId, targetId) {
     setEntries(prev => {
