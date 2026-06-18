@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 
 // ── lib imports ──────────────────────────────────────────────────────────────
-import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_SANS, F_UI } from "./lib/theme.js";
+import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_SANS, F_UI } from "./lib/theme.js";
 import { MEMBERS_KEY, TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
 import { DEFAULT_TOURNAMENTS, FIXTURES, DRAW_ENTRIES, DEFAULT_MEMBERS } from "./lib/constants.js";

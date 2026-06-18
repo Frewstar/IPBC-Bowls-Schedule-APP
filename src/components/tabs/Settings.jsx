@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Settings, User, Shield, Info, Type, Download, Upload, Check, Trophy, Plus, Pencil, Calendar, Crown, Lock, ChevronLeft } from "lucide-react";
-import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_SANS, F_UI, LOSS_RED } from "../../lib/theme.js";
+import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI, LOSS_RED } from "../../lib/theme.js";
 import { save } from "../../lib/storage.js";
 
 export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], defaultTournamentIds = [], compOverrides = {}, onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, masterRoundDates = {}, isSuperAdmin = false, superAdminName = "", makeMeSuperAdmin, onBack }) {

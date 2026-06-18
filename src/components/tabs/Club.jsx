@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Trophy, Phone, ChevronDown, Shield, MapPin, Star, Clock } from "lucide-react";
-import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_SANS, F_UI } from "../../lib/theme.js";
+import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
 
 // ── Data ────────────────────────────────────────────────────────────────────
 
