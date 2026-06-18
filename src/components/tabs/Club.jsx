@@ -1,25 +1,11 @@
 import { useState } from "react";
 import { Trophy, Phone, ChevronDown, Shield, MapPin, Star, Clock } from "lucide-react";
 import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
+import { CLUB_POSITIONS } from "./Members.jsx";
 
-// ── Data ────────────────────────────────────────────────────────────────────
-
-export const COMMITTEE = [
-  { role: "President",          name: "TBC", phone: "" },
-  { role: "Vice President",     name: "TBC", phone: "" },
-  { role: "Secretary",          name: "TBC", phone: "" },
-  { role: "Treasurer",          name: "TBC", phone: "" },
-  { role: "Bar Convenor",       name: "TBC", phone: "" },
-  { role: "Match Secretary",    name: "Matt Kirkland", phone: "+447402348205" },
-  { role: "Social Convenor",    name: "TBC", phone: "" },
-  { role: "Past President",     name: "TBC", phone: "" },
-  { role: "Building Convenor",  name: "TBC", phone: "" },
-  { role: "Honorary President", name: "TBC", phone: "" },
-];
-
-export const MANAGEMENT_COMMITTEE = [
-  "TBC","TBC","TBC","TBC","TBC","TBC","TBC","TBC","TBC","TBC","TBC",
-];
+// Position display order for the committee section (Management Committee handled separately)
+const OFFICER_POSITIONS = CLUB_POSITIONS.filter(p => p && p !== "Management Committee");
+const POSITION_ORDER = Object.fromEntries(OFFICER_POSITIONS.map((p, i) => [p, i]));
 
 export const HONORARY_MEMBERS = [
   "T. Shields", "K. Houston", "W. Reid", "J B Muir",
@@ -53,9 +39,16 @@ const FACILITIES = [
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function ClubTab() {
+export default function ClubTab({ members = [] }) {
   const [expandedComp, setExpandedComp] = useState(null);
   const [committeeOpen, setCommitteeOpen] = useState(false);
+
+  // Build committee lists from member positions
+  const officers = members
+    .filter(m => m.position && m.position !== "Management Committee")
+    .sort((a, b) => (POSITION_ORDER[a.position] ?? 99) - (POSITION_ORDER[b.position] ?? 99));
+  const managementCommittee = members.filter(m => m.position === "Management Committee");
+  const hasAnyPositions = officers.length > 0 || managementCommittee.length > 0;
 
   return (
     <div style={{ maxWidth: "520px", margin: "0 auto", paddingBottom: "32px" }}>
@@ -162,38 +155,53 @@ export default function ClubTab() {
       </button>
       {committeeOpen && (
         <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderTop: "none", borderRadius: "0 0 12px 12px", overflow: "hidden", marginBottom: "0", boxShadow: "0 2px 8px rgba(74,14,31,0.08)" }}>
-          {/* Key officers 2-col grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: BORDER, borderBottom: `1px solid ${BORDER}` }}>
-            {COMMITTEE.slice(0, 4).map((m, i) => (
-              <div key={i} style={{ background: SURFACE2, padding: "12px 14px" }}>
-                <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700", marginBottom: "3px" }}>{m.role}</div>
-                <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: m.name === "TBC" ? TEXT3 : TEXT }}>{m.name}</div>
-                {m.phone ? <a href={`tel:${m.phone}`} style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, textDecoration: "none", fontWeight: "600" }}>{m.phone}</a> : null}
-              </div>
-            ))}
-          </div>
-          {/* Remaining committee */}
-          {COMMITTEE.slice(4).map((m, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", borderBottom: i < COMMITTEE.slice(4).length - 1 ? `1px solid ${BORDER}` : "none" }}>
-              <div>
-                <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700" }}>{m.role}</div>
-                <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: m.name === "TBC" ? TEXT3 : TEXT }}>{m.name}</div>
-              </div>
-              {m.phone ? (
-                <a href={`tel:${m.phone}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "20px", padding: "4px 10px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "11px", fontWeight: "600" }}>
-                  <Phone size={10} strokeWidth={2} />{m.phone}
-                </a>
-              ) : null}
+          {!hasAnyPositions ? (
+            <div style={{ padding: "16px", fontFamily: F_UI, fontSize: "13px", color: TEXT3, fontStyle: "italic" }}>
+              Committee positions not yet assigned for this season.
             </div>
-          ))}
-          {/* Management & Honorary */}
-          <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "12px 16px" }}>
-            <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Management Committee</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "14px" }}>
-              {MANAGEMENT_COMMITTEE.map((name, i) => (
-                <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: name === "TBC" ? TEXT3 : TEXT2 }}>{name}</div>
+          ) : (
+            <>
+              {/* Key officers — 2-col grid for first four */}
+              {officers.slice(0, 4).length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: BORDER, borderBottom: `1px solid ${BORDER}` }}>
+                  {officers.slice(0, 4).map((m, i) => (
+                    <div key={m.id} style={{ background: SURFACE2, padding: "12px 14px" }}>
+                      <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700", marginBottom: "3px" }}>{m.position}</div>
+                      <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT }}>{m.name}</div>
+                      {m.phone ? <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, textDecoration: "none", fontWeight: "600" }}>{m.phone}</a> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Remaining officers */}
+              {officers.slice(4).map((m, i) => (
+                <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", borderBottom: i < officers.slice(4).length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                  <div>
+                    <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700" }}>{m.position}</div>
+                    <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT }}>{m.name}</div>
+                  </div>
+                  {m.phone ? (
+                    <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "20px", padding: "4px 10px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "11px", fontWeight: "600" }}>
+                      <Phone size={10} strokeWidth={2} />{m.phone}
+                    </a>
+                  ) : null}
+                </div>
               ))}
-            </div>
+              {/* Management Committee chips */}
+              {managementCommittee.length > 0 && (
+                <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "12px 16px", marginBottom: "0" }}>
+                  <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Management Committee</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {managementCommittee.map(m => (
+                      <div key={m.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: TEXT2 }}>{m.name}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {/* Honorary Members — always shown, still hardcoded */}
+          <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "12px 16px" }}>
             <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Honorary Members</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
               {HONORARY_MEMBERS.map((name, i) => (

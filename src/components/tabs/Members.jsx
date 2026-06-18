@@ -3,6 +3,21 @@ import BottomSheet from "../BottomSheet.jsx";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { getSurname } from "../../lib/utils.js";
 
+export const CLUB_POSITIONS = [
+  "",
+  "President",
+  "Vice President",
+  "Secretary",
+  "Treasurer",
+  "Match Secretary",
+  "Bar Convenor",
+  "Social Convenor",
+  "Building Convenor",
+  "Past President",
+  "Honorary President",
+  "Management Committee",
+];
+
 export default function MembersTab({
   filteredMembers,
   groupedMembers,
@@ -15,6 +30,7 @@ export default function MembersTab({
   editName, setEditName,
   editPhone, setEditPhone,
   editSection, setEditSection,
+  editPosition, setEditPosition,
   saveEdit,
   startEdit,
   confirmDelete, setConfirmDelete,
@@ -90,7 +106,7 @@ export default function MembersTab({
                 <div key={m.id}>
                   {editingId === m.id ? (
                     <div style={{ padding: "12px 14px", background: SURFACE2, borderBottom: `1px solid ${BORDER}` }}>
-                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "6px" }}>
                         <input value={editName} onChange={e => setEditName(e.target.value.toUpperCase())}
                           style={{ flex: 2, minWidth: "120px", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "13px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }} />
                         <input value={editPhone} onChange={e => setEditPhone(e.target.value)} type="tel"
@@ -99,6 +115,13 @@ export default function MembersTab({
                           style={{ padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "13px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }}>
                           <option value="gents">Gents</option>
                           <option value="ladies">Ladies</option>
+                        </select>
+                      </div>
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                        <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, whiteSpace: "nowrap", paddingTop: "2px" }}>Club Position:</div>
+                        <select value={editPosition} onChange={e => setEditPosition(e.target.value)}
+                          style={{ flex: 1, minWidth: "160px", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "13px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }}>
+                          {CLUB_POSITIONS.map(p => <option key={p} value={p}>{p || "— None —"}</option>)}
                         </select>
                         <button onClick={saveEdit} style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "8px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>Save</button>
                         <button onClick={() => setEditingId(null)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT, padding: "8px 10px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
@@ -115,9 +138,16 @@ export default function MembersTab({
                   ) : (
                     <div style={{ padding: "16px 16px", borderBottom: i < groupedMembers[letter].length - 1 ? `1px solid ${BORDER}` : "none", display: "flex", alignItems: "center", gap: "12px", minHeight: "58px" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "600", color: GREEN, lineHeight: 1.2 }}>
-                          {getSurname(m.name)}
-                          <span style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "400", color: TEXT2, marginLeft: "6px" }}>{m.name.replace(getSurname(m.name), "").trim()}</span>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
+                          <div style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "600", color: GREEN, lineHeight: 1.2 }}>
+                            {getSurname(m.name)}
+                            <span style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "400", color: TEXT2, marginLeft: "6px" }}>{m.name.replace(getSurname(m.name), "").trim()}</span>
+                          </div>
+                          {m.position && (
+                            <span style={{ display: "inline-block", background: `${GOLD}18`, border: `1px solid ${GOLD}55`, borderRadius: "10px", padding: "1px 8px", fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD_MUTED, whiteSpace: "nowrap" }}>
+                              {m.position}
+                            </span>
+                          )}
                         </div>
                         {m.phone
                           ? <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "13px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500", minHeight: "30px" }}><Phone size={13} strokeWidth={1.75} />{m.phone}</a>

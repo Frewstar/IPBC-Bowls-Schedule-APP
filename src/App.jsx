@@ -316,6 +316,7 @@ export default function BowlsTracker() {
   const [editName, setEditName]         = useState("");
   const [editPhone, setEditPhone]       = useState("");
   const [editSection, setEditSection]   = useState("gents");
+  const [editPosition, setEditPosition] = useState("");
   const [newName, setNewName]           = useState("");
   const [newPhone, setNewPhone]         = useState("");
   const [newSection, setNewSection]     = useState("gents");
@@ -942,14 +943,14 @@ export default function BowlsTracker() {
     e.target.value = "";
   }
 
-  function startEdit(m) { setEditingId(m.id); setEditName(m.name); setEditPhone(m.phone); setEditSection(m.section || "gents"); setAddMode(false); }
+  function startEdit(m) { setEditingId(m.id); setEditName(m.name); setEditPhone(m.phone); setEditSection(m.section || "gents"); setEditPosition(m.position || ""); setAddMode(false); }
   function saveEdit() {
-    const updated = { name: editName.toUpperCase(), phone: editPhone, section: editSection, updated_at: new Date().toISOString() };
+    const updated = { name: editName.toUpperCase(), phone: editPhone, section: editSection, position: editPosition, updated_at: new Date().toISOString() };
     const prevMembers = members;
     setMembers(prev => prev.map(m => m.id === editingId ? { ...m, ...updated } : m));
     setEditingId(null);
     supabase.from("members").update(updated).eq("id", editingId).then(({ error }) => {
-      if (error) setMembers(prevMembers); // revert on error
+      if (error) setMembers(prevMembers);
     });
   }
   function deleteMember(id) {
@@ -2691,6 +2692,7 @@ export default function BowlsTracker() {
             editName={editName} setEditName={setEditName}
             editPhone={editPhone} setEditPhone={setEditPhone}
             editSection={editSection} setEditSection={setEditSection}
+            editPosition={editPosition} setEditPosition={setEditPosition}
             saveEdit={saveEdit}
             startEdit={startEdit}
             confirmDelete={confirmDelete} setConfirmDelete={setConfirmDelete}
@@ -2757,7 +2759,7 @@ export default function BowlsTracker() {
         {/* ══════════════════════════════════════════
             CLUB TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "club" && <ClubTab />}
+        {activeTab === "club" && <ClubTab members={members} />}
               </div>
 
       {/* ── MANAGE COMPETITIONS SHEET ── */}
