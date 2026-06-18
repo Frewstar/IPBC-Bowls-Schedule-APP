@@ -4,7 +4,7 @@ import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, T
 import { save } from "../../lib/storage.js";
 import { supabase } from "../../lib/supabase.js";
 
-export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], defaultTournamentIds = [], compOverrides = {}, onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, masterRoundDates = {}, isSuperAdmin = false, isAdmin = false, cloudKey = null, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack }) {
+export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, isSuperAdmin = false, isAdmin = false, cloudKey = null, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack }) {
   const [savedMsg, setSavedMsg] = useState(false);
 
   // Admin request state (any member)
@@ -278,17 +278,14 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
         </div>
         <div>
           {tournaments.map((t, i) => {
-            const isCustom = !defaultTournamentIds.includes(t.id);
-            const isOverridden = !isCustom && compOverrides[t.id];
-            const source = t.source || (isCustom ? "ipbc" : "ipbc");
-            const isPersonal = source === "personal";
+            const isPersonal = t.source === "personal";
             return (
               <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 16px", borderBottom: i < tournaments.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                 <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: t.color || GREEN, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
                   <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>
-                    {t.type || "Singles"} · {isPersonal ? "Personal" : "IPBC"}{isCustom ? " · Custom" : ""}{isOverridden ? " · Edited" : ""}
+                    {t.type || "Singles"} · {isPersonal ? "Personal" : "IPBC"}
                   </div>
                 </div>
                 {(isSuperAdmin || isPersonal) ? (

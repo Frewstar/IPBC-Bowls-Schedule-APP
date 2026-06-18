@@ -39,7 +39,7 @@ const FACILITIES = [
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function ClubTab({ members = [] }) {
+export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, honoraryMembers = HONORARY_MEMBERS }) {
   const [expandedComp, setExpandedComp] = useState(null);
   const [committeeOpen, setCommitteeOpen] = useState(false);
 
@@ -93,12 +93,12 @@ export default function ClubTab({ members = [] }) {
       </div>
 
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 4px rgba(74,14,31,0.07)" }}>
-        {ROLL_OF_HONOUR.map((comp, idx) => {
+        {rollOfHonour.map((comp, idx) => {
           const isOpen = expandedComp === comp.id;
           const latest = comp.winners[0];
           const isPending = latest.winner === "TBC";
           return (
-            <div key={comp.id} style={{ borderBottom: idx < ROLL_OF_HONOUR.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+            <div key={comp.id} style={{ borderBottom: idx < rollOfHonour.length - 1 ? `1px solid ${BORDER}` : "none" }}>
               <button
                 onClick={() => setExpandedComp(isOpen ? null : comp.id)}
                 style={{ width: "100%", background: "none", border: "none", cursor: "pointer", padding: "0", display: "flex", alignItems: "center", textAlign: "left" }}>
@@ -204,7 +204,7 @@ export default function ClubTab({ members = [] }) {
           <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "12px 16px" }}>
             <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Honorary Members</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {HONORARY_MEMBERS.map((name, i) => (
+              {honoraryMembers.map((name, i) => (
                 <div key={i} style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED, fontWeight: "600" }}>{name}</div>
               ))}
             </div>

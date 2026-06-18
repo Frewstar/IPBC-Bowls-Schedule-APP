@@ -1,6 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { GREEN, GOLD, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_SANS, F_UI } from "../../lib/theme.js";
-import { FIXTURES } from "../../lib/constants.js";
 import { DAY_NAMES, MONTH_ABBR, fixtureStatus } from "../../lib/utils.js";
 
 function FixtureRow({ fix, i, total }) {
@@ -44,11 +43,11 @@ function groupByMonth(fixList) {
   return g;
 }
 
-export default function FixturesTab({ fixturesExpanded, setFixturesExpanded, seasonYear }) {
-  const upcoming = FIXTURES.filter(f => fixtureStatus(f.date) !== "past");
+export default function FixturesTab({ fixtures = [], fixturesExpanded, setFixturesExpanded, seasonYear }) {
+  const upcoming = fixtures.filter(f => fixtureStatus(f.date) !== "past");
   const nextUp = upcoming[0] || null;
   const shownUpcoming = fixturesExpanded ? upcoming : upcoming.slice(0, 5);
-  const pastFixtures = FIXTURES.filter(f => fixtureStatus(f.date) === "past");
+  const pastFixtures = fixtures.filter(f => fixtureStatus(f.date) === "past");
 
   return (
     <div>
@@ -116,7 +115,7 @@ export default function FixturesTab({ fixturesExpanded, setFixturesExpanded, sea
       })()}
 
       <div style={{ textAlign: "center", marginTop: "12px", fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>
-        Irvine Park BC · {seasonYear || new Date().getFullYear()} Season · {FIXTURES.length} fixtures
+        Irvine Park BC · {seasonYear || new Date().getFullYear()} Season · {fixtures.length} fixtures
       </div>
     </div>
   );

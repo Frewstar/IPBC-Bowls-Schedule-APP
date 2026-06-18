@@ -37,7 +37,7 @@ import { supabase } from "./lib/supabase.js";
 import BottomSheet from "./components/BottomSheet.jsx";
 import SettingsTab from "./components/tabs/Settings.jsx";
 import HelpTab from "./components/tabs/Help.jsx";
-import ClubTab from "./components/tabs/Club.jsx";
+import ClubTab, { ROLL_OF_HONOUR, HONORARY_MEMBERS } from "./components/tabs/Club.jsx";
 import FixturesTab from "./components/tabs/Fixtures.jsx";
 import FindTab from "./components/tabs/Find.jsx";
 import DrawsTab from "./components/tabs/Draws.jsx";
@@ -407,32 +407,52 @@ export default function BowlsTracker() {
   const [h2hOpponent, setH2hOpponent] = useState(null); // string | null
   function openH2H(name) { if (name) setH2hOpponent(name.trim()); }
 
-  // ── Custom competitions ──
-  const CUSTOM_COMPS_KEY = "bowls_custom_comps_v1";
-  const [customComps, setCustomComps] = useState(() => load(CUSTOM_COMPS_KEY, []));
-  useEffect(() => { save(CUSTOM_COMPS_KEY, customComps); }, [customComps]);
+  // ── Competitions (Supabase-first, fallback to hardcoded) ──
+  const [baseTournaments, setBaseTournaments] = useState(() =>
+    DEFAULT_TOURNAMENTS.map(t => ({ ...t, source: "ipbc", sourceLabel: "IPBC" }))
+  );
+  useEffect(() => {
+    supabase.from("tournaments").select("*").order("sort_order")
+      .then(({ data }) => {
+        if (data?.length > 0)
+          setBaseTournaments(data.map(t => ({ ...t, source: "ipbc", sourceLabel: "IPBC" })));
+      });
+  }, []);
+
   const PERSONAL_COMPS_KEY = "bowls_personal_comps_v1";
   const [personalComps, setPersonalComps] = useState(() => load(PERSONAL_COMPS_KEY, []));
   useEffect(() => { save(PERSONAL_COMPS_KEY, personalComps); }, [personalComps]);
 
-  // Merged: default hardcoded + user-added. User can also store overrides to default names/colors.
-  const COMP_OVERRIDES_KEY = "bowls_comp_overrides_v1";
-  const [compOverrides, setCompOverrides] = useState(() => load(COMP_OVERRIDES_KEY, {}));
-  useEffect(() => { save(COMP_OVERRIDES_KEY, compOverrides); }, [compOverrides]);
-
   const TOURNAMENTS = useMemo(() => {
-    const defaults = DEFAULT_TOURNAMENTS.map(t => ({
-      ...t,
-      ...(compOverrides[t.id] || {}),
-      source: "ipbc",
-      sourceLabel: "IPBC",
-    }));
-    const shared = customComps.map(c => ({ ...c, source: "ipbc", sourceLabel: "IPBC" }));
     const personal = personalComps
       .filter(c => c.owner === myName && ((c.section || "gents") === activeSection))
       .map(c => ({ ...c, source: "personal", sourceLabel: "Personal" }));
-    return [...defaults, ...shared, ...personal];
-  }, [customComps, personalComps, compOverrides, myName, activeSection]);
+    return [...baseTournaments, ...personal];
+  }, [baseTournaments, personalComps, myName, activeSection]);
+
+  // ── Fixtures (Supabase-first, fallback to hardcoded) ──
+  const [fixtures, setFixtures] = useState(() => FIXTURES.map(f => ({ ...f })));
+  useEffect(() => {
+    supabase.from("club_fixtures").select("*").order("sort_order")
+      .then(({ data }) => {
+        if (data?.length > 0)
+          setFixtures(data.map(f => ({ ...f, date: new Date(f.event_date + "T12:00:00") })));
+      });
+  }, []);
+
+  // ── Roll of Honour (Supabase-first) ──
+  const [rollOfHonour, setRollOfHonour] = useState(ROLL_OF_HONOUR);
+  useEffect(() => {
+    supabase.from("roll_of_honour").select("*").order("sort_order")
+      .then(({ data }) => { if (data?.length > 0) setRollOfHonour(data); });
+  }, []);
+
+  // ── Honorary members (Supabase-first) ──
+  const [honoraryMembers, setHonoraryMembers] = useState(HONORARY_MEMBERS);
+  useEffect(() => {
+    supabase.from("club_config").select("value").eq("key", "honorary_members").maybeSingle()
+      .then(({ data }) => { if (data?.value) setHonoraryMembers(data.value); });
+  }, []);
 
   const [showManageCompsSheet, setShowManageCompsSheet] = useState(false);
   const [editCompId, setEditCompId] = useState(null);
@@ -465,58 +485,54 @@ export default function BowlsTracker() {
     setCompFormName(t.name); setCompFormType(t.type || "Singles"); setCompFormColor(t.color || "#6b1d2e");
     setShowManageCompsSheet(true);
   }
-  function saveComp() {
+  async function saveComp() {
     if (!compFormName.trim()) return;
-    const isDefault = DEFAULT_TOURNAMENTS.some(t => t.id === editCompId);
     if (editCompSource === "ipbc" && !isSuperAdmin) return;
-    if (editCompId && isDefault && editCompSource === "ipbc") {
-      // Store as override for a default tournament
-      setCompOverrides(prev => ({ ...prev, [editCompId]: { name: compFormName.trim(), type: compFormType, color: compFormColor } }));
-    } else if (editCompId && editCompSource === "ipbc") {
-      // Edit a custom competition
-      setCustomComps(prev => prev.map(c => c.id === editCompId ? { ...c, name: compFormName.trim(), type: compFormType, color: compFormColor } : c));
+    if (editCompId && editCompSource === "ipbc") {
+      // Update existing IPBC tournament in Supabase
+      const updated = { name: compFormName.trim(), type: compFormType, color: compFormColor };
+      setBaseTournaments(prev => prev.map(t => t.id === editCompId ? { ...t, ...updated } : t));
+      await supabase.from("tournaments").update(updated).eq("id", editCompId);
     } else if (editCompId && editCompSource === "personal") {
       setPersonalComps(prev => prev.map(c => c.id === editCompId && c.owner === myName ? { ...c, name: compFormName.trim(), type: compFormType, color: compFormColor } : c));
     } else if (editCompSource === "personal") {
       setPersonalComps(prev => [...prev, { id: `personal-${Date.now()}`, owner: myName, section: activeSection, name: compFormName.trim(), type: compFormType, color: compFormColor, rounds: [], custom: true, source: "personal" }]);
     } else {
-      // New custom competition
-      setCustomComps(prev => [...prev, { id: `custom-${Date.now()}`, name: compFormName.trim(), type: compFormType, color: compFormColor, rounds: [], custom: true }]);
+      // New IPBC competition — insert to Supabase
+      const newId = `custom-${Date.now()}`;
+      const newComp = { id: newId, name: compFormName.trim(), type: compFormType, color: compFormColor, rounds: [], round_dates: [], source: "ipbc", sort_order: 99 };
+      setBaseTournaments(prev => [...prev, { ...newComp, sourceLabel: "IPBC" }]);
+      await supabase.from("tournaments").insert(newComp);
     }
     setShowManageCompsSheet(false);
   }
-  function deleteComp(id) {
-    const isDefault = DEFAULT_TOURNAMENTS.some(t => t.id === id);
+  async function deleteComp(id) {
     if (editCompSource === "ipbc" && !isSuperAdmin) return;
-    if (editCompSource === "ipbc" && isDefault) {
-      // Reset override instead of delete
-      setCompOverrides(prev => { const n = { ...prev }; delete n[id]; return n; });
-    } else if (editCompSource === "ipbc") {
-      setCustomComps(prev => prev.filter(c => c.id !== id));
+    if (editCompSource === "ipbc") {
+      setBaseTournaments(prev => prev.filter(t => t.id !== id));
+      await supabase.from("tournaments").delete().eq("id", id);
     } else {
       setPersonalComps(prev => prev.filter(c => !(c.id === id && c.owner === myName)));
     }
     setShowManageCompsSheet(false);
   }
 
-  // Master round dates (shared for all members)
-  const MASTER_DATES_KEY = "bowls_master_round_dates_v1";
-  const [masterRoundDates, setMasterRoundDates] = useState(() => load(MASTER_DATES_KEY, {}));
-  useEffect(() => { save(MASTER_DATES_KEY, masterRoundDates); }, [masterRoundDates]);
+  // Master round dates: now stored in tournaments.round_dates in Supabase (no localStorage needed)
 
   const [showRoundDatesSheet, setShowRoundDatesSheet] = useState(false);
   const [roundDatesCompId, setRoundDatesCompId] = useState("");
   const [roundDatesValues, setRoundDatesValues] = useState([]);
 
   function getRoundDateForComp(tournamentId, roundIdx) {
-    const manual = masterRoundDates?.[tournamentId]?.[roundIdx];
+    const t = baseTournaments.find(t2 => t2.id === tournamentId);
+    const manual = t?.round_dates?.[roundIdx];
     if (manual) return manual;
     return getTournRoundDate(tournamentId, roundIdx, settings.seasonYear || new Date().getFullYear());
   }
 
   function openRoundDatesEditor(t) {
     if (!isSuperAdmin) return;
-    const existing = masterRoundDates[t.id] || [];
+    const existing = t.round_dates || [];
     const base = (t.rounds || []).map(r => parseTournRoundDate(r, settings.seasonYear || new Date().getFullYear())).filter(Boolean);
     const len = Math.max(existing.length, base.length, 1);
     const merged = Array.from({ length: len }, (_, i) => existing[i] || base[i] || "");
@@ -525,10 +541,13 @@ export default function BowlsTracker() {
     setShowRoundDatesSheet(true);
   }
 
-  function saveRoundDatesEditor() {
+  async function saveRoundDatesEditor() {
     if (!isSuperAdmin) return;
     if (!roundDatesCompId) return;
-    setMasterRoundDates(prev => ({ ...prev, [roundDatesCompId]: [...roundDatesValues] }));
+    setBaseTournaments(prev => prev.map(t =>
+      t.id === roundDatesCompId ? { ...t, round_dates: [...roundDatesValues] } : t
+    ));
+    await supabase.from("tournaments").update({ round_dates: roundDatesValues }).eq("id", roundDatesCompId);
     setShowRoundDatesSheet(false);
   }
 
@@ -2674,7 +2693,7 @@ export default function BowlsTracker() {
             FIXTURES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "fixtures" && (
-          <FixturesTab fixturesExpanded={fixturesExpanded} setFixturesExpanded={setFixturesExpanded} seasonYear={settings.seasonYear || new Date().getFullYear()} />
+          <FixturesTab fixtures={fixtures} fixturesExpanded={fixturesExpanded} setFixturesExpanded={setFixturesExpanded} seasonYear={settings.seasonYear || new Date().getFullYear()} />
         )}
                 {/* ══════════════════════════════════════════
             MEMBERS TAB
@@ -2727,13 +2746,10 @@ export default function BowlsTracker() {
               handleBackupImport={handleBackupImport}
               backupMsg={backupMsg}
               tournaments={TOURNAMENTS}
-              defaultTournamentIds={DEFAULT_TOURNAMENTS.map(t => t.id)}
-              compOverrides={compOverrides}
               onAddComp={openAddComp}
               onEditComp={openEditComp}
               onAddPersonalComp={openAddPersonalComp}
               onEditCompDates={openRoundDatesEditor}
-              masterRoundDates={masterRoundDates}
               isSuperAdmin={isSuperAdmin}
               isAdmin={isAdmin}
               cloudKey={cloudKey}
@@ -2759,7 +2775,7 @@ export default function BowlsTracker() {
         {/* ══════════════════════════════════════════
             CLUB TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "club" && <ClubTab members={members} />}
+        {activeTab === "club" && <ClubTab members={members} rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} />}
               </div>
 
       {/* ── MANAGE COMPETITIONS SHEET ── */}
@@ -2798,7 +2814,7 @@ export default function BowlsTracker() {
             {editCompId && (
               <button onClick={() => deleteComp(editCompId)}
                 style={{ background: SURFACE, border: `1px solid #e8c5c5`, borderRadius: "8px", color: LOSS_RED, padding: "13px 14px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
-                {DEFAULT_TOURNAMENTS.some(t => t.id === editCompId) ? "Reset" : "Delete"}
+                Delete
               </button>
             )}
             <button onClick={() => setShowManageCompsSheet(false)}
