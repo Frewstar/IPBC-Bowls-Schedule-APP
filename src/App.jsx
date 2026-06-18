@@ -180,13 +180,22 @@ export default function BowlsTracker() {
 
   async function claimSuperAdmin() {
     if (!cloudKey || !myName) return;
-    const { data: existing } = await supabase.from("admins").select("cloud_key").eq("role", "super_admin").neq("cloud_key", "SUPER_ADMIN_BOOTSTRAP");
+    const nameUpper = myName.toUpperCase();
+    const { data: existing } = await supabase.from("admins").select("cloud_key, player_name").eq("role", "super_admin");
+    // If the existing super admin record belongs to this user, just restore the role locally
+    const alreadyMe = existing?.some(r => r.cloud_key === cloudKey || r.player_name === nameUpper);
+    if (alreadyMe) {
+      setAdminRole("super_admin");
+      setAdminClaimMsg("Super admin restored!");
+      setTimeout(() => setAdminClaimMsg(null), 4000);
+      return;
+    }
     if (existing && existing.length > 0) {
       setAdminClaimMsg("A super admin already exists.");
       setTimeout(() => setAdminClaimMsg(null), 4000);
       return;
     }
-    const { error } = await supabase.from("admins").upsert({ cloud_key: cloudKey, role: "super_admin", display_name: myName.toUpperCase() }, { onConflict: "cloud_key" });
+    const { error } = await supabase.from("admins").upsert({ cloud_key: cloudKey, player_name: nameUpper, role: "super_admin", display_name: nameUpper }, { onConflict: "cloud_key" });
     if (!error) {
       setAdminRole("super_admin");
       setAdminClaimMsg("You are now super admin!");
