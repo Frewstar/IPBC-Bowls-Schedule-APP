@@ -146,8 +146,11 @@ export default function BowlsTracker() {
 
   // ── My Ties state ──
   const [myName, setMyName]       = useState(() => load("bowls_myname", "") || "");
+  const [myPin, setMyPin]         = useState(() => load("bowls_mypin", "") || "");
   const [settingName, setSettingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [pinInput, setPinInput]   = useState("");
+  const [nameStep, setNameStep]   = useState("name"); // "name" | "pin"
   const SUPER_ADMIN_KEY = "bowls_super_admin_name_v1";
   const [superAdminName, setSuperAdminName] = useState(() => load(SUPER_ADMIN_KEY, ""));
   const isSuperAdmin = !!myName && myName.toUpperCase() === (superAdminName || "");
@@ -537,19 +540,21 @@ export default function BowlsTracker() {
   useEffect(() => { save(MEMBERS_KEY, members); }, [members]);
   useEffect(() => { save(TIES_KEY, ties); },       [ties]);
   useEffect(() => { save("bowls_myname", myName); }, [myName]);
+  useEffect(() => { save("bowls_mypin", myPin); }, [myPin]);
   useEffect(() => { save("bowls_entries_v1", entries); }, [entries]);
 
   // ── Supabase cloud sync ──
   const [syncStatus, setSyncStatus] = useState("idle"); // "idle"|"syncing"|"synced"|"error"
+  const cloudKey = myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null;
 
   // On load: pull entries from cloud and merge with local
   useEffect(() => {
-    if (!myName) return;
+    if (!cloudKey) return;
     setSyncStatus("syncing");
     supabase
       .from("player_data")
       .select("entries")
-      .eq("player_name", myName.toUpperCase())
+      .eq("player_name", cloudKey)
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) { setSyncStatus("error"); return; }
@@ -562,20 +567,20 @@ export default function BowlsTracker() {
         }
         setSyncStatus("synced");
       });
-  }, [myName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // On entries change: debounced upsert to cloud
   useEffect(() => {
-    if (!myName) return;
+    if (!cloudKey) return;
     const timer = setTimeout(() => {
       setSyncStatus("syncing");
       supabase
         .from("player_data")
-        .upsert({ player_name: myName.toUpperCase(), entries, updated_at: new Date().toISOString() }, { onConflict: "player_name" })
+        .upsert({ player_name: cloudKey, entries, updated_at: new Date().toISOString() }, { onConflict: "player_name" })
         .then(({ error }) => setSyncStatus(error ? "error" : "synced"));
     }, 2500);
     return () => clearTimeout(timer);
-  }, [entries, myName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entries, cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One-time migration: ensure entries/ties have section for proper Ladies/Gents split
   useEffect(() => {
@@ -693,8 +698,20 @@ export default function BowlsTracker() {
   // ── Handlers ──
   function saveName() {
     if (!nameInput.trim()) return;
+    setNameStep("pin");
+  }
+  function savePin() {
+    if (!/^\d{4}$/.test(pinInput)) return;
     setMyName(nameInput.toUpperCase().trim());
+    setMyPin(pinInput);
+    setNameStep("name");
+    setPinInput("");
     setSettingName(false);
+  }
+  function saveExistingPin() {
+    if (!/^\d{4}$/.test(pinInput)) return;
+    setMyPin(pinInput);
+    setPinInput("");
   }
 
   // ── Tournament entry handlers ──
@@ -1108,7 +1125,7 @@ export default function BowlsTracker() {
 
             {/* Logged-in user pill */}
             {myName ? (
-              <button onClick={() => { setSettingName(true); setNameInput(myName); }}
+              <button onClick={() => { setSettingName(true); setNameInput(myName); setNameStep("name"); }}
                 style={{ background: "transparent", border: `1px solid ${GREEN}`, borderRadius: "20px", color: GREEN, padding: "5px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_SANS, fontWeight: "600", flexShrink: 0, letterSpacing: "0.02em" }}>
                 {myName}
               </button>
@@ -1153,15 +1170,34 @@ export default function BowlsTracker() {
           <div>
             {(!myName || settingName) ? (
               <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "32px 24px", boxShadow: "0 2px 12px rgba(74,14,31,0.08)", textAlign: "center" }}>
-                <div style={{ fontFamily: F_SANS, fontSize: "28px", fontWeight: "600", color: GREEN, marginBottom: "6px" }}>Welcome</div>
-                <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "24px" }}>Enter your name to track your tournament ties</div>
-                <input value={nameInput} onChange={e => setNameInput(e.target.value.toUpperCase())}
-                  placeholder="e.g. J FREW" autoFocus
-                  style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "2px", marginBottom: "12px" }} />
-                <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
-                  <button onClick={saveName} style={{ background: MID, border: "none", borderRadius: "8px", color: "#ffffff", padding: "11px 28px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", letterSpacing: "0.05em" }}>Confirm</button>
-                  {settingName && <button onClick={() => setSettingName(false)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>}
-                </div>
+                {nameStep === "name" ? (
+                  <>
+                    <div style={{ fontFamily: F_SANS, fontSize: "28px", fontWeight: "600", color: GREEN, marginBottom: "6px" }}>Welcome</div>
+                    <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "24px" }}>Enter your name to track your tournament ties</div>
+                    <input value={nameInput} onChange={e => setNameInput(e.target.value.toUpperCase())}
+                      placeholder="e.g. J FREW" autoFocus
+                      onKeyDown={e => e.key === "Enter" && saveName()}
+                      style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "2px", marginBottom: "12px" }} />
+                    <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+                      <button onClick={saveName} style={{ background: MID, border: "none", borderRadius: "8px", color: "#ffffff", padding: "11px 28px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", letterSpacing: "0.05em" }}>Next</button>
+                      {settingName && <button onClick={() => { setSettingName(false); setNameStep("name"); }} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontFamily: F_SANS, fontSize: "24px", fontWeight: "600", color: GREEN, marginBottom: "6px" }}>Choose a PIN</div>
+                    <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "6px" }}>Pick any 4-digit number — you'll need this if you switch phones or want to keep your data private.</div>
+                    <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "20px" }}>Setting up as: <strong>{nameInput.toUpperCase().trim()}</strong></div>
+                    <input value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      placeholder="e.g. 1234" autoFocus inputMode="numeric" maxLength={4}
+                      onKeyDown={e => e.key === "Enter" && savePin()}
+                      style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px", marginBottom: "12px" }} />
+                    <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+                      <button onClick={() => setNameStep("name")} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Back</button>
+                      <button onClick={savePin} disabled={pinInput.length !== 4} style={{ background: pinInput.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#ffffff", padding: "11px 28px", fontSize: "13px", cursor: pinInput.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "600", letterSpacing: "0.05em" }}>Confirm</button>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               /* ── TOURNAMENT TRACKER DASHBOARD ── */
@@ -1192,6 +1228,24 @@ export default function BowlsTracker() {
                     <>
                       {/* hidden backup file input still needed */}
                       <input ref={backupFileRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleBackupImport} />
+
+                      {/* ── PIN setup prompt (existing users without PIN) ── */}
+                      {myName && !myPin && (
+                        <div style={{ background: `${GOLD}12`, border: `1.5px solid ${GOLD}55`, borderRadius: "14px", padding: "18px 16px", marginBottom: "14px" }}>
+                          <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT, marginBottom: "4px" }}>🔒 Set up a PIN to protect your data</div>
+                          <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5, marginBottom: "12px" }}>Add a 4-digit PIN so your cloud data can't be mixed up with another member who shares your initials. You'll only need to do this once.</div>
+                          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                            <input value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                              placeholder="4 digits" inputMode="numeric" maxLength={4}
+                              onKeyDown={e => e.key === "Enter" && saveExistingPin()}
+                              style={{ flex: 1, padding: "10px 12px", fontSize: "18px", border: `1px solid ${GOLD}55`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "6px" }} />
+                            <button onClick={saveExistingPin} disabled={pinInput.length !== 4}
+                              style={{ background: pinInput.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "11px 18px", fontSize: "13px", cursor: pinInput.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "600", whiteSpace: "nowrap" }}>
+                              Set PIN
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* ── Share toast ── */}
                       {shareToast && (
