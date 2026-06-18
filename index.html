@@ -78,9 +78,43 @@
         from { transform: translateY(100%); }
         to   { transform: translateY(0); }
       }
+      @keyframes slideDown {
+        from { transform: translateY(0); }
+        to   { transform: translateY(100%); }
+      }
+      @keyframes slideInFromTop {
+        from { transform: translateY(-100%); opacity: 0; }
+        to   { transform: translateY(0);     opacity: 1; }
+      }
       @keyframes fadeIn {
         from { opacity: 0; }
         to   { opacity: 1; }
+      }
+      @keyframes tabFadeIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      button {
+        -webkit-tap-highlight-color: transparent;
+        transition: transform 0.1s ease, opacity 0.1s ease;
+      }
+      button:active {
+        transform: scale(0.96);
+        opacity: 0.85;
+      }
+      /* Suppress scale on icon-only nav buttons — too jittery on the tab bar */
+      button[data-nav] {
+        transition: color 0.12s, border-color 0.12s;
+      }
+      button[data-nav]:active {
+        transform: none;
+        opacity: 1;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
       }
     </style>
   </head>

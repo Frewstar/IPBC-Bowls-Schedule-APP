@@ -1,17 +1,31 @@
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { SURFACE, SURFACE2, BORDER, TEXT2, GREEN, F_SANS } from "../lib/theme.js";
 
 export default function BottomSheet({ open, onClose, title, children, titleColor = GREEN }) {
-  if (!open) return null;
+  const [visible, setVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    if (open) { setClosing(false); setVisible(true); }
+  }, [open]);
+
+  function handleClose() {
+    setClosing(true);
+    setTimeout(() => { setVisible(false); setClosing(false); onClose(); }, 220);
+  }
+
+  if (!visible) return null;
   return (
     <>
-      {/* Backdrop: use onMouseDown so it fires on press not on release, and doesn't intercept typing */}
       <div
-        onMouseDown={onClose}
-        onTouchEnd={e => { e.preventDefault(); onClose(); }}
-        style={{ position: "fixed", inset: 0, background: "rgba(26,10,14,0.45)", zIndex: 200, animation: "fadeIn 0.2s ease" }}
+        onMouseDown={handleClose}
+        onTouchEnd={e => { e.preventDefault(); handleClose(); }}
+        style={{
+          position: "fixed", inset: 0, background: "rgba(26,10,14,0.45)", zIndex: 200,
+          animation: closing ? "fadeIn 0.22s ease reverse forwards" : "fadeIn 0.2s ease",
+        }}
       />
-      {/* Sheet: stop all events from bubbling to the backdrop */}
       <div
         onMouseDown={e => e.stopPropagation()}
         onTouchStart={e => e.stopPropagation()}
@@ -22,7 +36,9 @@ export default function BottomSheet({ open, onClose, title, children, titleColor
           background: SURFACE, borderRadius: "20px 20px 0 0",
           maxHeight: "88vh", overflowY: "auto",
           boxShadow: "0 -8px 32px rgba(74,14,31,0.18)",
-          animation: "slideUp 0.25s cubic-bezier(0.32,0.72,0,1)",
+          animation: closing
+            ? "slideDown 0.22s cubic-bezier(0.32,0.72,0,1) forwards"
+            : "slideUp 0.25s cubic-bezier(0.32,0.72,0,1)",
           paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
         }}>
         <div style={{ display: "flex", justifyContent: "center", paddingTop: "10px", paddingBottom: "4px" }}>
@@ -30,7 +46,7 @@ export default function BottomSheet({ open, onClose, title, children, titleColor
         </div>
         <div style={{ padding: "12px 20px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${BORDER}` }}>
           <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: titleColor, letterSpacing: "0.02em" }}>{title}</div>
-          <button onClick={onClose} style={{ background: SURFACE2, border: "none", borderRadius: "50%", width: "32px", height: "32px", cursor: "pointer", color: TEXT2, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button onClick={handleClose} style={{ background: SURFACE2, border: "none", borderRadius: "50%", width: "32px", height: "32px", cursor: "pointer", color: TEXT2, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <X size={16} strokeWidth={2} />
           </button>
         </div>

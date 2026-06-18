@@ -1000,7 +1000,7 @@ export default function BowlsTracker() {
 
       {/* ── iOS INSTALL BANNER ── */}
       {showIosBanner && (
-        <div style={{ position: "fixed", bottom: "70px", left: "12px", right: "12px", zIndex: 200, background: GREEN, borderRadius: "14px", padding: "14px 16px", boxShadow: "0 4px 20px rgba(74,14,31,0.3)", display: "flex", alignItems: "flex-start", gap: "12px" }}>
+        <div style={{ position: "fixed", bottom: "70px", left: "12px", right: "12px", zIndex: 200, background: GREEN, borderRadius: "14px", padding: "14px 16px", boxShadow: "0 4px 20px rgba(74,14,31,0.3)", display: "flex", alignItems: "flex-start", gap: "12px", animation: "slideUp 0.22s cubic-bezier(0.32,0.72,0,1)" }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "700", color: "#fff", marginBottom: "3px" }}>Install this app</div>
             <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.82)", lineHeight: 1.5 }}>
@@ -1015,7 +1015,7 @@ export default function BowlsTracker() {
 
       {/* ── ANDROID INSTALL BANNER ── */}
       {installPrompt && (
-        <div style={{ position: "fixed", bottom: "70px", left: "12px", right: "12px", zIndex: 200, background: GREEN, borderRadius: "14px", padding: "14px 16px", boxShadow: "0 4px 20px rgba(74,14,31,0.3)", display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ position: "fixed", bottom: "70px", left: "12px", right: "12px", zIndex: 200, background: GREEN, borderRadius: "14px", padding: "14px 16px", boxShadow: "0 4px 20px rgba(74,14,31,0.3)", display: "flex", alignItems: "center", gap: "12px", animation: "slideUp 0.22s cubic-bezier(0.32,0.72,0,1)" }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "700", color: "#fff", marginBottom: "2px" }}>Install this app</div>
             <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.82)" }}>Add IPBC Bowls to your home screen</div>
@@ -1031,7 +1031,7 @@ export default function BowlsTracker() {
 
       {/* ── SW UPDATE BANNER ── */}
       {swWaiting && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 300, background: MID, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", boxShadow: "0 2px 8px rgba(74,14,31,0.2)" }}>
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 300, background: MID, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", boxShadow: "0 2px 8px rgba(74,14,31,0.2)", animation: "slideInFromTop 0.22s ease" }}>
           <div style={{ fontFamily: F_UI, fontSize: "13px", color: "#fff" }}>Update available</div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <button onClick={applySwUpdate} style={{ background: GOLD, border: "none", borderRadius: "6px", color: "#4a0e1f", padding: "7px 14px", fontSize: "12px", fontWeight: "700", cursor: "pointer", fontFamily: F_UI, whiteSpace: "nowrap" }}>
@@ -1167,7 +1167,7 @@ export default function BowlsTracker() {
       </div>
 
       {/* ── SCROLLABLE CONTENT ── */}
-      <div style={{ padding: "20px 16px 100px", maxWidth: "680px", margin: "0 auto" }}>
+      <div key={activeTab} style={{ padding: "20px 16px 100px", maxWidth: "680px", margin: "0 auto", animation: "tabFadeIn 0.18s ease" }}>
 
         {/* ══════════════════════════════════════════
             MY TIES TAB
@@ -1298,7 +1298,7 @@ export default function BowlsTracker() {
 
                       {/* ── Reminder banner ── */}
                       {reminderItems.length > 0 && (
-                        <div style={{ marginBottom: "14px", background: "#fffbeb", border: "1px solid #f59e0b44", borderRadius: "10px", overflow: "hidden" }}>
+                        <div style={{ marginBottom: "14px", background: "#fffbeb", border: "1px solid #f59e0b44", borderRadius: "10px", overflow: "hidden", animation: "fadeIn 0.2s ease" }}>
                           <button
                             onClick={() => setRemindersExpanded(v => !v)}
                             style={{ width: "100%", background: "none", border: "none", cursor: "pointer", padding: "11px 14px", display: "flex", alignItems: "center", gap: "10px", textAlign: "left" }}>
@@ -2852,7 +2852,7 @@ export default function BowlsTracker() {
           {TABS.map(({ id, label, Icon }) => {
             const isActive = activeTab === id;
             return (
-              <button key={id} onClick={() => navigateTo(id)} style={{
+              <button key={id} data-nav onClick={() => navigateTo(id)} style={{
                 flex: 1, background: "transparent", border: "none",
                 borderTop: isActive ? `3px solid ${GREEN}` : "3px solid transparent",
                 color: isActive ? GREEN : TEXT3,
