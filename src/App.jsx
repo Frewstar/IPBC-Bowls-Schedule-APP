@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
-  Target, Search, Trophy, Calendar, Users,
+  Crosshair, Binoculars, Award, Calendar, Users,
   Phone, Check, X, Pencil, Plus, User,
   ChevronLeft, ChevronRight, ChevronDown, Download, Upload,
   Clock, MapPin, Settings, HelpCircle, Type,
-  Shield, Info, RefreshCw, BookOpen, Crosshair,
-  Star, Medal, Bell, AlertTriangle,
+  Shield, Info, RefreshCw, BookOpen, Target, Search,
+  Star, Medal, Bell, AlertTriangle, Trophy,
 } from "lucide-react";
 
 // ── lib imports ──────────────────────────────────────────────────────────────
@@ -937,12 +937,12 @@ export default function BowlsTracker() {
   }
 
   const TABS = [
-    { id: "myties",      label: "My Ties",   Icon: Target   },
-    { id: "search",      label: "Find",      Icon: Search   },
-    { id: "honours",     label: "Honours",   Icon: Medal    },
-    { id: "fixtures",    label: "Fixtures",  Icon: Calendar },
-    { id: "members",     label: "Members",   Icon: Users    },
-    { id: "club",        label: "Club",      Icon: Shield   },
+    { id: "myties",      label: "My Ties",   Icon: Crosshair  },
+    { id: "search",      label: "Find",      Icon: Binoculars },
+    { id: "honours",     label: "Honours",   Icon: Award      },
+    { id: "fixtures",    label: "Fixtures",  Icon: Calendar   },
+    { id: "members",     label: "Members",   Icon: Users      },
+    { id: "club",        label: "Club",      Icon: Shield     },
   ];
 
   const selectedT = activeTournament ? TOURNAMENTS.find(t => t.id === activeTournament) : null;
@@ -2854,6 +2854,7 @@ export default function BowlsTracker() {
               }}>
                 <Icon size={22} strokeWidth={isActive ? 2.2 : 1.5} />
                 <span style={{ fontSize: "10px", letterSpacing: "0.05em", textTransform: "uppercase", lineHeight: 1 }}>{label}</span>
+                <div style={{ width: "4px", height: "4px", borderRadius: "50%", background: isActive ? GREEN : "transparent", transition: "background 0.15s" }} />
               </button>
             );
           })}

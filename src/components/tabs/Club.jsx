@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trophy, Phone, ChevronDown, Shield, MapPin, Star } from "lucide-react";
+import { Trophy, Phone, ChevronDown, Shield, MapPin, Star, Clock } from "lucide-react";
 import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
 
 // ── Data ────────────────────────────────────────────────────────────────────
@@ -94,22 +94,34 @@ export default function ClubTab() {
         <Trophy size={16} strokeWidth={2} color={GOLD_MUTED} /> Roll of Honour
       </div>
 
+      {/* season-pending note */}
+      <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px", paddingLeft: "2px" }}>
+        Winners will appear here as this season's competitions conclude.
+      </div>
+
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 4px rgba(74,14,31,0.07)" }}>
         {ROLL_OF_HONOUR.map((comp, idx) => {
           const isOpen = expandedComp === comp.id;
           const latest = comp.winners[0];
+          const isPending = latest.winner === "TBC";
           return (
             <div key={comp.id} style={{ borderBottom: idx < ROLL_OF_HONOUR.length - 1 ? `1px solid ${BORDER}` : "none" }}>
               <button
                 onClick={() => setExpandedComp(isOpen ? null : comp.id)}
                 style={{ width: "100%", background: "none", border: "none", cursor: "pointer", padding: "0", display: "flex", alignItems: "center", textAlign: "left" }}>
                 <div style={{ width: "3px", alignSelf: "stretch", background: comp.color, flexShrink: 0 }} />
-                <div style={{ flex: 1, padding: "11px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ flex: 1, padding: "14px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
                   <div style={{ flex: 1 }}>
                     <span style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "600", color: TEXT }}>{comp.name}</span>
-                    <span style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginLeft: "8px" }}>
-                      {latest.year} · <span style={{ color: latest.winner === "TBC" ? TEXT3 : GOLD_MUTED, fontWeight: "700" }}>{latest.winner}</span>
-                    </span>
+                    {isPending ? (
+                      <span style={{ marginLeft: "8px", display: "inline-flex", alignItems: "center", gap: "3px", fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
+                        <Clock size={11} strokeWidth={1.75} /> Pending
+                      </span>
+                    ) : (
+                      <span style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginLeft: "8px" }}>
+                        {latest.year} · <span style={{ color: GOLD_MUTED, fontWeight: "700" }}>{latest.winner}</span>
+                      </span>
+                    )}
                   </div>
                   <ChevronDown size={13} strokeWidth={2} color={TEXT3}
                     style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
@@ -118,10 +130,12 @@ export default function ClubTab() {
               {isOpen && (
                 <div style={{ background: SURFACE2, borderTop: `1px solid ${BORDER}`, padding: "10px 14px 10px 17px" }}>
                   <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Past Winners</div>
-                  {comp.winners.map((w, i) => (
+                  {isPending ? (
+                    <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, fontStyle: "italic", padding: "4px 0 6px" }}>No results recorded yet — check back later.</div>
+                  ) : comp.winners.map((w, i) => (
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < comp.winners.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                       <span style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, fontWeight: "600" }}>{w.year}</span>
-                      <span style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "700", color: w.winner === "TBC" ? TEXT3 : TEXT }}>{w.winner}</span>
+                      <span style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "700", color: TEXT }}>{w.winner}</span>
                     </div>
                   ))}
                 </div>

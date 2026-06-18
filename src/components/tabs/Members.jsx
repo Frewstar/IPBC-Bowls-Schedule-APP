@@ -109,7 +109,7 @@ export default function MembersTab({
                       </div>
                     </div>
                   ) : (
-                    <div style={{ padding: "12px 14px", borderBottom: i < groupedMembers[letter].length - 1 ? `1px solid ${BORDER}` : "none", display: "flex", alignItems: "center", gap: "12px", minHeight: "52px" }}>
+                    <div style={{ padding: "16px 16px", borderBottom: i < groupedMembers[letter].length - 1 ? `1px solid ${BORDER}` : "none", display: "flex", alignItems: "center", gap: "12px", minHeight: "58px" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "600", color: GREEN, lineHeight: 1.2 }}>
                           {getSurname(m.name)}
