@@ -7,39 +7,64 @@ import { supabase } from "../../lib/supabase.js";
 export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], defaultTournamentIds = [], compOverrides = {}, onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, masterRoundDates = {}, isSuperAdmin = false, isAdmin = false, cloudKey = null, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack }) {
   const [savedMsg, setSavedMsg] = useState(false);
 
+  // Admin request state (any member)
+  const [requestRoleInput, setRequestRoleInput] = useState("");
+  const [requestMsg, setRequestMsg] = useState(null);
+
+  async function submitAdminRequest() {
+    const name = myName?.toUpperCase().trim();
+    if (!name || !requestRoleInput.trim()) return;
+    const { error } = await supabase.from("admin_requests")
+      .upsert({ player_name: name, role_title: requestRoleInput.trim(), requested_at: new Date().toISOString() }, { onConflict: "player_name" });
+    if (!error) {
+      setRequestMsg("Request sent — the super admin will review it shortly.");
+      setRequestRoleInput("");
+    } else {
+      setRequestMsg("Something went wrong. Please try again.");
+    }
+    setTimeout(() => setRequestMsg(null), 5000);
+  }
+
   // Admin management state (super admin only)
   const [adminList, setAdminList] = useState([]);
-  const [grantKeyInput, setGrantKeyInput] = useState("");
-  const [grantNameInput, setGrantNameInput] = useState("");
+  const [pendingRequests, setPendingRequests] = useState([]);
   const [adminMgmtMsg, setAdminMgmtMsg] = useState(null);
 
   useEffect(() => {
     if (!isSuperAdmin) return;
-    supabase.from("admins").select("*").then(({ data }) => {
-      if (data) setAdminList(data);
-    });
+    supabase.from("admins").select("*").then(({ data }) => { if (data) setAdminList(data); });
+    supabase.from("admin_requests").select("*").order("requested_at")
+      .then(({ data }) => { if (data) setPendingRequests(data); });
   }, [isSuperAdmin]);
 
-  async function grantAdmin() {
-    const key = grantKeyInput.trim().toUpperCase();
-    const name = grantNameInput.trim().toUpperCase();
-    if (!key || !name) return;
-    const { error } = await supabase.from("admins").insert({ cloud_key: key, role: "admin", display_name: name });
+  async function acceptRequest(req) {
+    const name = req.player_name;
+    const cloudKeyForGrant = `GRANTED-${name}`;
+    const { error } = await supabase.from("admins")
+      .upsert({ cloud_key: cloudKeyForGrant, player_name: name, role: "admin", display_name: name }, { onConflict: "cloud_key" });
     if (!error) {
-      setAdminList(prev => [...prev, { cloud_key: key, role: "admin", display_name: name }]);
-      setGrantKeyInput(""); setGrantNameInput("");
-      setAdminMgmtMsg("Admin granted.");
+      await supabase.from("admin_requests").delete().eq("player_name", name);
+      setAdminList(prev => [...prev.filter(a => a.player_name !== name), { cloud_key: cloudKeyForGrant, player_name: name, role: "admin", display_name: name }]);
+      setPendingRequests(prev => prev.filter(r => r.player_name !== name));
+      setAdminMgmtMsg(`${name} is now an admin.`);
     } else {
-      setAdminMgmtMsg("Error: " + (error.message || "could not grant admin"));
+      setAdminMgmtMsg("Error granting admin.");
     }
-    setTimeout(() => setAdminMgmtMsg(null), 3500);
+    setTimeout(() => setAdminMgmtMsg(null), 4000);
   }
 
-  async function revokeAdmin(key) {
-    if (key === cloudKey) return; // cannot revoke self
-    const { error } = await supabase.from("admins").delete().eq("cloud_key", key);
+  async function declineRequest(playerName) {
+    await supabase.from("admin_requests").delete().eq("player_name", playerName);
+    setPendingRequests(prev => prev.filter(r => r.player_name !== playerName));
+    setAdminMgmtMsg("Request declined.");
+    setTimeout(() => setAdminMgmtMsg(null), 3000);
+  }
+
+  async function revokeAdmin(a) {
+    if (a.cloud_key === cloudKey || a.player_name === myName?.toUpperCase()) return;
+    const { error } = await supabase.from("admins").delete().eq("cloud_key", a.cloud_key);
     if (!error) {
-      setAdminList(prev => prev.filter(a => a.cloud_key !== key));
+      setAdminList(prev => prev.filter(x => x.cloud_key !== a.cloud_key));
       setAdminMgmtMsg("Admin revoked.");
     } else {
       setAdminMgmtMsg("Error revoking admin.");
@@ -286,42 +311,86 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
         </div>
       </div>
 
+      {/* Request Admin Access — non-admins with a name set */}
+      {myName && !isAdmin && (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", marginBottom: "14px" }}>
+          <SecHeader icon={UserCheck} label="Admin Access" />
+          <div style={{ padding: "14px 16px" }}>
+            <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "12px" }}>If you need to manage member records or tournament details, request access below. The super admin will review it.</div>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "6px" }}>
+              <div style={{ flex: 1, padding: "10px 12px", border: `1px solid ${BORDER}`, borderRadius: "8px", fontSize: "13px", fontFamily: F_UI, color: TEXT2, background: SURFACE2 }}>{myName.toUpperCase()}</div>
+            </div>
+            <input
+              value={requestRoleInput}
+              onChange={e => setRequestRoleInput(e.target.value)}
+              placeholder="Your role, e.g. Match Secretary"
+              style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: `1px solid ${BORDER}`, borderRadius: "8px", fontSize: "13px", fontFamily: F_UI, color: TEXT, background: SURFACE, outline: "none", marginBottom: "8px" }}
+            />
+            <button
+              onClick={submitAdminRequest}
+              disabled={!requestRoleInput.trim()}
+              style={{ background: requestRoleInput.trim() ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "10px 18px", fontSize: "13px", cursor: requestRoleInput.trim() ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700", minHeight: "44px" }}>
+              Send Request
+            </button>
+            {requestMsg && <div style={{ marginTop: "8px", fontFamily: F_UI, fontSize: "12px", color: GREEN, lineHeight: 1.5 }}>{requestMsg}</div>}
+          </div>
+        </div>
+      )}
+
       {/* Admin Management — super admin only */}
       {isSuperAdmin && (
         <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", marginBottom: "14px" }}>
           <SecHeader icon={UserCheck} label="Admin Access" />
-          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}` }}>
-            <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px" }}>Grant admin access using a member's cloud key (NAME-PIN format).</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <input value={grantKeyInput} onChange={e => setGrantKeyInput(e.target.value.toUpperCase())} placeholder="Cloud key e.g. J SMITH-1234"
-                style={{ width: "100%", boxSizing: "border-box", padding: "9px 12px", border: `1px solid ${BORDER}`, borderRadius: "8px", fontSize: "13px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }} />
-              <input value={grantNameInput} onChange={e => setGrantNameInput(e.target.value.toUpperCase())} placeholder="Display name e.g. J SMITH"
-                style={{ width: "100%", boxSizing: "border-box", padding: "9px 12px", border: `1px solid ${BORDER}`, borderRadius: "8px", fontSize: "13px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }} />
-              <button onClick={grantAdmin} disabled={!grantKeyInput.trim() || !grantNameInput.trim()}
-                style={{ background: grantKeyInput.trim() && grantNameInput.trim() ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "10px 16px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
-                Grant Admin
-              </button>
-              {adminMgmtMsg && <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED }}>{adminMgmtMsg}</div>}
+
+          {/* Pending requests */}
+          <div style={{ borderBottom: `1px solid ${BORDER}` }}>
+            <div style={{ padding: "10px 16px 8px", fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: TEXT2, letterSpacing: "0.04em" }}>
+              Pending Requests {pendingRequests.length > 0 && <span style={{ background: MID, color: "#fff", borderRadius: "10px", padding: "1px 7px", fontSize: "10px", marginLeft: "6px" }}>{pendingRequests.length}</span>}
             </div>
-          </div>
-          <div>
-            {adminList.length === 0 ? (
-              <div style={{ padding: "12px 16px", fontFamily: F_UI, fontSize: "12px", color: TEXT3 }}>No admins yet.</div>
-            ) : adminList.map((a, i) => (
-              <div key={a.cloud_key} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 16px", borderBottom: i < adminList.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-                <Crown size={13} strokeWidth={1.75} color={a.role === "super_admin" ? GOLD_MUTED : TEXT3} />
+            {pendingRequests.length === 0 ? (
+              <div style={{ padding: "8px 16px 12px", fontFamily: F_UI, fontSize: "12px", color: TEXT3 }}>No pending requests.</div>
+            ) : pendingRequests.map((req, i) => (
+              <div key={req.player_name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 16px", borderTop: `1px solid ${BORDER}` }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{a.display_name}</div>
-                  <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>{a.role === "super_admin" ? "Super Admin" : "Admin"} · {a.cloud_key}</div>
+                  <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{req.player_name}</div>
+                  <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>{req.role_title}</div>
                 </div>
-                {a.cloud_key !== cloudKey && (
-                  <button onClick={() => revokeAdmin(a.cloud_key)}
-                    style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: LOSS_RED, padding: "5px 9px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                    <Trash2 size={11} strokeWidth={1.75} /> Revoke
-                  </button>
-                )}
+                <button onClick={() => acceptRequest(req)}
+                  style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 12px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", whiteSpace: "nowrap" }}>
+                  Accept
+                </button>
+                <button onClick={() => declineRequest(req.player_name)}
+                  style={{ background: "none", border: "none", borderRadius: "6px", color: LOSS_RED, padding: "6px 8px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", whiteSpace: "nowrap" }}>
+                  Decline
+                </button>
               </div>
             ))}
+          </div>
+
+          {/* Current admins list */}
+          <div style={{ padding: "10px 16px 8px", fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: TEXT2, letterSpacing: "0.04em" }}>Current Admins</div>
+          {adminMgmtMsg && <div style={{ padding: "0 16px 8px", fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED }}>{adminMgmtMsg}</div>}
+          <div>
+            {adminList.filter(a => a.cloud_key !== "SUPER_ADMIN_BOOTSTRAP").length === 0 ? (
+              <div style={{ padding: "4px 16px 12px", fontFamily: F_UI, fontSize: "12px", color: TEXT3 }}>No admins yet.</div>
+            ) : adminList.filter(a => a.cloud_key !== "SUPER_ADMIN_BOOTSTRAP").map((a, i, arr) => {
+              const isSelf = a.cloud_key === cloudKey || a.player_name === myName?.toUpperCase();
+              return (
+                <div key={a.cloud_key} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 16px", borderTop: `1px solid ${BORDER}` }}>
+                  <Crown size={13} strokeWidth={1.75} color={a.role === "super_admin" ? GOLD_MUTED : TEXT3} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{a.display_name || a.player_name}</div>
+                    <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>{a.role === "super_admin" ? "Super Admin" : "Admin"}</div>
+                  </div>
+                  {!isSelf && (
+                    <button onClick={() => revokeAdmin(a)}
+                      style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: LOSS_RED, padding: "5px 9px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                      <Trash2 size={11} strokeWidth={1.75} /> Revoke
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -156,10 +156,18 @@ export default function BowlsTracker() {
   const [adminClaimMsg, setAdminClaimMsg] = useState(null);
 
   useEffect(() => {
-    if (!cloudKey) { setAdminRole(null); return; }
-    supabase.from("admins").select("role").eq("cloud_key", cloudKey).maybeSingle()
-      .then(({ data }) => setAdminRole(data?.role || null));
-  }, [cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!myName) { setAdminRole(null); return; }
+    const nameUpper = myName.toUpperCase();
+    supabase.from("admins").select("role")
+      .or(`player_name.eq.${nameUpper},cloud_key.eq.${cloudKey || "__none__"}`)
+      .then(({ data }) => {
+        const rows = data || [];
+        const role = rows.some(r => r.role === "super_admin") ? "super_admin"
+                   : rows.some(r => r.role === "admin")       ? "admin"
+                   : null;
+        setAdminRole(role);
+      });
+  }, [myName, cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isAdmin = adminRole === "admin" || adminRole === "super_admin";
   const isSuperAdmin = adminRole === "super_admin";
