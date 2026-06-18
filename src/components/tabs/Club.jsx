@@ -3,22 +3,20 @@ import { Trophy, Phone, ChevronDown, Shield, Users, Star } from "lucide-react";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
 
 export const COMMITTEE = [
-  { role: "President",           name: "George Mathieson",         phone: "" },
-  { role: "Vice President",      name: "Freddie Bigham",           phone: "" },
-  { role: "Secretary",           name: "Iain McClymont",           phone: "07769675933" },
-  { role: "Treasurer",           name: "Scott Williamson",         phone: "07498308270" },
-  { role: "Bar Convenor",        name: "Warren Brown",             phone: "07971405588" },
-  { role: "Match Secretary",     name: "George Mathieson",         phone: "07715303749" },
-  { role: "Social Convenor",     name: "Brian Kirkpatrick",        phone: "07928912407" },
-  { role: "Past President",      name: "Brian Kirkpatrick",        phone: "" },
-  { role: "Building Convenor",   name: "Brian Kirkpatrick / Warren Brown", phone: "" },
-  { role: "Honorary President",  name: "Jackie Brown",             phone: "" },
+  { role: "President",           name: "TBC", phone: "" },
+  { role: "Vice President",      name: "TBC", phone: "" },
+  { role: "Secretary",           name: "TBC", phone: "" },
+  { role: "Treasurer",           name: "TBC", phone: "" },
+  { role: "Bar Convenor",        name: "TBC", phone: "" },
+  { role: "Match Secretary",     name: "TBC", phone: "" },
+  { role: "Social Convenor",     name: "TBC", phone: "" },
+  { role: "Past President",      name: "TBC", phone: "" },
+  { role: "Building Convenor",   name: "TBC", phone: "" },
+  { role: "Honorary President",  name: "TBC", phone: "" },
 ];
 
 export const MANAGEMENT_COMMITTEE = [
-  "William McCann", "Scott McLymont", "Lorraine Brown", "Lorraine Mair",
-  "Matt Kirkland", "Stephen Wells", "David Hargreaves", "Wilma Simpson",
-  "Andrena Scott", "Suzie Currie", "Christine Pipe",
+  "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC", "TBC",
 ];
 
 export const HONORARY_MEMBERS = [
@@ -26,16 +24,16 @@ export const HONORARY_MEMBERS = [
 ];
 
 export const ROLL_OF_HONOUR = [
-  { id: "championship",   name: "Championship",     color: "#ef4444", winners: [{ year: 2024, winner: "TBC" }] },
-  { id: "presidents",     name: "Presidents",       color: "#f59e0b", winners: [{ year: 2024, winner: "TBC" }] },
-  { id: "morton",         name: "Morton",           color: "#06b6d4", winners: [{ year: 2024, winner: "TBC" }] },
-  { id: "donaldson",      name: "Donaldson",        color: "#ec4899", winners: [{ year: 2024, winner: "TBC" }] },
-  { id: "mitchell",       name: "Mitchell Handicap",color: "#84cc16", winners: [{ year: 2024, winner: "TBC" }] },
-  { id: "pairs",          name: "Pairs",            color: "#f97316", winners: [{ year: 2024, winner: "TBC" }] },
-  { id: "triples",        name: "Triples",          color: "#10b981", winners: [{ year: 2024, winner: "TBC" }] },
-  { id: "rinks",          name: "Rinks",            color: "#8b5cf6", winners: [{ year: 2024, winner: "TBC" }] },
-  { id: "mixed-pairs",    name: "Mixed Pairs",      color: "#a78bfa", winners: [{ year: 2024, winner: "TBC" }] },
-  { id: "balloted-pairs", name: "Balloted Pairs",   color: "#c084fc", winners: [{ year: 2024, winner: "TBC" }] },
+  { id: "championship",   name: "Championship",     color: "#ef4444", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "presidents",     name: "Presidents",       color: "#f59e0b", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "morton",         name: "Morton",           color: "#06b6d4", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "donaldson",      name: "Donaldson",        color: "#ec4899", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "mitchell",       name: "Mitchell Handicap",color: "#84cc16", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "pairs",          name: "Pairs",            color: "#f97316", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "triples",        name: "Triples",          color: "#10b981", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "rinks",          name: "Rinks",            color: "#8b5cf6", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "mixed-pairs",    name: "Mixed Pairs",      color: "#a78bfa", winners: [{ year: 2026, winner: "TBC" }] },
+  { id: "balloted-pairs", name: "Balloted Pairs",   color: "#c084fc", winners: [{ year: 2026, winner: "TBC" }] },
 ];
 
 function SectionHeader({ icon: Icon, label }) {
@@ -101,7 +99,7 @@ export default function ClubTab() {
       </div>
 
       {/* ── Committee ── */}
-      <SectionHeader icon={Star} label="Committee 2024" />
+      <SectionHeader icon={Star} label="Committee 2026" />
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
         {COMMITTEE.map((m, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", borderBottom: i < COMMITTEE.length - 1 ? `1px solid ${BORDER}` : "none" }}>
