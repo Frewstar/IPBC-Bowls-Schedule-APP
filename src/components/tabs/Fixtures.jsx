@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { GREEN, GOLD, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
+import { GREEN, GOLD, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_SANS, F_UI } from "../../lib/theme.js";
 import { FIXTURES } from "../../lib/constants.js";
 import { DAY_NAMES, MONTH_ABBR, fixtureStatus } from "../../lib/utils.js";
 
@@ -17,7 +17,7 @@ function FixtureRow({ fix, i, total }) {
       minHeight: "52px",
     }}>
       <div style={{ minWidth: "36px", flexShrink: 0, textAlign: "center" }}>
-        <div style={{ fontFamily: F_DISPLAY, fontSize: "20px", fontWeight: "700", color: isPast ? TEXT3 : GREEN, lineHeight: 1 }}>{fix.date.getDate()}</div>
+        <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "700", color: isPast ? TEXT3 : GREEN, lineHeight: 1 }}>{fix.date.getDate()}</div>
         <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, textTransform: "uppercase", fontWeight: "500" }}>{DAY_NAMES[fix.date.getDay()]}</div>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -58,9 +58,9 @@ export default function FixturesTab({ fixturesExpanded, setFixturesExpanded, sea
           <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", letterSpacing: "0.18em", color: `${GOLD}cc`, textTransform: "uppercase", marginBottom: "6px" }}>
             {fixtureStatus(nextUp.date) === "today" ? "Today's Fixture" : "Next Fixture"}
           </div>
-          <div style={{ fontFamily: F_DISPLAY, fontSize: "24px", fontWeight: "700", color: "#fff", marginBottom: "8px", lineHeight: 1.1 }}>{nextUp.event}</div>
+          <div style={{ fontFamily: F_SANS, fontSize: "24px", fontWeight: "700", color: "#fff", marginBottom: "8px", lineHeight: 1.1 }}>{nextUp.event}</div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-            <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "600", color: GOLD }}>
+            <span style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "600", color: GOLD }}>
               {DAY_NAMES[nextUp.date.getDay()]} {nextUp.date.getDate()} {MONTH_ABBR[nextUp.date.getMonth()]}
             </span>
             <span style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.75)" }}>{nextUp.time}</span>

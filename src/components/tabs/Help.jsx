@@ -1,4 +1,4 @@
-import { GREEN, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
+import { GREEN, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_SANS, F_UI } from "../../lib/theme.js";
 import { Phone, Mail } from "lucide-react";
 
 const MATCH_SEC_PHONE = "+447402348205";
@@ -8,7 +8,7 @@ function Card({ emoji, title, children }) {
     <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "14px", marginBottom: "12px", overflow: "hidden", boxShadow: "0 1px 4px rgba(74,14,31,0.06)" }}>
       <div style={{ background: SURFACE2, padding: "14px 16px", display: "flex", alignItems: "center", gap: "12px", borderBottom: `1px solid ${BORDER}` }}>
         <span style={{ fontSize: "22px", lineHeight: 1 }}>{emoji}</span>
-        <div style={{ fontFamily: F_DISPLAY, fontSize: "19px", fontWeight: "700", color: GREEN }}>{title}</div>
+        <div style={{ fontFamily: F_SANS, fontSize: "19px", fontWeight: "700", color: GREEN }}>{title}</div>
       </div>
       <div style={{ padding: "16px" }}>{children}</div>
     </div>
@@ -39,7 +39,7 @@ export default function HelpTab() {
 
       {/* Hero */}
       <div style={{ background: `linear-gradient(135deg, #6b1d2e, #3d0f1a)`, borderRadius: "16px", padding: "22px 20px", marginBottom: "16px", boxShadow: "0 4px 16px rgba(74,14,31,0.2)" }}>
-        <div style={{ fontFamily: F_DISPLAY, fontSize: "26px", fontWeight: "700", color: "#fff", marginBottom: "6px" }}>How to use the app</div>
+        <div style={{ fontFamily: F_SANS, fontSize: "26px", fontWeight: "700", color: "#fff", marginBottom: "6px" }}>How to use the app</div>
         <div style={{ fontFamily: F_UI, fontSize: "14px", color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>
           Simple steps to get started. If you have a question about your draw or a tie, contact the Match Secretary.
         </div>
@@ -83,7 +83,7 @@ export default function HelpTab() {
 
       {/* Common questions */}
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "14px", padding: "16px", marginBottom: "12px", boxShadow: "0 1px 4px rgba(74,14,31,0.06)" }}>
-        <div style={{ fontFamily: F_DISPLAY, fontSize: "19px", fontWeight: "700", color: GREEN, marginBottom: "14px" }}>Common questions</div>
+        <div style={{ fontFamily: F_SANS, fontSize: "19px", fontWeight: "700", color: GREEN, marginBottom: "14px" }}>Common questions</div>
         <QA q="Will I lose my data?" a="No — everything saves automatically to your phone. As long as you don't clear your browser data, it'll be there next time you open the app." />
         <QA q="My opponent isn't in the member list." a="Type their name into the search box and tap Add manually. They'll be saved for that tie." />
         <QA q="I entered the wrong score." a="Open the competition in My Ties and tap Edit Score on the round." />

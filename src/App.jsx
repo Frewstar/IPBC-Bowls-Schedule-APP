@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 
 // ── lib imports ──────────────────────────────────────────────────────────────
-import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_UI } from "./lib/theme.js";
+import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_SANS, F_UI } from "./lib/theme.js";
 import { MEMBERS_KEY, TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
 import { DEFAULT_TOURNAMENTS, FIXTURES, DRAW_ENTRIES, DEFAULT_MEMBERS } from "./lib/constants.js";
@@ -35,7 +35,7 @@ import MembersTab from "./components/tabs/Members.jsx";
 function MemberPill({ name, phone, color = GOLD }) {
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: `${SURFACE}`, border: `1px solid ${GOLD}44`, borderRadius: "4px", padding: "5px 12px" }}>
-      <span style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "600", color: TEXT }}>{name}</span>
+      <span style={{ fontFamily: F_SANS, fontSize: "14px", fontWeight: "600", color: TEXT }}>{name}</span>
       {phone && <a href={`tel:${phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500", padding: "2px 0" }}><Phone size={12} strokeWidth={1.75} />{phone}</a>}
     </div>
   );
@@ -1002,7 +1002,7 @@ export default function BowlsTracker() {
       {showIosBanner && (
         <div style={{ position: "fixed", bottom: "70px", left: "12px", right: "12px", zIndex: 200, background: GREEN, borderRadius: "14px", padding: "14px 16px", boxShadow: "0 4px 20px rgba(74,14,31,0.3)", display: "flex", alignItems: "flex-start", gap: "12px" }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "700", color: "#fff", marginBottom: "3px" }}>Install this app</div>
+            <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "700", color: "#fff", marginBottom: "3px" }}>Install this app</div>
             <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.82)", lineHeight: 1.5 }}>
               Tap <strong style={{ color: GOLD }}>Share</strong> then <strong style={{ color: GOLD }}>Add to Home Screen</strong> to install IPBC Bowls on your iPhone.
             </div>
@@ -1017,7 +1017,7 @@ export default function BowlsTracker() {
       {installPrompt && (
         <div style={{ position: "fixed", bottom: "70px", left: "12px", right: "12px", zIndex: 200, background: GREEN, borderRadius: "14px", padding: "14px 16px", boxShadow: "0 4px 20px rgba(74,14,31,0.3)", display: "flex", alignItems: "center", gap: "12px" }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "700", color: "#fff", marginBottom: "2px" }}>Install this app</div>
+            <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "700", color: "#fff", marginBottom: "2px" }}>Install this app</div>
             <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.82)" }}>Add IPBC Bowls to your home screen</div>
           </div>
           <button onClick={triggerInstall} style={{ background: GOLD, border: "none", borderRadius: "8px", color: "#4a0e1f", padding: "9px 16px", fontSize: "13px", fontWeight: "700", cursor: "pointer", fontFamily: F_UI, whiteSpace: "nowrap", flexShrink: 0 }}>
@@ -1077,7 +1077,7 @@ export default function BowlsTracker() {
               {/* Content */}
               <div style={{ padding: "24px 28px 20px", textAlign: "center" }}>
                 <div style={{ fontSize: "52px", lineHeight: 1, marginBottom: "16px" }}>{step.icon}</div>
-                <div style={{ fontFamily: F_DISPLAY, fontSize: "26px", fontWeight: "700", color: GREEN, marginBottom: "10px" }}>{step.title}</div>
+                <div style={{ fontFamily: F_SANS, fontSize: "26px", fontWeight: "700", color: GREEN, marginBottom: "10px" }}>{step.title}</div>
                 <div style={{ fontFamily: F_UI, fontSize: "15px", color: TEXT2, lineHeight: 1.6 }}>{step.body}</div>
               </div>
               {/* Buttons */}
@@ -1125,7 +1125,7 @@ export default function BowlsTracker() {
             />
             {/* Fallback monogram */}
             <div style={{ display: "none", width: "44px", height: "44px", borderRadius: "50%", background: GREEN, alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: GOLD, letterSpacing: "1px" }}>IP</span>
+              <span style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: GOLD, letterSpacing: "1px" }}>IP</span>
             </div>
 
             {/* Title — centred between crest and pill */}
@@ -1141,7 +1141,7 @@ export default function BowlsTracker() {
             {/* Logged-in user pill */}
             {myName ? (
               <button onClick={() => { setSettingName(true); setNameInput(myName); }}
-                style={{ background: "transparent", border: `1px solid ${GREEN}`, borderRadius: "20px", color: GREEN, padding: "5px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_DISPLAY, fontWeight: "600", flexShrink: 0, letterSpacing: "0.02em" }}>
+                style={{ background: "transparent", border: `1px solid ${GREEN}`, borderRadius: "20px", color: GREEN, padding: "5px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_SANS, fontWeight: "600", flexShrink: 0, letterSpacing: "0.02em" }}>
                 {myName}
               </button>
             ) : (
@@ -1176,7 +1176,7 @@ export default function BowlsTracker() {
           <div>
             {(!myName || settingName) ? (
               <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "32px 24px", boxShadow: "0 2px 12px rgba(74,14,31,0.08)", textAlign: "center" }}>
-                <div style={{ fontFamily: F_DISPLAY, fontSize: "28px", fontWeight: "600", color: GREEN, marginBottom: "6px" }}>Welcome</div>
+                <div style={{ fontFamily: F_SANS, fontSize: "28px", fontWeight: "600", color: GREEN, marginBottom: "6px" }}>Welcome</div>
                 <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "24px" }}>Enter your name to track your tournament ties</div>
                 <input value={nameInput} onChange={e => setNameInput(e.target.value.toUpperCase())}
                   placeholder="e.g. J FREW" autoFocus
@@ -1228,7 +1228,7 @@ export default function BowlsTracker() {
                         <div style={{ background: GREEN, borderRadius: "16px", padding: "20px", marginBottom: "14px", position: "relative", overflow: "hidden" }}>
                           <div style={{ position: "absolute", top: -30, right: -30, width: "120px", height: "120px", background: "rgba(201,168,76,0.12)", borderRadius: "50%", pointerEvents: "none" }} />
                           <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: GOLD, letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "6px" }}>Next Up</div>
-                          <div style={{ fontFamily: F_DISPLAY, fontSize: "24px", fontWeight: "700", color: "#ffffff", letterSpacing: "0.02em", lineHeight: 1.1, marginBottom: "4px" }}>
+                          <div style={{ fontFamily: F_SANS, fontSize: "24px", fontWeight: "700", color: "#ffffff", letterSpacing: "0.02em", lineHeight: 1.1, marginBottom: "4px" }}>
                             {urgent.entry.tournamentName}
                           </div>
                           <div style={{ fontFamily: F_UI, fontSize: "14px", color: "rgba(255,255,255,0.85)", marginBottom: "4px" }}>
@@ -1261,7 +1261,7 @@ export default function BowlsTracker() {
                         <div style={{ background: WIN_BG, border: `1px solid ${GOLD}44`, borderRadius: "14px", padding: "16px 18px", marginBottom: "14px", display: "flex", alignItems: "center", gap: "12px" }}>
                           <Trophy size={26} strokeWidth={1.5} color={GOLD} />
                           <div>
-                            <div style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "600", color: GREEN }}>All caught up!</div>
+                            <div style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "600", color: GREEN }}>All caught up!</div>
                             <div style={{ fontSize: "12px", color: TEXT2, marginTop: "2px" }}>No pending ties — well played so far</div>
                           </div>
                         </div>
@@ -1271,7 +1271,7 @@ export default function BowlsTracker() {
                       {myEntries.length === 0 && (
                         <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "32px 24px", textAlign: "center", marginBottom: "14px" }}>
                           <div style={{ marginBottom: "12px", display: "flex", justifyContent: "center" }}><Target size={32} strokeWidth={1.25} color={GREEN} /></div>
-                          <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", color: GREEN, marginBottom: "8px" }}>No tournaments yet</div>
+                          <div style={{ fontFamily: F_SANS, fontSize: "22px", color: GREEN, marginBottom: "8px" }}>No tournaments yet</div>
                           <div style={{ fontSize: "12px", color: TEXT2, marginBottom: "20px" }}>Pick each competition and add your round 1 opponent</div>
                           <button onClick={() => { setShowEntrySheet(true); setEntryJustSaved(false); setEntryTournId(""); setEntryRounds(4); setEntryOppSearch(""); setEntryOppPicked(null); setEntryDate(""); setEntryTime(""); }}
                             style={{ background: MID, border: "none", borderRadius: "10px", color: "#ffffff", padding: "13px 32px", fontSize: "14px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", display: "inline-flex", alignItems: "center", gap: "8px" }}>
@@ -1289,7 +1289,7 @@ export default function BowlsTracker() {
                             { label: "Lost",   val: allLosses,            col: LOSS_RED },
                           ].map(s => (
                             <div key={s.label} style={{ flex: 1, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 6px", textAlign: "center" }}>
-                              <div style={{ fontFamily: F_DISPLAY, fontSize: "28px", fontWeight: "700", color: s.col, lineHeight: 1 }}>{s.val}</div>
+                              <div style={{ fontFamily: F_SANS, fontSize: "28px", fontWeight: "700", color: s.col, lineHeight: 1 }}>{s.val}</div>
                               <div style={{ fontSize: "10px", color: TEXT3, letterSpacing: "0.1em", textTransform: "uppercase", marginTop: "3px", fontWeight: "500" }}>{s.label}</div>
                             </div>
                           ))}
@@ -1331,7 +1331,7 @@ export default function BowlsTracker() {
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em" }}>Match Secretary</div>
-                          <div style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: GREEN, lineHeight: 1.2 }}>Matt Kirkland</div>
+                          <div style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: GREEN, lineHeight: 1.2 }}>Matt Kirkland</div>
                         </div>
                         <div style={{ fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED, fontWeight: "700" }}>Call</div>
                       </a>}
@@ -1431,7 +1431,7 @@ export default function BowlsTracker() {
                               }}
                             >
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "600", color: GREEN, letterSpacing: "0.02em" }}>{entry.tournamentName}</div>
+                                  <div style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "600", color: GREEN, letterSpacing: "0.02em" }}>{entry.tournamentName}</div>
                                   <div style={{ fontSize: "11px", color: TEXT2, marginTop: "2px" }}>
                                     {currentRound}
                                     {lastTie && lastTie.result === null && ` · vs ${lastTie.opponent}`}
@@ -1610,7 +1610,7 @@ export default function BowlsTracker() {
 
                             {myEntries.length === 0 && (
                               <div style={{ background: SURFACE, borderRadius: "12px", padding: "28px", textAlign: "center", color: TEXT2, boxShadow: "0 1px 4px rgba(74,14,31,0.06)" }}>
-                                <div style={{ fontFamily: F_DISPLAY, fontSize: "20px", fontWeight: "600", color: GREEN, marginBottom: "4px" }}>No history yet</div>
+                                <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "600", color: GREEN, marginBottom: "4px" }}>No history yet</div>
                                 <div style={{ fontSize: "12px" }}>Switch to Competitions to enter your first tournament</div>
                               </div>
                             )}
@@ -1636,15 +1636,15 @@ export default function BowlsTracker() {
                                 return (
                                   <>
                                     <div style={{ display: "flex", alignItems: "center", gap: "5px", background: `${WIN_GOLD}18`, border: `1px solid ${WIN_GOLD}55`, borderRadius: "8px", padding: "5px 10px" }}>
-                                      <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: WIN_GOLD }}>{wins}</span>
+                                      <span style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: WIN_GOLD }}>{wins}</span>
                                       <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: WIN_GOLD, textTransform: "uppercase", letterSpacing: "0.08em" }}>Won</span>
                                     </div>
                                     <div style={{ display: "flex", alignItems: "center", gap: "5px", background: `${LOSS_RED}10`, border: `1px solid ${LOSS_RED}44`, borderRadius: "8px", padding: "5px 10px" }}>
-                                      <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: LOSS_RED }}>{losses}</span>
+                                      <span style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: LOSS_RED }}>{losses}</span>
                                       <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: LOSS_RED, textTransform: "uppercase", letterSpacing: "0.08em" }}>Lost</span>
                                     </div>
                                     <div style={{ display: "flex", alignItems: "center", gap: "5px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "5px 10px" }}>
-                                      <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: TEXT2 }}>{entry.totalRounds}</span>
+                                      <span style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: TEXT2 }}>{entry.totalRounds}</span>
                                       <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em" }}>Rounds</span>
                                     </div>
                                   </>
@@ -1705,11 +1705,11 @@ export default function BowlsTracker() {
                                       }}>
                                       {/* Round number badge */}
                                       <div style={{ width: "26px", height: "26px", borderRadius: "50%", background: isFuture ? BORDER : accentCol, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                        <span style={{ fontFamily: F_DISPLAY, fontSize: "11px", fontWeight: "700", color: isFuture ? TEXT3 : "#fff" }}>{rIdx + 1}</span>
+                                        <span style={{ fontFamily: F_SANS, fontSize: "11px", fontWeight: "700", color: isFuture ? TEXT3 : "#fff" }}>{rIdx + 1}</span>
                                       </div>
                                       <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: textCol === TEXT ? TEXT3 : textCol, textTransform: "uppercase", letterSpacing: "0.08em" }}>{roundLabel}</div>
-                                        <div style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "600", color: textCol, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        <div style={{ fontFamily: F_SANS, fontSize: "14px", fontWeight: "600", color: textCol, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                           {tie ? `vs ${tie.opponent}` : isNext ? "Set opponent" : "Upcoming"}
                                         </div>
                                       </div>
@@ -1753,7 +1753,7 @@ export default function BowlsTracker() {
                                             ) : (
                                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
                                                 <div>
-                                                  <button onClick={() => openH2H(tie.opponent)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN, textAlign: "left" }}>vs {tie.opponent}</button>
+                                                  <button onClick={() => openH2H(tie.opponent)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: F_SANS, fontSize: "18px", fontWeight: "700", color: GREEN, textAlign: "left" }}>vs {tie.opponent}</button>
                                                   {tie.oppPhone && <a href={`tel:${tie.oppPhone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "13px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500", marginTop: "3px" }}><Phone size={13} strokeWidth={1.75} />{tie.oppPhone}</a>}
                                                 </div>
                                                 <button onClick={() => openEditOpp(entry.id, tie.roundIdx, tie.opponent)}
@@ -1884,7 +1884,7 @@ export default function BowlsTracker() {
                                               <div style={{ background: schedDays < 0 ? `${LOSS_RED}08` : `${GOLD}08`, border: `1px solid ${schedDays < 0 ? `${LOSS_RED}33` : `${GOLD}33`}`, borderRadius: "8px", padding: "8px 12px", marginBottom: "8px" }}>
                                                 <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: "700", color: schedDays < 0 ? LOSS_RED : GOLD_MUTED, marginBottom: "2px" }}>Must be played by</div>
                                                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                                                  <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: schedDays < 0 ? LOSS_RED : TEXT }}>{fmtDate(sched)}</span>
+                                                  <span style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: schedDays < 0 ? LOSS_RED : TEXT }}>{fmtDate(sched)}</span>
                                                   {schedDays < 0
                                                     ? <span style={{ background: `${LOSS_RED}15`, color: LOSS_RED, borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>Overdue</span>
                                                     : countdownLabel(sched) && <span style={{ background: `${GOLD}22`, color: GOLD_MUTED, borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>{countdownLabel(sched)}</span>
@@ -1919,7 +1919,7 @@ export default function BowlsTracker() {
                                                   <div>
                                                     <div style={{ fontSize: "9px", color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: "700", marginBottom: "2px" }}>You&apos;re playing</div>
                                                     <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                                                      <span style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: GREEN }}>{fmtDate(tie.date)}</span>
+                                                      <span style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: GREEN }}>{fmtDate(tie.date)}</span>
                                                       {tie.time && <span style={{ fontSize: "13px", color: TEXT2 }}>{tie.time}</span>}
                                                       {countdown && <span style={{ background: GREEN, color: "#fff", borderRadius: "10px", padding: "2px 8px", fontSize: "11px", fontWeight: "700", fontFamily: F_UI }}>{countdown}</span>}
                                                     </div>
@@ -1957,13 +1957,13 @@ export default function BowlsTracker() {
                                               <div style={{ flex: 1, textAlign: "center" }}>
                                                 <div style={{ fontSize: "11px", color: TEXT2, marginBottom: "4px", fontWeight: "500" }}>{myName}</div>
                                                 <input type="number" min="0" value={scoreMy} onChange={e => setScoreMy(e.target.value)} autoFocus
-                                                  style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", fontSize: "48px", fontFamily: F_DISPLAY, fontWeight: "700", border: `2px solid ${GOLD}66`, borderRadius: "8px", textAlign: "center", outline: "none", color: GOLD }} />
+                                                  style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", fontSize: "48px", fontFamily: F_SANS, fontWeight: "700", border: `2px solid ${GOLD}66`, borderRadius: "8px", textAlign: "center", outline: "none", color: GOLD }} />
                                               </div>
                                               <div style={{ fontSize: "20px", color: TEXT3, paddingBottom: "12px" }}>–</div>
                                               <div style={{ flex: 1, textAlign: "center" }}>
                                                 <div style={{ fontSize: "11px", color: TEXT2, marginBottom: "4px", fontWeight: "500" }}>{tie.opponent}</div>
                                                 <input type="number" min="0" value={scoreOppV} onChange={e => setScoreOppV(e.target.value)}
-                                                  style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", fontSize: "48px", fontFamily: F_DISPLAY, fontWeight: "700", border: `1px solid ${BORDER}`, borderRadius: "8px", textAlign: "center", outline: "none", color: TEXT }} />
+                                                  style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", fontSize: "48px", fontFamily: F_SANS, fontWeight: "700", border: `1px solid ${BORDER}`, borderRadius: "8px", textAlign: "center", outline: "none", color: TEXT }} />
                                               </div>
                                             </div>
                                             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -2053,7 +2053,7 @@ export default function BowlsTracker() {
                             {/* Add next round form */}
                             {nextRoundFor === entry.id && (
                               <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "16px", marginTop: "4px" }}>
-                                <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "600", color: GREEN, marginBottom: "14px" }}>
+                                <div style={{ fontFamily: F_SANS, fontSize: "18px", fontWeight: "600", color: GREEN, marginBottom: "14px" }}>
                                   {getRoundLabel(entry.ties.length, entry.totalRounds)} — Who do you play?
                                 </div>
                                 {nextOppPicked ? (
@@ -2070,7 +2070,7 @@ export default function BowlsTracker() {
                                         {nextOppResults.map(m => (
                                           <div key={m.id} onClick={() => { setNextOppPicked(m); setNextOppSearch(""); }}
                                             style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}`, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                                            <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_DISPLAY }}>{m.name}</span>
+                                            <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_SANS }}>{m.name}</span>
                                             {m.phone && <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500" }}><Phone size={12} strokeWidth={1.75} />{m.phone}</a>}
                                           </div>
                                         ))}
@@ -2102,7 +2102,7 @@ export default function BowlsTracker() {
                                             {nextOppPartnerResults.map(m => (
                                               <div key={m.id} onClick={() => { setNextOppPartners(prev => [...prev, { name: m.name, phone: m.phone || "" }]); setNextOppPartnerSearch(""); }}
                                                 style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}`, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                                                <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_DISPLAY }}>{m.name}</span>
+                                                <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_SANS }}>{m.name}</span>
                                                 {m.phone && <span style={{ fontSize: "12px", color: GOLD }}>{m.phone}</span>}
                                               </div>
                                             ))}
@@ -2160,7 +2160,7 @@ export default function BowlsTracker() {
                                 <Check size={28} strokeWidth={2.5} color={GREEN} />
                               </div>
                             </div>
-                            <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: GREEN, marginBottom: "6px" }}>Added!</div>
+                            <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: GREEN, marginBottom: "6px" }}>Added!</div>
                             <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, marginBottom: "28px" }}>{lastAddedTournName}</div>
                             <div style={{ display: "flex", gap: "10px" }}>
                               <button onClick={() => setEntryJustSaved(false)}
@@ -2205,7 +2205,7 @@ export default function BowlsTracker() {
                                 <button key={n} onClick={() => setEntryRounds(n)} style={{
                                   background: entryRounds === n ? MID : SURFACE, border: `1px solid ${entryRounds === n ? MID : BORDER}`,
                                   borderRadius: "8px", color: entryRounds === n ? "#fff" : TEXT,
-                                  padding: "8px 16px", fontSize: "16px", cursor: "pointer", fontFamily: F_DISPLAY, fontWeight: "600",
+                                  padding: "8px 16px", fontSize: "16px", cursor: "pointer", fontFamily: F_SANS, fontWeight: "600",
                                 }}>{n}</button>
                               ))}
                             </div>
@@ -2234,7 +2234,7 @@ export default function BowlsTracker() {
                                     {entryPartnerResults.map(m => (
                                       <div key={m.id} onClick={() => { setEntryMyPartners(prev => [...prev, { name: m.name, phone: m.phone || "" }]); setEntryPartnerSearch(""); }}
                                         style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}`, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                                        <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_DISPLAY }}>{m.name}</span>
+                                        <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_SANS }}>{m.name}</span>
                                         {m.phone && <span style={{ fontSize: "12px", color: GOLD }}>{m.phone}</span>}
                                       </div>
                                     ))}
@@ -2269,7 +2269,7 @@ export default function BowlsTracker() {
                                   {entryOppResults.map(m => (
                                     <div key={m.id} onClick={() => { setEntryOppPicked(m); setEntryOppSearch(""); }}
                                       style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}`, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                                      <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_DISPLAY }}>{m.name}</span>
+                                      <span style={{ fontSize: "14px", fontWeight: "600", color: TEXT, fontFamily: F_SANS }}>{m.name}</span>
                                       {m.phone && <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500" }}><Phone size={12} strokeWidth={1.75} />{m.phone}</a>}
                                     </div>
                                   ))}
@@ -2380,7 +2380,7 @@ export default function BowlsTracker() {
                                                 {setupSearchResults.map(m => (
                                                   <div key={m.id} onClick={() => { setSetupConfig(prev => ({ ...prev, [tid]: { ...prev[tid], opp: m } })); setSetupSearchFor(null); setSetupSearchVal(""); }}
                                                     style={{ padding: "10px 12px", borderBottom: `1px solid ${BORDER}`, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                                                    <span style={{ fontSize: "13px", fontWeight: "600", color: TEXT, fontFamily: F_DISPLAY }}>{m.name}</span>
+                                                    <span style={{ fontSize: "13px", fontWeight: "600", color: TEXT, fontFamily: F_SANS }}>{m.name}</span>
                                                     {m.phone && <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500" }}><Phone size={12} strokeWidth={1.75} />{m.phone}</a>}
                                                   </div>
                                                 ))}
@@ -2443,7 +2443,7 @@ export default function BowlsTracker() {
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
                   <Medal size={26} strokeWidth={1.5} color={GOLD} />
                   <div>
-                    <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: "#fff", lineHeight: 1 }}>
+                    <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: "#fff", lineHeight: 1 }}>
                       {myName ? `${myName}'s Honours` : "My Honours"}
                     </div>
                     <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.7)", marginTop: "3px" }}>
@@ -2477,7 +2477,7 @@ export default function BowlsTracker() {
               {myHonours.length === 0 && (
                 <div style={{ background: SURFACE, border: `1px dashed ${BORDER}`, borderRadius: "12px", padding: "40px 24px", textAlign: "center" }}>
                   <Medal size={36} strokeWidth={1} color={BORDER} style={{ marginBottom: "12px" }} />
-                  <div style={{ fontFamily: F_DISPLAY, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>No honours yet</div>
+                  <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>No honours yet</div>
                   <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, lineHeight: 1.6 }}>Record competitions you've won, finals you've reached, or any achievement you're proud of.</div>
                 </div>
               )}
@@ -2493,7 +2493,7 @@ export default function BowlsTracker() {
                 return (
                   <div key={year} style={{ marginBottom: "12px" }}>
                     <button onClick={toggle} style={{ width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: "10px", marginBottom: isOpen ? "8px" : "0" }}>
-                      <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: GREEN }}>{year}</div>
+                      <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: GREEN }}>{year}</div>
                       <div style={{ flex: 1, height: "1px", background: BORDER }} />
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>{grouped[year].length} achievement{grouped[year].length !== 1 ? "s" : ""}</div>
                       <ChevronDown size={15} strokeWidth={2} color={TEXT3} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
@@ -2502,7 +2502,7 @@ export default function BowlsTracker() {
                       <div key={h.id} style={{ background: SURFACE, border: `1px solid ${posBorder(h.position)}`, borderLeft: `4px solid ${posCol(h.position)}`, borderRadius: "12px", padding: "14px 16px", marginBottom: "8px", boxShadow: "0 1px 4px rgba(74,14,31,0.06)" }}>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontFamily: F_DISPLAY, fontSize: "19px", fontWeight: "700", color: TEXT, lineHeight: 1.2, marginBottom: "5px" }}>{h.competition}</div>
+                            <div style={{ fontFamily: F_SANS, fontSize: "19px", fontWeight: "700", color: TEXT, lineHeight: 1.2, marginBottom: "5px" }}>{h.competition}</div>
                             <span style={{ display: "inline-block", fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: posCol(h.position), background: posBg(h.position), border: `1px solid ${posCol(h.position)}33`, borderRadius: "10px", padding: "2px 9px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                               {h.position === "Winner" && "🏆 "}{h.position}
                             </span>
@@ -2603,15 +2603,15 @@ export default function BowlsTracker() {
                         {/* Record bar */}
                         <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
                           <div style={{ flex: 1, textAlign: "center", background: WIN_BG, border: `1px solid ${WIN_GOLD}44`, borderRadius: "10px", padding: "12px 8px" }}>
-                            <div style={{ fontFamily: F_DISPLAY, fontSize: "32px", fontWeight: "700", color: WIN_GOLD, lineHeight: 1 }}>{h2h.wins}</div>
+                            <div style={{ fontFamily: F_SANS, fontSize: "32px", fontWeight: "700", color: WIN_GOLD, lineHeight: 1 }}>{h2h.wins}</div>
                             <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: WIN_GOLD, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>Won</div>
                           </div>
                           <div style={{ flex: 1, textAlign: "center", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "12px 8px" }}>
-                            <div style={{ fontFamily: F_DISPLAY, fontSize: "32px", fontWeight: "700", color: TEXT2, lineHeight: 1 }}>{h2h.played}</div>
+                            <div style={{ fontFamily: F_SANS, fontSize: "32px", fontWeight: "700", color: TEXT2, lineHeight: 1 }}>{h2h.played}</div>
                             <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>Played</div>
                           </div>
                           <div style={{ flex: 1, textAlign: "center", background: LOSS_BG, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "12px 8px" }}>
-                            <div style={{ fontFamily: F_DISPLAY, fontSize: "32px", fontWeight: "700", color: LOSS_RED, lineHeight: 1 }}>{h2h.losses}</div>
+                            <div style={{ fontFamily: F_SANS, fontSize: "32px", fontWeight: "700", color: LOSS_RED, lineHeight: 1 }}>{h2h.losses}</div>
                             <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: LOSS_RED, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>Lost</div>
                           </div>
                         </div>
@@ -2619,7 +2619,7 @@ export default function BowlsTracker() {
                         {/* Match list */}
                         {h2h.matches.length === 0 ? (
                           <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "28px", textAlign: "center" }}>
-                            <div style={{ fontFamily: F_DISPLAY, fontSize: "17px", fontWeight: "600", color: TEXT2, marginBottom: "4px" }}>No completed games yet</div>
+                            <div style={{ fontFamily: F_SANS, fontSize: "17px", fontWeight: "600", color: TEXT2, marginBottom: "4px" }}>No completed games yet</div>
                             <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3 }}>Results will appear here once you've played {h2hOpponent}</div>
                           </div>
                         ) : (
@@ -2644,7 +2644,7 @@ export default function BowlsTracker() {
                                   )}
                                 </div>
                                 <div style={{ textAlign: "right", flexShrink: 0 }}>
-                                  <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: m.result === "W" ? WIN_GOLD : LOSS_RED, lineHeight: 1 }}>
+                                  <div style={{ fontFamily: F_SANS, fontSize: "18px", fontWeight: "700", color: m.result === "W" ? WIN_GOLD : LOSS_RED, lineHeight: 1 }}>
                                     {m.myScore}–{m.oppScore}
                                   </div>
                                   <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: m.result === "W" ? WIN_GOLD : LOSS_RED, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "2px" }}>

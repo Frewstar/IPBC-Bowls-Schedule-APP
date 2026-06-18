@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { SURFACE, SURFACE2, BORDER, TEXT2, GREEN, F_DISPLAY } from "../lib/theme.js";
+import { SURFACE, SURFACE2, BORDER, TEXT2, GREEN, F_SANS } from "../lib/theme.js";
 
 export default function BottomSheet({ open, onClose, title, children, titleColor = GREEN }) {
   if (!open) return null;
@@ -29,7 +29,7 @@ export default function BottomSheet({ open, onClose, title, children, titleColor
           <div style={{ width: "36px", height: "4px", background: BORDER, borderRadius: "2px" }} />
         </div>
         <div style={{ padding: "12px 20px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: titleColor, letterSpacing: "0.02em" }}>{title}</div>
+          <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: titleColor, letterSpacing: "0.02em" }}>{title}</div>
           <button onClick={onClose} style={{ background: SURFACE2, border: "none", borderRadius: "50%", width: "32px", height: "32px", cursor: "pointer", color: TEXT2, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <X size={16} strokeWidth={2} />
           </button>

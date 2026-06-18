@@ -1,6 +1,6 @@
 import { Search, Download, Upload, Plus, Phone, Pencil, X } from "lucide-react";
 import BottomSheet from "../BottomSheet.jsx";
-import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_DISPLAY, F_UI } from "../../lib/theme.js";
+import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { getSurname } from "../../lib/utils.js";
 
 export default function MembersTab({
@@ -111,7 +111,7 @@ export default function MembersTab({
                   ) : (
                     <div style={{ padding: "16px 16px", borderBottom: i < groupedMembers[letter].length - 1 ? `1px solid ${BORDER}` : "none", display: "flex", alignItems: "center", gap: "12px", minHeight: "58px" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "600", color: GREEN, lineHeight: 1.2 }}>
+                        <div style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "600", color: GREEN, lineHeight: 1.2 }}>
                           {getSurname(m.name)}
                           <span style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "400", color: TEXT2, marginLeft: "6px" }}>{m.name.replace(getSurname(m.name), "").trim()}</span>
                         </div>

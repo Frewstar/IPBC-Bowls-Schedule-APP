@@ -1,5 +1,5 @@
 import { Trophy, Phone, ChevronRight, ChevronLeft, Clock } from "lucide-react";
-import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, F_DISPLAY, F_UI } from "../../lib/theme.js";
+import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { DEFAULT_TOURNAMENTS } from "../../lib/constants.js";
 import { getRoundLabel } from "../../lib/utils.js";
 
@@ -24,7 +24,7 @@ export default function DrawsTab({ myEntries, activeTournament, setActiveTournam
         {myDrawEntries.length === 0 ? (
           <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "40px 24px", textAlign: "center", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
             <Trophy size={32} strokeWidth={1} color={BORDER} style={{ marginBottom: "12px" }} />
-            <div style={{ fontFamily: F_DISPLAY, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>No competitions yet</div>
+            <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>No competitions yet</div>
             <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, marginBottom: "20px", lineHeight: 1.5 }}>Go to <strong>My Ties</strong> and tap<br/><strong>+ Enter Tournament</strong> to get started.</div>
             <button onClick={() => setActiveTab("myties")}
               style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "10px 24px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>
@@ -49,7 +49,7 @@ export default function DrawsTab({ myEntries, activeTournament, setActiveTournam
                 style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${t.color || GOLD}`, borderRadius: "12px", padding: "14px 16px", marginBottom: "10px", cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                    <div style={{ fontFamily: F_DISPLAY, fontSize: "17px", fontWeight: "600", color: GREEN }}>{t.name}</div>
+                    <div style={{ fontFamily: F_SANS, fontSize: "17px", fontWeight: "600", color: GREEN }}>{t.name}</div>
                     <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: statusCol, background: `${statusCol}12`, border: `1px solid ${statusCol}33`, borderRadius: "20px", padding: "1px 8px" }}>{statusLabel}</span>
                   </div>
                   <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
@@ -79,7 +79,7 @@ export default function DrawsTab({ myEntries, activeTournament, setActiveTournam
       </button>
 
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderTop: `4px solid ${acCol}`, borderRadius: "12px", padding: "16px", marginBottom: "16px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
-        <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: GREEN, marginBottom: "2px" }}>{t?.name}</div>
+        <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: GREEN, marginBottom: "2px" }}>{t?.name}</div>
         <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2 }}>{t?.type} · {drawEntry.totalRounds} rounds · {drawEntry.ties.length} played</div>
         <div style={{ marginTop: "8px", display: "flex", gap: "8px" }}>
           {[
@@ -88,7 +88,7 @@ export default function DrawsTab({ myEntries, activeTournament, setActiveTournam
             { label: "Bye",  val: drawEntry.ties.filter(r => r.result === "BYE").length, col: TEXT3   },
           ].map(s => (
             <div key={s.label} style={{ textAlign: "center", background: SURFACE2, borderRadius: "8px", padding: "6px 12px" }}>
-              <div style={{ fontFamily: F_DISPLAY, fontSize: "20px", fontWeight: "700", color: s.col }}>{s.val}</div>
+              <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "700", color: s.col }}>{s.val}</div>
               <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em" }}>{s.label}</div>
             </div>
           ))}
@@ -114,7 +114,7 @@ export default function DrawsTab({ myEntries, activeTournament, setActiveTournam
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
                   <div>
                     <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "3px" }}>{tie.roundLabel}</div>
-                    <div style={{ fontFamily: F_DISPLAY, fontSize: "17px", fontWeight: "600", color: TEXT }}>
+                    <div style={{ fontFamily: F_SANS, fontSize: "17px", fontWeight: "600", color: TEXT }}>
                       {isBye ? "Bye" : (tie.opponent || "TBC")}
                     </div>
                     {oppMember?.phone && !isBye && (
@@ -125,8 +125,8 @@ export default function DrawsTab({ myEntries, activeTournament, setActiveTournam
                     )}
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    {isWin && <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: WIN_GOLD, lineHeight: 1 }}>{tie.myScore}–{tie.oppScore}</div>}
-                    {isLoss && <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "700", color: LOSS_RED, lineHeight: 1 }}>{tie.myScore}–{tie.oppScore}</div>}
+                    {isWin && <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: WIN_GOLD, lineHeight: 1 }}>{tie.myScore}–{tie.oppScore}</div>}
+                    {isLoss && <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: LOSS_RED, lineHeight: 1 }}>{tie.myScore}–{tie.oppScore}</div>}
                     {isBye && <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, fontWeight: "500" }}>Advanced</div>}
                     {isPending && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>Pending</div>}
                   </div>

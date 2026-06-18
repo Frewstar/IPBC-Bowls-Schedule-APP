@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Trophy, Phone, ChevronDown, Shield, MapPin, Star, Clock } from "lucide-react";
-import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
+import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_SANS, F_UI } from "../../lib/theme.js";
 
 // ── Data ────────────────────────────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ export default function ClubTab() {
       </div>
 
       {/* ── Roll of Honour ── */}
-      <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN, marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={{ fontFamily: F_SANS, fontSize: "18px", fontWeight: "700", color: GREEN, marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
         <Trophy size={16} strokeWidth={2} color={GOLD_MUTED} /> Roll of Honour
       </div>
 
@@ -135,7 +135,7 @@ export default function ClubTab() {
                   ) : comp.winners.map((w, i) => (
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < comp.winners.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                       <span style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, fontWeight: "600" }}>{w.year}</span>
-                      <span style={{ fontFamily: F_DISPLAY, fontSize: "14px", fontWeight: "700", color: TEXT }}>{w.winner}</span>
+                      <span style={{ fontFamily: F_SANS, fontSize: "14px", fontWeight: "700", color: TEXT }}>{w.winner}</span>
                     </div>
                   ))}
                 </div>
@@ -156,7 +156,7 @@ export default function ClubTab() {
         }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <Star size={15} strokeWidth={2} color={GOLD_MUTED} />
-          <span style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN }}>Committee 2026</span>
+          <span style={{ fontFamily: F_SANS, fontSize: "18px", fontWeight: "700", color: GREEN }}>Committee 2026</span>
         </div>
         <ChevronDown size={14} strokeWidth={2} color={TEXT3} style={{ transform: committeeOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
       </button>
@@ -167,7 +167,7 @@ export default function ClubTab() {
             {COMMITTEE.slice(0, 4).map((m, i) => (
               <div key={i} style={{ background: SURFACE2, padding: "12px 14px" }}>
                 <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700", marginBottom: "3px" }}>{m.role}</div>
-                <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "600", color: m.name === "TBC" ? TEXT3 : TEXT }}>{m.name}</div>
+                <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: m.name === "TBC" ? TEXT3 : TEXT }}>{m.name}</div>
                 {m.phone ? <a href={`tel:${m.phone}`} style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, textDecoration: "none", fontWeight: "600" }}>{m.phone}</a> : null}
               </div>
             ))}
@@ -177,7 +177,7 @@ export default function ClubTab() {
             <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", borderBottom: i < COMMITTEE.slice(4).length - 1 ? `1px solid ${BORDER}` : "none" }}>
               <div>
                 <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700" }}>{m.role}</div>
-                <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "600", color: m.name === "TBC" ? TEXT3 : TEXT }}>{m.name}</div>
+                <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: m.name === "TBC" ? TEXT3 : TEXT }}>{m.name}</div>
               </div>
               {m.phone ? (
                 <a href={`tel:${m.phone}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "20px", padding: "4px 10px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "11px", fontWeight: "600" }}>
@@ -208,7 +208,7 @@ export default function ClubTab() {
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", boxShadow: "0 1px 4px rgba(74,14,31,0.07)", marginTop: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "12px 16px", borderBottom: `1px solid ${BORDER}` }}>
           <MapPin size={14} strokeWidth={2} color={GOLD_MUTED} />
-          <span style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN }}>Find Us</span>
+          <span style={{ fontFamily: F_SANS, fontSize: "18px", fontWeight: "700", color: GREEN }}>Find Us</span>
         </div>
         <div style={{ padding: "14px 16px", borderBottom: `1px solid ${BORDER}` }}>
           <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.9 }}>

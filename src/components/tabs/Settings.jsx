@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Settings, User, Shield, Info, Type, Download, Upload, Check, Trophy, Plus, Pencil, Calendar, Crown, Lock, ChevronLeft } from "lucide-react";
-import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI, LOSS_RED } from "../../lib/theme.js";
+import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_SANS, F_UI, LOSS_RED } from "../../lib/theme.js";
 import { save } from "../../lib/storage.js";
 
 export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], defaultTournamentIds = [], compOverrides = {}, onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, masterRoundDates = {}, isSuperAdmin = false, superAdminName = "", makeMeSuperAdmin, onBack }) {
@@ -44,7 +44,7 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
             <Settings size={16} strokeWidth={2} color={GREEN} />
           </div>
           <div>
-            <div style={{ fontFamily: F_DISPLAY, fontSize: "22px", fontWeight: "600", color: GREEN }}>Settings</div>
+            <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "600", color: GREEN }}>Settings</div>
             <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>Personalise your app experience</div>
           </div>
         </div>
@@ -66,7 +66,7 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
                 border: `2px solid ${active ? GREEN : BORDER}`,
                 background: active ? `${GREEN}08` : SURFACE, textAlign: "center",
               }}>
-                <div style={{ fontFamily: F_DISPLAY, fontSize: `${14 * opt.scale}px`, fontWeight: "700", color: active ? GREEN : TEXT, lineHeight: 1, marginBottom: "4px" }}>Aa</div>
+                <div style={{ fontFamily: F_SANS, fontSize: `${14 * opt.scale}px`, fontWeight: "700", color: active ? GREEN : TEXT, lineHeight: 1, marginBottom: "4px" }}>Aa</div>
                 <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: active ? GREEN : TEXT2, letterSpacing: "0.04em" }}>{opt.label}</div>
                 <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, marginTop: "2px" }}>{opt.desc}</div>
               </button>
@@ -217,7 +217,7 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
               <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 16px", borderBottom: i < tournaments.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                 <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: t.color || GREEN, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "600", color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
+                  <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
                   <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>
                     {t.type || "Singles"} · {isPersonal ? "Personal" : "IPBC"}{isCustom ? " · Custom" : ""}{isOverridden ? " · Edited" : ""}
                   </div>

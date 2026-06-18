@@ -23,4 +23,5 @@ export const WIN_BG     = "#fffbf0";
 export const LOSS_BG    = "#fdf5f5";
 
 export const F_DISPLAY  = "'Cormorant Garamond', Georgia, serif";
-export const F_UI       = "'DM Sans', system-ui, sans-serif";
+export const F_SANS     = "'Inter', system-ui, sans-serif";
+export const F_UI       = F_SANS;
