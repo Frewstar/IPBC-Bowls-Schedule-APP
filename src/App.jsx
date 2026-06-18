@@ -1313,7 +1313,7 @@ export default function BowlsTracker() {
                       )}
 
                       {/* ── Match Secretary contact strip ── */}
-                      <a href="tel:+447402348205" style={{ display: "flex", alignItems: "center", gap: "10px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", textDecoration: "none" }}>
+                      {myEntries.length > 0 && <a href="tel:+447402348205" style={{ display: "flex", alignItems: "center", gap: "10px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", textDecoration: "none" }}>
                         <div style={{ width: "34px", height: "34px", borderRadius: "8px", background: `${GREEN}10`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                           <Phone size={15} strokeWidth={2} color={GREEN} />
                         </div>
@@ -1322,7 +1322,7 @@ export default function BowlsTracker() {
                           <div style={{ fontFamily: F_DISPLAY, fontSize: "16px", fontWeight: "700", color: GREEN, lineHeight: 1.2 }}>Matt Kirkland</div>
                         </div>
                         <div style={{ fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED, fontWeight: "700" }}>Call</div>
-                      </a>
+                      </a>}
 
                       {/* ── View toggle ── */}
                       {myEntries.length > 0 && (
@@ -1341,7 +1341,7 @@ export default function BowlsTracker() {
 
                       {/* ── CURRENT: Compact competition list ── */}
                       {tiesView === "current" && (<>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        {myEntries.length > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                           <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
                             {reorderMode
                               ? (reorderPickId ? "Now tap where to place it" : "Tap a competition to pick it up")
@@ -1367,7 +1367,7 @@ export default function BowlsTracker() {
                           >
                             {reorderMode ? "Done" : "Reorder"}
                           </button>
-                        </div>
+                        </div>}
 
                         {myEntries.map((entry, entryIdx) => {
                           const lastTie = entry.ties.length > 0 ? entry.ties[entry.ties.length - 1] : null;
