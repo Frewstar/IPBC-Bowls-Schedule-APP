@@ -1,4 +1,22 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, Component } from "react";
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: "32px 20px", textAlign: "center" }}>
+          <div style={{ fontSize: "32px", marginBottom: "12px" }}>⚠️</div>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: "17px", fontWeight: "700", color: "#6b1d2e", marginBottom: "8px" }}>Something went wrong</div>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: "13px", color: "#6b5a5e", marginBottom: "6px", lineHeight: 1.5 }}>{this.state.error?.message}</div>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: "16px", background: "#6b1d2e", border: "none", borderRadius: "8px", color: "#fff", padding: "11px 24px", fontSize: "13px", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontWeight: "600" }}>Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import {
   Binoculars, Award, Calendar, Users,
   Phone, Check, X, Pencil, Plus,
@@ -2528,7 +2546,9 @@ export default function BowlsTracker() {
         {/* ══════════════════════════════════════════
             SETTINGS TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "settings" && (() => {
+        {activeTab === "settings" && (
+        <ErrorBoundary>
+          {(() => {
           return (
             <SettingsTab
               settings={settings}
@@ -2557,6 +2577,8 @@ export default function BowlsTracker() {
             />
           );
         })()}
+        </ErrorBoundary>
+        )}
 
         {/* ══════════════════════════════════════════
             __SETTINGS_PLACEHOLDER_REMOVED__
