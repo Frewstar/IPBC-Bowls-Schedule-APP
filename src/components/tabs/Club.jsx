@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trophy, Phone, ChevronDown, Shield, Users, Star } from "lucide-react";
+import { Trophy, Phone, ChevronDown, Shield, Users, Star, MapPin } from "lucide-react";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_UI } from "../../lib/theme.js";
 
 export const COMMITTEE = [
@@ -136,6 +136,49 @@ export default function ClubTab() {
             <div key={i} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "20px", padding: "5px 12px", fontFamily: F_UI, fontSize: "13px", color: TEXT2 }}>{name}</div>
           ))}
         </div>
+      </div>
+
+      {/* ── Location ── */}
+      <SectionHeader icon={MapPin} label="Find Us" />
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
+        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontFamily: F_DISPLAY, fontSize: "15px", fontWeight: "600", color: TEXT, marginBottom: "4px" }}>Irvine Park Bowling Club</div>
+          <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.6 }}>
+            Woodlands Avenue<br />Irvine<br />KA12 0PZ
+          </div>
+        </div>
+        <div style={{ padding: "12px 16px" }}>
+          <a href="tel:01294272351" style={{ display: "inline-flex", alignItems: "center", gap: "7px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontSize: "14px", fontWeight: "600" }}>
+            <Phone size={14} strokeWidth={1.75} /> 01294 272351
+          </a>
+        </div>
+      </div>
+
+      {/* ── Facilities ── */}
+      <SectionHeader icon={Shield} label="Facilities" />
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "14px 16px", marginBottom: "24px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
+        {[
+          "Two six-rink outdoor bowling greens (including facilities for disabled bowlers)",
+          "Main Hall (seating 140)",
+          "Main Bar",
+          "Lounge Hall (seating 100)",
+          "Lounge Bar",
+          "Kitchen",
+          "Separate Locker Room",
+          "Outdoor Seating Area",
+          "Ladies and Gents Toilets",
+          "PA System",
+          "Dart Boards",
+          "Pool Table",
+          "Juke Box",
+          "Fruit Machines",
+          "Parking for 30+ cars",
+        ].map((item, i, arr) => (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "10px", paddingBottom: i < arr.length - 1 ? "9px" : "0", marginBottom: i < arr.length - 1 ? "9px" : "0", borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: GREEN, flexShrink: 0, marginTop: "5px" }} />
+            <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5 }}>{item}</div>
+          </div>
+        ))}
       </div>
 
     </div>
