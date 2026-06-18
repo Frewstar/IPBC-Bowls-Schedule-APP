@@ -774,16 +774,36 @@ export default function BowlsTracker() {
     }));
   }
 
-  function exportBackup() {
+  async function exportBackup() {
     const data = JSON.stringify({ entries, myName, exportedAt: new Date().toISOString() }, null, 2);
+    const fileName = `ipbc-bowls-${new Date().toISOString().split("T")[0]}.json`;
     const blob = new Blob([data], { type: "application/json" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
+
+    // Use native share sheet on mobile (lets user pick Google Drive, iCloud, WhatsApp, email etc.)
+    if (navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: "application/json" })] })) {
+      try {
+        await navigator.share({
+          title: "IPBC Bowls Backup",
+          text: "My IPBC Bowls tournament data",
+          files: [new File([blob], fileName, { type: "application/json" })],
+        });
+        setBackupMsg("Shared successfully");
+        setTimeout(() => setBackupMsg(null), 3000);
+        return;
+      } catch (e) {
+        if (e.name === "AbortError") return; // user cancelled — do nothing
+        // fall through to download if share fails
+      }
+    }
+
+    // Fallback: direct download (desktop or unsupported browsers)
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement("a");
     a.href = url;
-    a.download = `ipbc-bowls-${new Date().toISOString().split("T")[0]}.json`;
+    a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
-    setBackupMsg("Backup downloaded");
+    setBackupMsg("File downloaded");
     setTimeout(() => setBackupMsg(null), 3000);
   }
 

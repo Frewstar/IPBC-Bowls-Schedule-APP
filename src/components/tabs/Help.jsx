@@ -86,7 +86,7 @@ export default function HelpTab({ onBackup }) {
         </div>
         <div style={{ background: `${GOLD}10`, border: `1px solid ${GOLD}30`, borderRadius: "8px", padding: "12px 14px", marginBottom: "16px" }}>
           <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT, marginBottom: "6px" }}>💡 We recommend saving a copy at the end of each month</div>
-          <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5 }}>Tap the button below. On iPhone, the file will appear in your <strong>Downloads</strong> folder inside the Files app. On Android it goes straight to your Downloads.</div>
+          <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5 }}>Tap the button below. Your phone will ask where to save it — you can choose <strong>Google Drive</strong>, <strong>iCloud</strong>, <strong>WhatsApp</strong>, email, or just your Downloads folder.</div>
         </div>
         <button
           onClick={onBackup}
