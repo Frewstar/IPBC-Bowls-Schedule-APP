@@ -1,18 +1,18 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
-  Crosshair, Binoculars, Award, Calendar, Users,
-  Phone, Check, X, Pencil, Plus, User,
+  Binoculars, Award, Calendar, Users,
+  Phone, Check, X, Pencil, Plus,
   ChevronLeft, ChevronRight, ChevronDown, Download, Upload,
-  Clock, MapPin, Settings, HelpCircle, Type,
-  Shield, Info, RefreshCw, BookOpen, Target, Search,
-  Star, Medal, Bell, AlertTriangle, Trophy,
+  Clock, MapPin, Settings, HelpCircle,
+  Shield, Info, RefreshCw, Target, Search,
+  Medal, Bell, Trophy,
 } from "lucide-react";
 
 // ── lib imports ──────────────────────────────────────────────────────────────
 import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_SANS, F_UI } from "./lib/theme.js";
 import { MEMBERS_KEY, TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
-import { DEFAULT_TOURNAMENTS, FIXTURES, DRAW_ENTRIES, DEFAULT_MEMBERS } from "./lib/constants.js";
+import { DEFAULT_TOURNAMENTS, FIXTURES, DEFAULT_MEMBERS } from "./lib/constants.js";
 
 // ── component imports ─────────────────────────────────────────────────────────
 import BottomSheet from "./components/BottomSheet.jsx";
@@ -146,9 +146,6 @@ export default function BowlsTracker() {
   const [tieRound, setTieRound]   = useState(0);
   const [oppSearch, setOppSearch] = useState("");
   const [oppPicked, setOppPicked] = useState(null);
-  const [scoringId, setScoringId] = useState(null);
-  const [myScore, setMyScore]     = useState("");
-  const [oppScore, setOppScore]   = useState("");
   const [delTie, setDelTie]       = useState(null);
 
   // ── My Entries (tournament tracker) state ──
@@ -258,13 +255,6 @@ export default function BowlsTracker() {
   const [tiesView, setTiesView]           = useState("current");
   const [historySearch, setHistorySearch] = useState("");
 
-  // ── Season Setup Builder state ──
-  const [showSetup, setShowSetup]           = useState(false);
-  const [setupTournIds, setSetupTournIds]   = useState([]);
-  const [setupConfig, setSetupConfig]       = useState({});
-  const [setupSearchFor, setSetupSearchFor] = useState(null);
-  const [setupSearchVal, setSetupSearchVal] = useState("");
-
   // ── Find Games state ──
   const [search, setSearch] = useState("");
 
@@ -274,14 +264,12 @@ export default function BowlsTracker() {
   const [editName, setEditName]         = useState("");
   const [editPhone, setEditPhone]       = useState("");
   const [editSection, setEditSection]   = useState("gents");
-  const [addMode, setAddMode]           = useState(false);
   const [newName, setNewName]           = useState("");
   const [newPhone, setNewPhone]         = useState("");
   const [newSection, setNewSection]     = useState("gents");
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [uploadMsg, setUploadMsg]       = useState(null);
   const fileInputRef  = useRef(null);
-  const backupFileRef = useRef(null);
 
   // ── Tie date editing state ──
   const [editingTieDate, setEditingTieDate] = useState(null);
@@ -637,35 +625,10 @@ export default function BowlsTracker() {
     return g;
   }, [filteredMembers]);
 
-  // ── Find games ──
-  const DRAW_ENTRIES = {
-    championship: ["T IRVINE","T SMITH","R BIGGAR","C PROPHET","D PROPHET","R GILMOUR","S McLELLAN","C PROBERT","A REID","I COUSAR","E WILLIAMSON","S LEITCH","I McCLYMONT","M DEMPSEY","A FREW","G HALL","T FINNIGAN","J WALSH","D MUNRO","C WILLIAMS","W BROWN","R McLAUGHLAN","C SHINKFIELD","S BOYD","A McLEOD","A PRENTICE","A EASDON","T CRANCHER","G DEVOY","M SDERMARK","S McCLYMONT","W PATTERSON","D WILLIAMSON","D KIRKPATRICK","J FREW","D McKAY","T CLARK","K WENBAN","J LYNN","L KIRKLAND","C KINNIBURGH","D KIRKWOOD SNR","D HODALSKI","D SMITH","C SUNION","G MILLAR","D WILSON","D WELLS","D SINCLAIR","C SPROAT","L HINDMARSH","B KIRKLAND","C WILLIAMSON","I CHAPMAN","SCOTT WILLIAMSON","W McCANN"],
-    presidents: ["D MACKINNON","J McCOMBIE","B KIRKWOOD SNR","D KIRKPATRICK","B KIRKLAND","C PROPHET","D WILSON","R BIGGAR","I McCLYMONT","T CLARK","S SHINKFELD","J CHAPMAN","C WILLIAMS","S WILLIAMSON","I HARWOOD","D HARGREAVES","S BOYD","G PROPHET","C SUNION","E FREW","S SINCLAIR","W KIRKWOOD SNR","E WILLIAMSON","D MUNRO","D HODALSKI","S BROWN","S DEVOY","S WELLS","A FREW","T LAW","J LYNN","G WILLIAMSON","D NELSON","M DEMPSEY","D McKAY","STUART WILLIAMSON","K WENBAN","J WADDELL","A McLEOD","T SMITH","M BURNS","A REID","T CRANCHER","S MILLAR","A EASDON","C KINNIBURGH","C SPROAT","S McCLYMONT","M WILLIAMSON","C ADRAIN","D SMITH","W BROWN","D TURNER","G HALL","A DEUTSCH","W PATTERSON","S LEITCH","D McMANUS","W McCANN"],
-    morton: ["D WILSON","I COUSAR","S BOYD","D SMITH","M DEMPSEY","D TURNER","J CHAPMAN","S LEITCH","S MILLAR","K WENBAN","S BROWN","A EASDON","A FREW","J LYNN","D KIRKLAND","C KINNIBURGH","C WILLIAMS","G DEVOY","D HARGREAVES","G WILLIAMSON","C SPROAT","J FREW","A McLEOD","W KIRKWOOD SNR","D KIRKPATRICK","R GILMOUR","T CRANCHER","D MUNRO","N McKINNON","L HINDMARSH","A REID","J WADDELL","D HODALSKI","A PRENTICE","S McCLYMONT","W McCANN","D McMANUS","E WILLIAMSON","J IRVINE","C WILLIAMSON","R McLAUGHLAN"],
-    donaldson: ["S BOYD","A McLEOD","I COUSAR","W PATTERSON","J SINCLAIR","A EASDON","S LEITCH","J FREW","L KIRKLAND","D McMANUS","W KIRKWOOD SNR","S MILLAR","C McINTOSH","E WILLIAMSON","G DEVOY","S BROWN","B KIRKLAND","S SINCLAIR","D KIRKPATRICK","J LYNN","R McLAUGHLAN","A FREW","A REID","D NELSON","C SPROAT","T FINNIGAN","D TURNER","D McKAY","T SMITH","D MUNRO","D WILSON","W McCANN","J CHAPMAN"],
-    mitchell: ["D KIRKLAND","A PRENTICE","T CRANCHER","N McKINNON","C WILLIAMSON","J IRVINE","S SINCLAIR","D McKAY","C KINNIBURGH","W KIRKWOOD SNR","C McINTOSH","A DEUTSCH","S BOYD","G DEVOY","E FREW","S MILLAR","I CHAPMAN","S WILLIAMSON","T SMITH","S McCLYMONT","D WILSON","D NELSON","J WADDELL","W KIRKWOOD JNR","A REID","S MATHIESON","S LEITCH","J LAW","D HODALSKI","D KIRKPATRICK","A McLEOD","K WENBAN","S HALL","J LYNN","D TURNER","J FREW","A EASDON"],
-    pairs: ["S McCLYMONT / J IRVINE","W BROWN / G WILLIAMSON","M WILLIAMSON / B KIRKWOOD SNR","T FINNIGAN / T WADDELL","A FREW / T SMITH","J FREW / D WILSON","D HARGREAVES / S BOYD","H DEMPSEY / W STRAIN","A DEUTSCH / R GILMOUR","D McHARG / A REID","D SMITH / A PRENTICE","T CLARK / H ELANG","K WENBAN / R McLACHLAN","C KINNIBURGH / C WILLIAMS","M WILLIAMSON / W KIRKWOOD SNR"],
-    triples: ["S McCLYMONT","D MUNRO","B KIRKWOOD SNR","C ADRAIN","S MATHIESON","R BIGGAR","S MILLAR","A McLEOD","W BROWN","S WADDELL","M DEMPSEY","J LAW","I CHAPMAN","H WILLIAMSON","BT WILLIAMSON","I ROBERTSON","R McLAUGHLAN","S BOYD","B GILMOUR","T SMITH","C KINNIBURGH","A DEUTSCH"],
-    rinks: ["W BROWN","D MUNRO","SCOTT WILLIAMSON","T SMITH","A DEUTSCH","H WILLIAMSON","S MILLAR","A McLEOD","STUART WILLIAMSON","C WILLIAMSON","B KIRKWOOD SNR","A EASDON","S McCLYMONT","B BIGGAR"],
-    "mixed-pairs": ["WILLIAMSON / E FREW","J WLEAN / J WILLIAMSON","L KIRKLAND","M WILLIAMSON","J LYON / S CONNER","S SINCLAIR / S MILLAR","A EASDON / B HODALSKI","S DEVOY","D WILSON","A McLEOD / A DEUTSCH","S BROWN / S MATHIESON","J McMILLAN / T FINNIGAN","S BOYD / B KIRKPATRICK","J LAW / D MILLAR","W BROWN / J WADDELL","P KIRKLAND / D HARGREAVES","I McCLYMONT / A REID","STUART WILLIAMSON","W KIRKWOOD SNR"],
-  };
-
-  // Draw lookup disabled — DRAW_ENTRIES is a frozen snapshot, not live data.
-  // To re-enable: replace `return null` with the flatMap block below and remove this comment.
-  // return TOURNAMENTS.flatMap(t => {
-  //   const entries = DRAW_ENTRIES[t.id] || [];
-  //   return entries.flatMap((entry, idx) => {
-  //     if (!entry.toUpperCase().includes(search.toUpperCase())) return [];
-  //     const isEven = idx % 2 === 0;
-  //     const opponent = entries[isEven ? idx + 1 : idx - 1];
-  //     const oppSurname = opponent ? opponent.trim().split(/\s+/).slice(-1)[0].toUpperCase() : "";
-  //     const phone = oppSurname ? members.find(m => getSurname(m.name) === oppSurname)?.phone : null;
-  //     return [{ tournament: t.name, color: t.color, date: t.rounds[0], opponent: opponent || "Bye", oppPhone: phone, entry }];
-  //   });
-  // });
+  // ── Find games ── (draw lookup disabled — data lives in constants.js DRAW_ENTRIES, re-enable when live)
   const playerGames = useMemo(() => {
     if (!search || search.length < 2) return [];
-    return null; // draw lookup not yet live
+    return null;
   }, [search]);
 
   // ── Handlers ──
@@ -673,23 +636,6 @@ export default function BowlsTracker() {
     if (!nameInput.trim()) return;
     setMyName(nameInput.toUpperCase().trim());
     setSettingName(false);
-  }
-
-  function addTie() {
-    if (!tieComp || !oppPicked) return;
-    const t = TOURNAMENTS.find(t => t.id === tieComp);
-    const id = `${myName}-${tieComp}-${tieRound}-${oppPicked.id}-${Date.now()}`;
-    setTies(prev => ({
-      ...prev,
-      [id]: {
-        id, myName, tournament: t.name, tournamentId: tieComp,
-        section: activeSection,
-        round: t.rounds[tieRound], roundIdx: tieRound,
-        opponent: oppPicked.name, oppPhone: oppPicked.phone,
-        myScore: null, oppScore: null, result: null,
-      }
-    }));
-    setAddingTie(false); setTieComp(""); setTieRound(0); setOppSearch(""); setOppPicked(null);
   }
 
   // ── Tournament entry handlers ──
@@ -811,36 +757,6 @@ export default function BowlsTracker() {
     setNextOppPartners([]); setNextOppPartnerSearch("");
   }
 
-  function buildSeason() {
-    if (setupTournIds.length === 0) return;
-    const newEntries = setupTournIds.map((tid, i) => {
-      const t    = TOURNAMENTS.find(t2 => t2.id === tid);
-      const cfg  = setupConfig[tid] || {};
-      const rounds = Math.max(1, cfg.rounds || 4);
-      return {
-        id: `entry-${Date.now()}-${i}`,
-        myName,
-        section: activeSection,
-        tournamentId: tid,
-        tournamentName: t?.name || tid,
-        tournamentColor: t?.color || GOLD,
-        totalRounds: rounds,
-        status: "active",
-        ties: cfg.opp ? [{
-          roundIdx: 0,
-          roundLabel: getRoundLabel(0, rounds),
-          opponent: cfg.opp.name,
-          oppPhone: cfg.opp.phone || "",
-          date: getRoundDateForComp(tid, 0), time: "",
-          myScore: null, oppScore: null, result: null,
-        }] : [],
-      };
-    });
-    setEntries(prev => [...prev, ...newEntries]);
-    setShowSetup(false);
-    setSetupTournIds([]); setSetupConfig({});
-    setSetupSearchFor(null); setSetupSearchVal("");
-  }
 
   function saveTieDate(entryId, roundIdx) {
     setEntries(prev => prev.map(e => {
@@ -890,15 +806,6 @@ export default function BowlsTracker() {
     };
     reader.readAsText(file);
     e.target.value = "";
-  }
-
-  function submitScore(id) {
-    const me = parseInt(myScore, 10);
-    const opp = parseInt(oppScore, 10);
-    if (isNaN(me) || isNaN(opp)) return;
-    const result = me >= 21 ? "W" : opp >= 21 ? "L" : null;
-    setTies(prev => ({ ...prev, [id]: { ...prev[id], myScore: me, oppScore: opp, result } }));
-    setScoringId(null); setMyScore(""); setOppScore("");
   }
 
   function startEdit(m) { setEditingId(m.id); setEditName(m.name); setEditPhone(m.phone); setEditSection(m.section || "gents"); setAddMode(false); }
@@ -960,21 +867,6 @@ export default function BowlsTracker() {
   const selectedT = activeTournament ? TOURNAMENTS.find(t => t.id === activeTournament) : null;
 
   // BottomSheet is imported from ./components/BottomSheet.jsx
-
-  // ── Find the most urgent pending tie ──
-  function findUrgentTie(allEntries) {
-    const pending = allEntries
-      .filter(e => e.status === "active")
-      .flatMap(e => e.ties.filter(t => !t.result).map(t => ({ ...t, entry: e })));
-    if (!pending.length) return null;
-    pending.sort((a, b) => {
-      if (!a.date && !b.date) return 0;
-      if (!a.date) return 1;
-      if (!b.date) return -1;
-      return new Date(a.date) - new Date(b.date);
-    });
-    return pending[0];
-  }
 
   // ── Section toggle ──
   function SectionToggle({ style = {} }) {
@@ -2311,103 +2203,6 @@ export default function BowlsTracker() {
                         </div>
                         </>}
                       </BottomSheet>
-
-                      {/* ══ BOTTOM SHEET: Setup Season ══ */}
-                      {(() => {
-                        const setupSearchResults = setupSearchFor && setupSearchVal.length >= 2
-                          ? sectionMembers.filter(m => m.name.toUpperCase().includes(setupSearchVal.toUpperCase())).slice(0, 6)
-                          : [];
-                        return (
-                          <BottomSheet open={showSetupSheet} onClose={() => setShowSetupSheet(false)} title="Setup Season">
-                            <div style={{ fontSize: "13px", color: TEXT2, marginBottom: "16px" }}>
-                              Tick every competition you&apos;re entered in. Add Round 1 opponents now or later — it&apos;s optional.
-                            </div>
-                            <div style={{ marginBottom: "14px" }}>
-                              <div style={{ fontSize: "10px", color: TEXT2, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1px" }}>I am entered in:</div>
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
-                                {TOURNAMENTS.map(t => {
-                                  const sel = setupTournIds.includes(t.id);
-                                  return (
-                                    <button key={t.id} onClick={() => {
-                                      setSetupTournIds(prev => sel ? prev.filter(id => id !== t.id) : [...prev, t.id]);
-                                      if (!sel) setSetupConfig(prev => ({ ...prev, [t.id]: { rounds: prev[t.id]?.rounds || 4, opp: prev[t.id]?.opp || null } }));
-                                    }} style={{ background: sel ? MID : SURFACE2, border: `1px solid ${sel ? MID : BORDER}`, borderRadius: "20px", color: sel ? "#fff" : TEXT, padding: "8px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: sel ? "700" : "400" }}>
-                                      {t.name}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                            {setupTournIds.length > 0 && (
-                              <div style={{ marginBottom: "14px" }}>
-                                {setupTournIds.map(tid => {
-                                  const t   = TOURNAMENTS.find(t2 => t2.id === tid);
-                                  const cfg = setupConfig[tid] || { rounds: 4, opp: null };
-                                  const isSearchHere = setupSearchFor === tid;
-                                  return (
-                                    <div key={tid} style={{ background: `${t.color}0d`, border: `1px solid ${t.color}33`, borderRadius: "10px", padding: "12px", marginBottom: "8px" }}>
-                                      <div style={{ fontSize: "12px", fontWeight: "700", color: t.color, marginBottom: "10px" }}>{t.name}</div>
-                                      <div style={{ marginBottom: "10px" }}>
-                                        <div style={{ fontSize: "10px", color: TEXT2, marginBottom: "5px", textTransform: "uppercase", letterSpacing: "1px" }}>Rounds</div>
-                                        <div style={{ display: "flex", gap: "5px" }}>
-                                          {[1,2,3,4,5,6].map(n => (
-                                            <button key={n} onClick={() => setSetupConfig(prev => ({ ...prev, [tid]: { ...prev[tid], rounds: n } }))} style={{
-                                              background: cfg.rounds === n ? MID : SURFACE, border: `1px solid ${cfg.rounds === n ? MID : BORDER}`,
-                                              borderRadius: "6px", color: cfg.rounds === n ? "#fff" : TEXT,
-                                              padding: "5px 10px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600",
-                                            }}>{n}</button>
-                                          ))}
-                                        </div>
-                                      </div>
-                                      <div>
-                                        <div style={{ fontSize: "10px", color: TEXT2, marginBottom: "5px", textTransform: "uppercase", letterSpacing: "1px" }}>Round 1 Opponent <span style={{ fontStyle: "italic", textTransform: "none", letterSpacing: 0 }}>(optional)</span></div>
-                                        {cfg.opp ? (
-                                          <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-                                            <MemberPill name={cfg.opp.name} phone={cfg.opp.phone} color={t.color} />
-                                            <button onClick={() => setSetupConfig(prev => ({ ...prev, [tid]: { ...prev[tid], opp: null } }))} style={{ background: "none", border: "none", color: TEXT2, cursor: "pointer" }}><X size={14} strokeWidth={2} /></button>
-                                          </div>
-                                        ) : (
-                                          <>
-                                            <input
-                                              value={isSearchHere ? setupSearchVal : ""}
-                                              onFocus={() => { setSetupSearchFor(tid); setSetupSearchVal(""); }}
-                                              onChange={e => setSetupSearchVal(e.target.value)}
-                                              placeholder="Search or type name…"
-                                              style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${t.color}55`, borderRadius: "7px", fontSize: "13px", outline: "none", fontFamily: F_UI }}
-                                            />
-                                            {isSearchHere && setupSearchVal.length >= 2 && (
-                                              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", marginTop: "4px", overflow: "hidden", boxShadow: "0 2px 8px rgba(74,14,31,0.1)" }}>
-                                                {setupSearchResults.map(m => (
-                                                  <div key={m.id} onClick={() => { setSetupConfig(prev => ({ ...prev, [tid]: { ...prev[tid], opp: m } })); setSetupSearchFor(null); setSetupSearchVal(""); }}
-                                                    style={{ padding: "10px 12px", borderBottom: `1px solid ${BORDER}`, cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                                                    <span style={{ fontSize: "13px", fontWeight: "600", color: TEXT, fontFamily: F_SANS }}>{m.name}</span>
-                                                    {m.phone && <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", color: GOLD, textDecoration: "none", fontFamily: F_UI, fontWeight: "500" }}><Phone size={12} strokeWidth={1.75} />{m.phone}</a>}
-                                                  </div>
-                                                ))}
-                                                <div onClick={() => { setSetupConfig(prev => ({ ...prev, [tid]: { ...prev[tid], opp: { name: setupSearchVal.toUpperCase(), phone: "" } } })); setSetupSearchFor(null); setSetupSearchVal(""); }}
-                                                  style={{ padding: "10px 12px", cursor: "pointer", fontSize: "12px", color: GOLD_MUTED, borderTop: `1px solid ${BORDER}` }}>
-                                                  + Add &ldquo;{setupSearchVal.toUpperCase()}&rdquo; manually
-                                                </div>
-                                              </div>
-                                            )}
-                                          </>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            <div style={{ display: "flex", gap: "8px" }}>
-                              <button onClick={() => { buildSeason(); setShowSetupSheet(false); }} disabled={setupTournIds.length === 0}
-                                style={{ flex: 1, background: setupTournIds.length > 0 ? MID : BORDER, border: "none", borderRadius: "8px", color: setupTournIds.length > 0 ? "#fff" : TEXT3, padding: "12px", fontSize: "13px", cursor: setupTournIds.length > 0 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
-                                {setupTournIds.length > 0 ? `Build Season (${setupTournIds.length})` : "Select competitions above"}
-                              </button>
-                              <button onClick={() => setShowSetupSheet(false)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "12px 16px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Skip</button>
-                            </div>
-                          </BottomSheet>
-                        );
-                      })()}
 
                     </>
                   );
