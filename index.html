@@ -74,6 +74,10 @@
         box-shadow: 0 0 0 3px rgba(107,29,46,0.08);
       }
       option { background: white; color: var(--text-primary); }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.35; }
+      }
       @keyframes slideUp {
         from { transform: translateY(100%); }
         to   { transform: translateY(0); }

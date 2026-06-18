@@ -31,6 +31,7 @@ import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, S
 import { MEMBERS_KEY, TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
 import { DEFAULT_TOURNAMENTS, FIXTURES, DEFAULT_MEMBERS } from "./lib/constants.js";
+import { supabase } from "./lib/supabase.js";
 
 // ── component imports ─────────────────────────────────────────────────────────
 import BottomSheet from "./components/BottomSheet.jsx";
@@ -537,6 +538,45 @@ export default function BowlsTracker() {
   useEffect(() => { save(TIES_KEY, ties); },       [ties]);
   useEffect(() => { save("bowls_myname", myName); }, [myName]);
   useEffect(() => { save("bowls_entries_v1", entries); }, [entries]);
+
+  // ── Supabase cloud sync ──
+  const [syncStatus, setSyncStatus] = useState("idle"); // "idle"|"syncing"|"synced"|"error"
+
+  // On load: pull entries from cloud and merge with local
+  useEffect(() => {
+    if (!myName) return;
+    setSyncStatus("syncing");
+    supabase
+      .from("player_data")
+      .select("entries")
+      .eq("player_name", myName.toUpperCase())
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) { setSyncStatus("error"); return; }
+        if (data?.entries?.length > 0) {
+          setEntries(prev => {
+            const localIds = new Set(prev.map(e => e.id));
+            const merged = [...prev, ...data.entries.filter(e => !localIds.has(e.id))];
+            return merged;
+          });
+        }
+        setSyncStatus("synced");
+      });
+  }, [myName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On entries change: debounced upsert to cloud
+  useEffect(() => {
+    if (!myName) return;
+    const timer = setTimeout(() => {
+      setSyncStatus("syncing");
+      supabase
+        .from("player_data")
+        .upsert({ player_name: myName.toUpperCase(), entries, updated_at: new Date().toISOString() }, { onConflict: "player_name" })
+        .then(({ error }) => setSyncStatus(error ? "error" : "synced"));
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [entries, myName]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // One-time migration: ensure entries/ties have section for proper Ladies/Gents split
   useEffect(() => {
     setEntries(prev => {
@@ -1080,7 +1120,16 @@ export default function BowlsTracker() {
           {/* Section toggle + settings/help row */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: "10px" }}>
             <SectionToggle />
-            <div style={{ display: "flex", gap: "2px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+              {/* Cloud sync indicator */}
+              {myName && (
+                <div title={syncStatus === "synced" ? "Data saved to cloud" : syncStatus === "syncing" ? "Syncing…" : syncStatus === "error" ? "Sync failed — data saved locally" : ""}
+                  style={{ width: "8px", height: "8px", borderRadius: "50%", marginRight: "4px", flexShrink: 0,
+                    background: syncStatus === "synced" ? "#2d6a4f" : syncStatus === "syncing" ? GOLD : syncStatus === "error" ? LOSS_RED : BORDER,
+                    transition: "background 0.4s",
+                    animation: syncStatus === "syncing" ? "pulse 1s ease-in-out infinite" : "none",
+                  }} />
+              )}
               <button onClick={() => navigateTo("help")} title="Help"
                 style={{ background: activeTab === "help" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 10px", color: activeTab === "help" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
                 <HelpCircle size={20} strokeWidth={activeTab === "help" ? 2 : 1.5} />
