@@ -23,7 +23,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Download, Upload,
   Clock, MapPin, Settings, HelpCircle,
   Shield, Info, RefreshCw, Target, Search,
-  Medal, Bell, Trophy,
+  Medal, Bell, Trophy, Lock,
 } from "lucide-react";
 
 // ── lib imports ──────────────────────────────────────────────────────────────
@@ -42,6 +42,7 @@ import FixturesTab from "./components/tabs/Fixtures.jsx";
 import FindTab from "./components/tabs/Find.jsx";
 import DrawsTab from "./components/tabs/Draws.jsx";
 import MembersTab from "./components/tabs/Members.jsx";
+import AdminPanel from "./components/tabs/AdminPanel.jsx";
 
 
 
@@ -820,26 +821,67 @@ export default function BowlsTracker() {
 
   // ── Sign-in flow ──
   const [pinConfirm, setPinConfirm]   = useState("");
-  const [signInState, setSignInState] = useState("idle"); // "idle" | "checking" | "confirm-new"
+  const [signInState, setSignInState] = useState("idle"); // "idle"|"checking"|"confirm-new"|"locked"
+  const [lockoutInfo, setLockoutInfo] = useState(null); // { id, attempts, locked_until, unlock_requested }
 
   async function handleSignIn() {
     if (!nameInput.trim() || pinInput.length !== 4) return;
+    const nameUpper = nameInput.toUpperCase().trim();
     setSignInState("checking");
-    const key = `${nameInput.toUpperCase().trim()}-${pinInput}`;
+
+    // 1. Check for lockout
+    const { data: lockRow } = await supabase.from("login_lockouts").select("*").eq("name", nameUpper).maybeSingle();
+    if (lockRow?.locked_until && new Date(lockRow.locked_until) > new Date()) {
+      setLockoutInfo(lockRow);
+      setSignInState("locked");
+      return;
+    }
+
+    // 2. Check cloudKey in player_data
+    const key = `${nameUpper}-${pinInput}`;
     const { data } = await supabase.from("player_data").select("player_name").eq("player_name", key).maybeSingle();
     if (data) {
+      // Clear any failed attempts on success
+      if (lockRow) await supabase.from("login_lockouts").delete().eq("name", nameUpper);
       commitSignIn();
-    } else {
-      setPinConfirm("");
-      setSignInState("confirm-new");
+      return;
     }
+
+    // 3. Check if name is a known member (wrong PIN scenario)
+    const { data: member } = await supabase.from("members").select("id").ilike("name", nameUpper).maybeSingle();
+    if (member) {
+      // Known member, wrong PIN — increment lockout counter
+      const attempts = (lockRow?.attempts || 0) + 1;
+      if (attempts >= 3) {
+        const lockedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const upsertData = { name: nameUpper, attempts, locked_until: lockedUntil, updated_at: new Date().toISOString() };
+        const { data: newLock } = await supabase.from("login_lockouts").upsert(upsertData, { onConflict: "name" }).select().maybeSingle();
+        setLockoutInfo(newLock || { ...upsertData });
+        setSignInState("locked");
+      } else {
+        await supabase.from("login_lockouts").upsert({ name: nameUpper, attempts, updated_at: new Date().toISOString() }, { onConflict: "name" });
+        setPinConfirm("");
+        setSignInState("confirm-new");
+      }
+      return;
+    }
+
+    // 4. Unknown name — new user flow
+    setPinConfirm("");
+    setSignInState("confirm-new");
+  }
+
+  async function requestUnlock() {
+    if (!lockoutInfo?.id) return;
+    await supabase.from("login_lockouts").update({ unlock_requested: true }).eq("id", lockoutInfo.id);
+    setLockoutInfo(p => ({ ...p, unlock_requested: true }));
   }
 
   function commitSignIn() {
     setMyName(nameInput.toUpperCase().trim());
     setMyPin(pinInput);
     setNameInput(""); setPinInput(""); setPinConfirm("");
-    setSignInState("idle");
+    setSignInState("idle"); setLockoutInfo(null);
     setSettingName(false);
   }
   function saveExistingPin() {
@@ -1052,13 +1094,48 @@ export default function BowlsTracker() {
 
   const [phoneRequests, setPhoneRequests] = useState([]);
   const [joinRequests, setJoinRequests]   = useState([]);
+  const [lockouts, setLockouts]           = useState([]);
+  const [adminListState, setAdminListState]             = useState([]);
+  const [pendingAdminRequests, setPendingAdminRequests] = useState([]);
+
   useEffect(() => {
     if (!isAdmin) return;
     supabase.from("phone_change_requests").select("*").order("requested_at")
       .then(({ data }) => { if (data) setPhoneRequests(data); });
-    supabase.from("member_join_requests").select("*").eq("status", "pending").order("requested_at")
-      .then(({ data }) => { if (data) setJoinRequests(data); });
-  }, [isAdmin]);
+    supabase.from("login_lockouts").select("*").order("updated_at", { ascending: false })
+      .then(({ data }) => { if (data) setLockouts(data); });
+    if (isSuperAdmin) {
+      supabase.from("admins").select("*").then(({ data }) => { if (data) setAdminListState(data); });
+      supabase.from("admin_requests").select("*").order("requested_at")
+        .then(({ data }) => { if (data) setPendingAdminRequests(data); });
+    }
+  }, [isAdmin, isSuperAdmin]);
+
+  async function clearLockout(id) {
+    setLockouts(l => l.filter(x => x.id !== id));
+    await supabase.from("login_lockouts").delete().eq("id", id);
+  }
+
+  async function grantAdmin(member) {
+    const nameUpper = member.name.toUpperCase();
+    const newRow = { cloud_key: `PENDING-${nameUpper}`, player_name: nameUpper, role: "admin", display_name: member.name };
+    setAdminListState(l => [...l, newRow]);
+    await supabase.from("admins").upsert(newRow, { onConflict: "cloud_key" });
+    supabase.from("admins").select("*").then(({ data }) => { if (data) setAdminListState(data); });
+  }
+
+  async function revokeAdmin(cloudKey) {
+    setAdminListState(l => l.filter(a => a.cloud_key !== cloudKey));
+    await supabase.from("admins").delete().eq("cloud_key", cloudKey);
+  }
+
+  async function approveAdminRequest(req) {
+    setPendingAdminRequests(p => p.filter(r => r.id !== req.id));
+    const newRow = { cloud_key: `APPROVED-${req.player_name}`, player_name: req.player_name, role: "admin", display_name: req.player_name };
+    await supabase.from("admins").upsert(newRow, { onConflict: "cloud_key" });
+    await supabase.from("admin_requests").delete().eq("id", req.id);
+    supabase.from("admins").select("*").then(({ data }) => { if (data) setAdminListState(data); });
+  }
 
   async function approveJoinRequest(req) {
     setJoinRequests(j => j.filter(r => r.id !== req.id));
@@ -1147,6 +1224,7 @@ export default function BowlsTracker() {
     { id: "fixtures",    label: "Fixtures",  Icon: Calendar   },
     { id: "members",     label: "Members",   Icon: Users      },
     { id: "club",        label: "Club",      Icon: Shield     },
+    ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: Lock }] : []),
   ];
 
   const selectedT = activeTournament ? TOURNAMENTS.find(t => t.id === activeTournament) : null;
@@ -1380,7 +1458,32 @@ export default function BowlsTracker() {
                   {settingName ? "Enter your name and PIN to switch account." : "Enter your name and 4-digit PIN. If you've signed in before, use the same details to restore your data."}
                 </div>
 
-                {signInState !== "confirm-new" ? (
+                {signInState === "locked" ? (
+                  <>
+                    <div style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "12px", padding: "16px", marginBottom: "20px", textAlign: "left" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                        <Lock size={16} strokeWidth={2} color={LOSS_RED} />
+                        <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: LOSS_RED }}>Account Locked</div>
+                      </div>
+                      <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5, marginBottom: "4px" }}>
+                        Too many incorrect PIN attempts for <strong>{nameInput.toUpperCase().trim() || lockoutInfo?.name}</strong>. This account is locked for 24 hours.
+                      </div>
+                      {lockoutInfo?.locked_until && (
+                        <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
+                          Unlocks: {new Date(lockoutInfo.locked_until).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      )}
+                    </div>
+                    {lockoutInfo?.unlock_requested
+                      ? <div style={{ fontFamily: F_UI, fontSize: "13px", color: GREEN, textAlign: "center", marginBottom: "16px" }}>Unlock request sent — your admin will review it.</div>
+                      : <button onClick={requestUnlock} style={{ width: "100%", background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "13px", fontSize: "14px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", marginBottom: "12px" }}>Request Admin Unlock</button>
+                    }
+                    <button onClick={() => { setSignInState("idle"); setLockoutInfo(null); setNameInput(""); setPinInput(""); }}
+                      style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
+                      Back
+                    </button>
+                  </>
+                ) : signInState !== "confirm-new" ? (
                   <>
                     <div style={{ textAlign: "left", marginBottom: "12px" }}>
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Your Name</div>
@@ -2950,6 +3053,39 @@ export default function BowlsTracker() {
             CLUB TAB
         ══════════════════════════════════════════ */}
         {activeTab === "club" && <ClubTab members={members} rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} isAdmin={isAdmin} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
+
+        {/* ══════════════════════════════════════════
+            ADMIN TAB
+        ══════════════════════════════════════════ */}
+        {activeTab === "admin" && isAdmin && (
+          <AdminPanel
+            myName={myName}
+            isSuperAdmin={isSuperAdmin}
+            members={members}
+            addMember={m => { const id = Date.now().toString(); const nm = { id, name: m.name, phone: m.phone || null, section: m.section, position: m.position || null, sort_order: 999 }; setMembers(p => [...p, nm]); supabase.from("members").insert(nm); }}
+            saveEdit={(id, data) => { setMembers(p => p.map(m => m.id === id ? { ...m, ...data } : m)); supabase.from("members").update(data).eq("id", id); }}
+            deleteMember={deleteMember}
+            fixtures={fixtures}
+            addFixture={addFixture}
+            editFixture={editFixture}
+            deleteFixture={deleteFixture}
+            rollOfHonour={rollOfHonour}
+            honoraryMembers={honoraryMembers}
+            recordWinner={recordWinner}
+            addHonoraryMember={addHonoraryMember}
+            removeHonoraryMember={removeHonoraryMember}
+            lockouts={lockouts}
+            clearLockout={clearLockout}
+            adminList={adminListState}
+            pendingAdminRequests={pendingAdminRequests}
+            approveAdminRequest={approveAdminRequest}
+            revokeAdmin={revokeAdmin}
+            grantAdmin={grantAdmin}
+            phoneRequests={phoneRequests}
+            approvePhoneRequest={approvePhoneRequest}
+            declinePhoneRequest={declinePhoneRequest}
+          />
+        )}
               </div>
 
       {/* ── MANAGE COMPETITIONS SHEET ── */}
