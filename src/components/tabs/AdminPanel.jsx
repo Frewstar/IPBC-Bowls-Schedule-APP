@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { Users, Calendar, Shield, UserCheck, Lock, Plus, Pencil, Trash2, X, Check, ChevronDown, ChevronUp, Crown } from "lucide-react";
+import { Users, Calendar, Shield, UserCheck, Lock, Plus, Pencil, Trash2, X, Check, ChevronDown, ChevronUp, Crown, Trophy } from "lucide-react";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { supabase } from "../../lib/supabase.js";
 
-const SECTIONS = ["Members", "Fixtures", "Club", "Access", "Lockouts"];
-const SECTION_ICONS = { Members: Users, Fixtures: Calendar, Club: Shield, Access: Crown, Lockouts: Lock };
+const SECTIONS = ["Members", "Fixtures", "Competitions", "Club", "Access", "Lockouts"];
+const SECTION_ICONS = { Members: Users, Fixtures: Calendar, Competitions: Trophy, Club: Shield, Access: Crown, Lockouts: Lock };
 
 export default function AdminPanel({
   // identity
@@ -13,6 +13,8 @@ export default function AdminPanel({
   members, addMember, saveEdit, deleteMember,
   // fixtures
   fixtures, addFixture, editFixture, deleteFixture,
+  // competitions
+  tournaments = [], onEditCompDates,
   // club
   rollOfHonour, honoraryMembers, recordWinner, addHonoraryMember, removeHonoraryMember,
   // lockouts
@@ -43,11 +45,59 @@ export default function AdminPanel({
         })}
       </div>
 
-      {section === "Members"  && <AdminMembers members={members} addMember={addMember} saveEdit={saveEdit} deleteMember={deleteMember} phoneRequests={phoneRequests} approvePhoneRequest={approvePhoneRequest} declinePhoneRequest={declinePhoneRequest} />}
-      {section === "Fixtures" && <AdminFixtures fixtures={fixtures} addFixture={addFixture} editFixture={editFixture} deleteFixture={deleteFixture} />}
-      {section === "Club"     && <AdminClub rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
+      {section === "Members"      && <AdminMembers members={members} addMember={addMember} saveEdit={saveEdit} deleteMember={deleteMember} phoneRequests={phoneRequests} approvePhoneRequest={approvePhoneRequest} declinePhoneRequest={declinePhoneRequest} />}
+      {section === "Fixtures"     && <AdminFixtures fixtures={fixtures} addFixture={addFixture} editFixture={editFixture} deleteFixture={deleteFixture} />}
+      {section === "Competitions" && <AdminCompetitions tournaments={tournaments} onEditCompDates={onEditCompDates} />}
+      {section === "Club"         && <AdminClub rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
       {section === "Access" && isSuperAdmin && <AdminAccess adminList={adminList} pendingAdminRequests={pendingAdminRequests} approveAdminRequest={approveAdminRequest} revokeAdmin={revokeAdmin} grantAdmin={grantAdmin} members={members} myName={myName} />}
       {section === "Lockouts" && <AdminLockouts lockouts={lockouts} clearLockout={clearLockout} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// COMPETITIONS SECTION
+// ─────────────────────────────────────────────
+function AdminCompetitions({ tournaments, onEditCompDates }) {
+  const SECTION_LABELS = { gents: "Gents", ladies: "Ladies", "gents-seniors": "Gents Seniors", "ladies-seniors": "Ladies Seniors" };
+  const grouped = tournaments
+    .filter(t => t.source !== "personal")
+    .reduce((g, t) => { const s = t.section || "gents"; (g[s] = g[s] || []).push(t); return g; }, {});
+  const sectionOrder = ["gents", "ladies", "gents-seniors", "ladies-seniors"];
+
+  return (
+    <div>
+      <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "16px", lineHeight: 1.5 }}>
+        Tap <strong>Set Dates</strong> on any competition to enter the round dates for this season.
+      </div>
+      {sectionOrder.filter(s => grouped[s]).map(s => (
+        <div key={s} style={{ marginBottom: "20px" }}>
+          <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>
+            {SECTION_LABELS[s] || s}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {grouped[s].map(t => {
+              const hasDates = t.round_dates && t.round_dates.some(d => d);
+              return (
+                <div key={t.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: t.color || MID, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{t.name}</div>
+                    <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "2px" }}>
+                      {(t.rounds || []).join(" · ")}
+                      {hasDates && <span style={{ color: GREEN, marginLeft: "6px" }}>· dates set</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => onEditCompDates(t)}
+                    style={{ background: hasDates ? SURFACE : MID, border: `1px solid ${hasDates ? BORDER : "transparent"}`, borderRadius: "7px", color: hasDates ? TEXT2 : "#fff", padding: "6px 12px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600", flexShrink: 0 }}>
+                    {hasDates ? "Edit Dates" : "Set Dates"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

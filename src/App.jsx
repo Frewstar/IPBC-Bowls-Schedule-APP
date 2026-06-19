@@ -3069,6 +3069,8 @@ export default function BowlsTracker() {
             addFixture={addFixture}
             editFixture={editFixture}
             deleteFixture={deleteFixture}
+            tournaments={baseTournaments}
+            onEditCompDates={openRoundDatesEditor}
             rollOfHonour={rollOfHonour}
             honoraryMembers={honoraryMembers}
             recordWinner={recordWinner}
