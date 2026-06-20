@@ -5,102 +5,113 @@ import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, T
 import { supabase } from "../../lib/supabase.js";
 
 function printTieSheet(draw, slots, prelims, roundDates) {
-  const ROUND_LABELS = ["1st Round", "2nd Round", "3rd Round", "4th Round", "Semi-Final", "Final"];
-  const pairs = [];
-  for (let i = 0; i < BRACKET_SIZE; i += 2) {
-    const a = slots[i];
-    const b = slots[i + 1];
-    if (a?.name || b?.name) pairs.push({ a, b });
+  const LABELS  = ["1st Round", "2nd Round", "3rd Round", "4th Round", "Semi-Final", "Final"];
+  const ROW_H   = 13;
+  const N       = BRACKET_SIZE; // 64
+  const ROUNDS  = 6;
+  const HDR     = 26;
+  const NUM_W   = 22;
+  const NAME_W  = 138;
+  const BRACE_W = 20;
+  const LINE_W  = 88;
+  const TOTAL_H = N * ROW_H;
+
+  const nameMap = {};
+  (slots || []).forEach(s => { if (s?.name) nameMap[s.slotIndex] = s; });
+
+  const ply  = i       => (i + 1) * ROW_H;
+  const rly  = (ri, g) => (2 * g + 1) * Math.pow(2, ri) * ROW_H + ROW_H * 0.5;
+  const bTop = (ri, g) => ri === 0 ? ply(2 * g)     : rly(ri - 1, 2 * g);
+  const bBot = (ri, g) => ri === 0 ? ply(2 * g + 1) : rly(ri - 1, 2 * g + 1);
+
+  // ── Name column ──
+  let nameRows = "";
+  for (let i = 0; i < N; i++) {
+    const s = nameMap[i + 1];
+    const filled = !!s?.name;
+    nameRows += `<div style="height:${ROW_H}px;display:flex;align-items:flex-end;">
+      <span style="width:${NUM_W}px;font-size:8px;color:#999;text-align:right;padding-right:3px;flex-shrink:0;padding-bottom:1px;">${i + 1}</span>
+      <div style="width:${NAME_W}px;border-bottom:1px solid ${filled ? "#333" : "#bbb"};font-size:${filled ? "10" : "9"}px;font-weight:${filled ? "600" : "400"};color:${filled ? "#111" : "#ccc"};padding-left:3px;padding-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s?.name ? s.name + (s.handicap ? ` (${s.handicap})` : "") : ""}</div>
+    </div>`;
   }
 
-  const fmtDate = iso => {
-    if (!iso) return "";
-    const d = new Date(iso + "T12:00:00");
-    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  };
+  // ── Bracket columns ──
+  let bracketCols = "";
+  for (let ri = 0; ri < ROUNDS; ri++) {
+    const gc    = N / Math.pow(2, ri + 1);
+    const isLast = ri === ROUNDS - 1;
+    const colW   = isLast ? LINE_W + 24 : LINE_W;
 
-  const roundDatesRows = roundDates.map((d, i) => d
-    ? `<tr><td style="padding:2px 10px 2px 0;font-weight:600;">${ROUND_LABELS[i]}</td><td style="padding:2px 0;">Complete by ${fmtDate(d)}</td></tr>`
-    : ""
-  ).join("");
+    let svgLines = "";
+    let resultLines = "";
+    for (let g = 0; g < gc; g++) {
+      const tY = bTop(ri, g) + HDR;
+      const bY = bBot(ri, g) + HDR;
+      const mY = rly(ri, g)  + HDR;
+      const x  = BRACE_W / 2;
+      svgLines += `<line x1="0" y1="${tY}" x2="${x}" y2="${tY}" stroke="#aaa" stroke-width="0.7"/>
+<line x1="${x}" y1="${tY}" x2="${x}" y2="${bY}" stroke="#aaa" stroke-width="0.7"/>
+<line x1="0" y1="${bY}" x2="${x}" y2="${bY}" stroke="#aaa" stroke-width="0.7"/>
+<line x1="${x}" y1="${mY}" x2="${BRACE_W}" y2="${mY}" stroke="#aaa" stroke-width="0.7"/>`;
+      resultLines += `<div style="position:absolute;top:${mY}px;left:0;right:${isLast ? 12 : 0}px;height:1px;background:${isLast ? "#333" : "#aaa"};"></div>`;
+    }
 
-  const prelimHtml = prelims.length > 0 ? `
-    <div class="section-title">Preliminary Round</div>
-    <p style="font-size:10px;color:#555;margin:0 0 6px;">Play these matches first — winners enter the main draw at Round 1.</p>
-    <table class="pairings">
-      ${prelims.map(m => `
-        <tr>
-          <td class="player">${m.p1?.name || ""}${m.p1?.handicap ? ` <span class="hcap">(${m.p1.handicap})</span>` : ""}</td>
-          <td class="vs">vs</td>
-          <td class="player right">${m.p2 ? (m.p2.name + (m.p2.handicap ? ` <span class="hcap">(${m.p2.handicap})</span>` : "")) : "BYE"}</td>
-          <td class="score">Score _____ – _____</td>
-        </tr>`).join("")}
-    </table>` : "";
+    const dateStr  = roundDates[ri] ? fmtRoundDate(roundDates[ri]) : "";
+    const hdrHtml  = `<div style="height:${HDR}px;padding-left:2px;display:flex;flex-direction:column;justify-content:center;">
+      <div style="font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:#444;">${LABELS[ri]}</div>
+      ${dateStr ? `<div style="font-size:7px;color:#888;margin-top:1px;">${dateStr}</div>` : ""}
+    </div>`;
+    const winnerHtml = isLast ? `<div style="position:absolute;top:${rly(ROUNDS - 1, 0) + HDR + 4}px;left:2px;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:#333;">Winner</div>` : "";
 
-  const round1Html = `
-    <div class="section-title">Round 1</div>
-    <table class="pairings">
-      ${pairs.map(({ a, b }) => {
-        const aName = a?.name ? `${a.name}${a.handicap ? ` <span class="hcap">(${a.handicap})</span>` : ""}` : "—";
-        const bName = b?.name ? `${b.name}${b.handicap ? ` <span class="hcap">(${b.handicap})</span>` : ""}` : "BYE";
-        return `<tr>
-          <td class="slot">${a?.slotIndex ?? ""}</td>
-          <td class="player">${aName}</td>
-          <td class="vs">${b?.name ? "vs" : ""}</td>
-          <td class="player right">${bName}</td>
-          <td class="slot">${b?.name ? (b?.slotIndex ?? "") : ""}</td>
-          <td class="score">${b?.name ? "Score _____ – _____" : ""}</td>
-        </tr>`;
-      }).join("")}
-    </table>`;
+    bracketCols += `<svg width="${BRACE_W}" height="${TOTAL_H + HDR}" style="display:block;flex-shrink:0;overflow:visible;">${svgLines}</svg>
+<div style="width:${colW}px;flex-shrink:0;position:relative;height:${TOTAL_H + HDR}px;">${hdrHtml}${resultLines}${winnerHtml}</div>`;
+  }
 
-  const laterRoundsHtml = ROUND_LABELS.slice(1).map((label, ri) => {
-    const count = pairs.length / Math.pow(2, ri + 1);
-    const rows = Array.from({ length: Math.max(1, Math.ceil(count)) }, (_, i) =>
-      `<tr><td class="slot">${i + 1}</td><td class="player"></td><td class="vs">vs</td><td class="player right"></td><td class="slot"></td><td class="score">Score _____ – _____</td></tr>`
-    ).join("");
-    return `<div class="section-title">${label}</div><table class="pairings">${rows}</table>`;
-  }).join("");
+  // ── Prelim section ──
+  const prelimHtml = prelims.length > 0 ? `<div style="margin-bottom:10px;">
+    <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1.5px solid #333;padding-bottom:3px;margin-bottom:5px;">Preliminary Round</div>
+    <p style="font-size:8px;color:#666;margin-bottom:5px;">Play these matches first — winners enter the main draw.</p>
+    <table style="border-collapse:collapse;font-size:10px;">
+      ${prelims.map(m => `<tr>
+        <td style="padding:3px 8px 3px 0;font-weight:600;">${m.p1?.name || ""}${m.p1?.handicap ? ` (${m.p1.handicap})` : ""}</td>
+        <td style="padding:3px 8px;color:#888;font-size:8px;">vs</td>
+        <td style="padding:3px 8px 3px 0;font-weight:600;">${m.p2 ? m.p2.name + (m.p2.handicap ? ` (${m.p2.handicap})` : "") : "BYE"}</td>
+        <td style="padding:3px 0;color:#666;font-size:9px;">Score _____ – _____</td>
+      </tr>`).join("")}
+    </table>
+  </div>` : "";
 
   const html = `<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>${draw?.tournament_name || "Draw"} ${draw?.season_year || ""} — Tie Sheet</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 20px; max-width: 800px; margin: 0 auto; }
-    .header { text-align: center; border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-    .club-name { font-size: 20px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
-    .comp-name { font-size: 16px; font-weight: 700; margin-top: 4px; }
-    .season { font-size: 12px; color: #555; margin-top: 2px; }
-    .dates-table { margin: 10px auto; font-size: 11px; }
-    .section-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1.5px solid #111; padding-bottom: 3px; margin: 14px 0 6px; }
-    table.pairings { width: 100%; border-collapse: collapse; }
-    table.pairings tr { border-bottom: 1px solid #ddd; }
-    table.pairings td { padding: 5px 4px; vertical-align: middle; }
-    td.slot { width: 22px; font-size: 10px; color: #888; text-align: center; }
-    td.player { width: 32%; font-weight: 600; }
-    td.player.right { text-align: right; }
-    td.vs { width: 28px; text-align: center; font-size: 10px; color: #888; }
-    td.score { width: 150px; text-align: right; font-size: 11px; color: #555; white-space: nowrap; }
-    .hcap { font-weight: 400; font-size: 10px; color: #777; }
-    .footer { margin-top: 20px; font-size: 10px; color: #aaa; text-align: center; border-top: 1px solid #ddd; padding-top: 8px; }
-    @media print { body { padding: 10px; } }
-  </style>
+<meta charset="UTF-8">
+<title>${draw?.tournament_name || "Draw"} ${draw?.season_year || ""}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:Arial,sans-serif;color:#111;padding:10px 14px;}
+  @page{size:A4 landscape;margin:8mm;}
+  @media print{body{padding:0;}}
+</style>
 </head>
 <body>
-  <div class="header">
-    <div class="club-name">Irvine Park Bowling Club</div>
-    <div class="comp-name">${draw?.tournament_name || ""}</div>
-    <div class="season">${draw?.season_year || ""} Season</div>
-    ${roundDatesRows ? `<table class="dates-table"><tbody>${roundDatesRows}</tbody></table>` : ""}
+  <div style="text-align:center;border-bottom:2px solid #111;padding-bottom:7px;margin-bottom:8px;">
+    <div style="font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:#777;">Irvine Park Bowling Club</div>
+    <div style="font-size:17px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">${draw?.tournament_name || "Competition"}</div>
+    <div style="font-size:9px;color:#666;margin-top:2px;">${draw?.season_year || ""} Season</div>
   </div>
   ${prelimHtml}
-  ${round1Html}
-  ${laterRoundsHtml}
-  <div class="footer">Printed from IPBC Bowls App · irvine-park-bowls.vercel.app</div>
-  <script>window.onload = () => window.print();<\/script>
+  <div style="display:flex;align-items:flex-start;">
+    <div style="flex-shrink:0;">
+      <div style="height:${HDR}px;display:flex;align-items:flex-end;padding-bottom:3px;">
+        <span style="width:${NUM_W}px;"></span>
+        <div style="width:${NAME_W}px;font-size:7px;font-weight:700;text-transform:uppercase;color:#999;letter-spacing:0.08em;padding-left:3px;">Player</div>
+      </div>
+      ${nameRows}
+    </div>
+    ${bracketCols}
+  </div>
+  <div style="margin-top:7px;font-size:8px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:5px;">Printed from IPBC Bowls App</div>
+  <script>window.onload=()=>window.print();<\/script>
 </body>
 </html>`;
 
