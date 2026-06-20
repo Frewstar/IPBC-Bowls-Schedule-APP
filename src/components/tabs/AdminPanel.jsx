@@ -90,10 +90,18 @@ function printTieSheet(draw, slots, prelims, roundDates) {
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:Arial,sans-serif;color:#111;padding:10px 14px;}
   @page{size:A4 landscape;margin:8mm;}
-  @media print{body{padding:0;}}
+  @media print{body{padding:0;}.toolbar{display:none!important;}}
 </style>
 </head>
 <body>
+  <div class="toolbar" style="display:flex;gap:8px;padding:10px 14px;background:#f5f5f5;border-bottom:1px solid #ddd;margin:-10px -14px 12px;">
+    <button onclick="doPrint()" style="flex:1;padding:9px 16px;background:#1a5e35;color:#fff;border:none;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;">🖨️ Print</button>
+    <button onclick="doSavePdf()" style="flex:1;padding:9px 16px;background:#fff;color:#1a5e35;border:2px solid #1a5e35;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;">💾 Save as PDF</button>
+    <button onclick="window.close()" style="padding:9px 14px;background:#fff;color:#888;border:1px solid #ccc;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;cursor:pointer;">✕ Close</button>
+  </div>
+  <div style="font-family:Arial,sans-serif;font-size:11px;color:#666;padding:0 14px 8px;background:#fffbe6;border-bottom:1px solid #e8d88a;margin:-12px -14px 12px;padding:6px 14px;" class="toolbar">
+    💡 To save a PDF: tap <strong>Save as PDF</strong> above, then in the print dialog change the destination to <strong>Save as PDF</strong>.
+  </div>
   <div style="text-align:center;border-bottom:2px solid #111;padding-bottom:7px;margin-bottom:8px;">
     <div style="font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:#777;">Irvine Park Bowling Club</div>
     <div style="font-size:17px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">${draw?.tournament_name || "Competition"}</div>
@@ -110,8 +118,18 @@ function printTieSheet(draw, slots, prelims, roundDates) {
     </div>
     ${bracketCols}
   </div>
-  <div style="margin-top:7px;font-size:8px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:5px;">Printed from IPBC Bowls App</div>
-  <script>window.onload=()=>window.print();<\/script>
+  <div style="margin-top:7px;font-size:8px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:5px;">Irvine Park Bowling Club · IPBC Bowls App</div>
+  <script>
+    function doPrint() { window.print(); }
+    function doSavePdf() {
+      // Suggest PDF filename via document title, then open print dialog
+      // (user picks "Save as PDF" in the print destination)
+      var orig = document.title;
+      document.title = "${(draw?.tournament_name || "Draw").replace(/"/g, "")}_${draw?.season_year || ""}.pdf";
+      window.print();
+      document.title = orig;
+    }
+  <\/script>
 </body>
 </html>`;
 
