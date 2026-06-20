@@ -874,7 +874,7 @@ export default function BowlsTracker() {
   // ── All draws (admin sees drafts + published; Find tab sees only published) ──
   const [allDraws, setAllDraws]         = useState([]);
   const [drawPairings, setDrawPairings] = useState([]);
-  const publishedDraws = useMemo(() => allDraws.filter(d => d.published), [allDraws]);
+  const publishedDraws = useMemo(() => allDraws.filter(d => d.published && !d.is_test), [allDraws]);
   useEffect(() => {
     supabase.from("draws").select("*")
       .then(({ data }) => { if (data) setAllDraws(data); });

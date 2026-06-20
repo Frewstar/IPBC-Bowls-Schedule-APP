@@ -193,7 +193,7 @@ export default function AdminPanel({
       {section === "Club"         && <AdminClub rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
       {section === "Access" && isSuperAdmin && <AdminAccess adminList={adminList} pendingAdminRequests={pendingAdminRequests} approveAdminRequest={approveAdminRequest} revokeAdmin={revokeAdmin} grantAdmin={grantAdmin} members={members} myName={myName} />}
       {section === "Lockouts"     && <AdminLockouts lockouts={lockouts} clearLockout={clearLockout} />}
-      {section === "Draw"         && <AdminDrawGenerator members={members} tournaments={tournaments} seasonYear={seasonYear} allDraws={allDraws} generatedBy={myName} onDrawSaved={onDrawSaved} />}
+      {section === "Draw"         && <AdminDrawGenerator members={members} tournaments={tournaments} seasonYear={seasonYear} allDraws={allDraws} generatedBy={myName} onDrawSaved={onDrawSaved} isSuperAdmin={isSuperAdmin} />}
     </div>
   );
 }
@@ -817,7 +817,7 @@ function bracketToRows(drawId, slots, prelims) {
 }
 
 
-function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, generatedBy, onDrawSaved }) {
+function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, generatedBy, onDrawSaved, isSuperAdmin }) {
   const [step, setStep]                 = useState(1);
   const [viewMode, setViewMode]         = useState("list"); // "list" | "bracket"
   const [tournId, setTournId]           = useState("");
@@ -829,6 +829,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
   const [confirmPub, setConfirmPub]     = useState(false);
   const [existingDraw, setExistingDraw] = useState(null);
   const [confirmUnpub, setConfirmUnpub] = useState(false);
+  const [testMode, setTestMode]         = useState(false);
   const [pubRows, setPubRows]           = useState([]);
   const [roundDates, setRoundDates]     = useState(Array(6).fill(""));
 
@@ -886,7 +887,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     if (!tournament || !result) return;
     setSaving(true);
     setConfirmPub(false);
-    const isRepublish = publish && existingDraw?.published;
+    const isRepublish = publish && existingDraw?.published && !testMode;
     const prevVersion = existingDraw?.version || 1;
     const newVersion  = isRepublish ? prevVersion + 1 : (existingDraw?.version || 1);
     const historyEntry = isRepublish ? {
@@ -899,8 +900,9 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
       tournament_id: tournId, tournament_name: tournament.name,
       season_year: seasonYear, generated_by: generatedBy,
       published: publish, published_at: publish ? new Date().toISOString() : null,
-      version: newVersion,
-      revision_history: historyEntry ? [...prevHistory, historyEntry] : prevHistory,
+      is_test: testMode,
+      version: testMode ? (existingDraw?.version || 1) : newVersion,
+      revision_history: (testMode || !historyEntry) ? prevHistory : [...prevHistory, historyEntry],
     };
     const { data: draw, error } = await supabase.from("draws").upsert(drawRow, { onConflict: "tournament_id,season_year" }).select().maybeSingle();
     if (error || !draw) { setSaving(false); alert("Error saving draw. Please try again."); return; }
@@ -920,7 +922,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     setSaving(true);
     setConfirmPub(false);
     const { data: draw, error } = await supabase.from("draws")
-      .update({ published: true, published_at: new Date().toISOString() })
+      .update({ published: true, published_at: new Date().toISOString(), is_test: testMode })
       .eq("id", existingDraw.id).select().maybeSingle();
     if (error || !draw) { setSaving(false); alert("Error publishing draw. Please try again."); return; }
     onDrawSaved(draw, null);
@@ -965,6 +967,21 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     const { slots, prelims } = pubRows.length ? rowsToDisplay(pubRows) : { slots: Array(BRACKET_SIZE).fill(null).map((_, i) => ({ slotIndex: i+1, name: null, handicap: null })), prelims: [] };
     return (
       <div>
+        {/* Test mode banner */}
+        {isSuperAdmin && (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", background: testMode ? "#fff3cd" : SURFACE, border: `1px solid ${testMode ? "#f0ad4e" : BORDER}`, borderRadius: "8px", marginBottom: "12px" }}>
+            <span style={{ fontSize: "16px" }}>🧪</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: F_UI, fontSize: "12px", fontWeight: "700", color: testMode ? "#7d4e00" : TEXT2 }}>
+                {testMode ? "Test Mode — members cannot see this draw, no versions logged" : "Test Mode off — changes are live and logged"}
+              </div>
+            </div>
+            <button onClick={() => setTestMode(t => !t)}
+              style={{ width: "42px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer", padding: 0, background: testMode ? "#f0ad4e" : BORDER, position: "relative", flexShrink: 0 }}>
+              <div style={{ width: "18px", height: "18px", borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", position: "absolute", top: "3px", transition: "left 0.15s", left: testMode ? "21px" : "3px" }} />
+            </button>
+          </div>
+        )}
         {/* Status banner */}
         {isDraft ? (
           <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "10px" }}>
@@ -1078,9 +1095,23 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
 
   return (
     <div>
-      <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "16px", lineHeight: 1.6 }}>
+      <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "12px", lineHeight: 1.6 }}>
         Generate and publish the first-round draw for each competition. Published draws can be edited and republished by admins — each revision is logged for transparency.
       </div>
+      {isSuperAdmin && (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", background: testMode ? "#fff3cd" : SURFACE, border: `1px solid ${testMode ? "#f0ad4e" : BORDER}`, borderRadius: "8px", marginBottom: "14px" }}>
+          <span style={{ fontSize: "16px" }}>🧪</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: F_UI, fontSize: "12px", fontWeight: "700", color: testMode ? "#7d4e00" : TEXT2 }}>
+              {testMode ? "Test Mode active — draw hidden from members, no versions logged" : "Test Mode — try the draw flow without affecting members"}
+            </div>
+          </div>
+          <button onClick={() => setTestMode(t => !t)}
+            style={{ width: "42px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer", padding: 0, background: testMode ? "#f0ad4e" : BORDER, position: "relative", flexShrink: 0 }}>
+            <div style={{ width: "18px", height: "18px", borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", position: "absolute", top: "3px", transition: "left 0.15s", left: testMode ? "21px" : "3px" }} />
+          </button>
+        </div>
+      )}
 
       {/* ── Step 1: Pick competition ── */}
       {step === 1 && (
