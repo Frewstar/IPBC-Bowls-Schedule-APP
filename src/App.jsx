@@ -46,6 +46,7 @@ import FindTab from "./components/tabs/Find.jsx";
 import DrawsTab from "./components/tabs/Draws.jsx";
 import MembersTab from "./components/tabs/Members.jsx";
 import AdminPanel from "./components/tabs/AdminPanel.jsx";
+import DrawResultSheet from "./components/DrawResultSheet.jsx";
 
 
 
@@ -874,12 +875,15 @@ export default function BowlsTracker() {
   // ── All draws (admin sees drafts + published; Find tab sees only published) ──
   const [allDraws, setAllDraws]         = useState([]);
   const [drawPairings, setDrawPairings] = useState([]);
+  const [drawResults, setDrawResults]   = useState([]);
   const publishedDraws = useMemo(() => allDraws.filter(d => d.published && (!d.is_test || isSuperAdmin)), [allDraws, isSuperAdmin]);
   useEffect(() => {
     supabase.from("draws").select("*")
       .then(({ data }) => { if (data) setAllDraws(data); });
     supabase.from("draw_pairings").select("*")
       .then(({ data }) => { if (data) setDrawPairings(data); });
+    supabase.from("draw_results").select("*")
+      .then(({ data }) => { if (data) setDrawResults(data); });
   }, []);
 
   const playerGames = useMemo(() => {
@@ -959,6 +963,8 @@ export default function BowlsTracker() {
         isBye: !opponent,
         roundDate: roundDates[0] || null,
         roundDates,
+        playerSlot: p.slot_index,
+        draw,
       });
     });
     return result;
@@ -966,6 +972,76 @@ export default function BowlsTracker() {
 
   const currentSeason = settings.seasonYear || new Date().getFullYear();
   const futureDrawEntries = myDrawEntries.filter(de => de.seasonYear >= currentSeason);
+
+  // Bracket progression: derive current round / opponent from draw_results
+  const DRAW_ROUND_LABELS = ["", "1st Round", "2nd Round", "3rd Round", "4th Round", "Semi-Final", "Final"];
+  function getPlayerDrawStatus(drawId, mySlot, roundDates) {
+    const myResults = drawResults
+      .filter(r => r.draw_id === drawId && r.player_slot === mySlot)
+      .sort((a, b) => a.round_num - b.round_num);
+    let currentRound = 1;
+    for (const r of myResults) {
+      if (r.result === 'L') return { eliminated: true, lastRound: r.round_num, results: myResults };
+      if (r.result === 'W' || r.result === 'BYE') currentRound = r.round_num + 1;
+    }
+    if (currentRound > 6) return { winner: true, results: myResults, roundLabel: "Winner!" };
+    // Find opponent for current round
+    let opponentName = null;
+    if (currentRound === 1) {
+      const pairSlot = mySlot % 2 === 1 ? mySlot + 1 : mySlot - 1;
+      const pair = drawPairings.find(p => p.draw_id === drawId && p.slot_index === pairSlot && p.round_type === 'main');
+      opponentName = pair?.player_name || null;
+    } else {
+      const groupSize = Math.pow(2, currentRound - 1);
+      const myGroup = Math.ceil(mySlot / groupSize);
+      const adjGroup = myGroup % 2 === 1 ? myGroup + 1 : myGroup - 1;
+      const minSlot = (adjGroup - 1) * groupSize + 1;
+      const maxSlot = adjGroup * groupSize;
+      const eligibleSlots = drawPairings
+        .filter(p => p.draw_id === drawId && p.round_type === 'main' && p.slot_index >= minSlot && p.slot_index <= maxSlot)
+        .map(p => p.slot_index);
+      for (const slot of eligibleSlots) {
+        const slotResults = drawResults.filter(r => r.draw_id === drawId && r.player_slot === slot);
+        const wins = slotResults.filter(r => r.result === 'W' || r.result === 'BYE').length;
+        if (wins === currentRound - 1) {
+          const pairing = drawPairings.find(p => p.draw_id === drawId && p.slot_index === slot && p.round_type === 'main');
+          if (pairing?.player_name) { opponentName = pairing.player_name; break; }
+        }
+      }
+      if (!opponentName) opponentName = "TBD";
+    }
+    const roundLabel = DRAW_ROUND_LABELS[currentRound] || `Round ${currentRound}`;
+    const roundDate = Array.isArray(roundDates) ? roundDates[currentRound - 1] || null : null;
+    return { currentRound, opponentName, roundLabel, roundDate, results: myResults, eliminated: false, winner: false };
+  }
+
+  // Roll of Honour tournament mapping
+  const ROH_MAP = {
+    "gents-singles": "roh-gents-singles",
+    "gents-pairs":   "roh-gents-pairs",
+    "gents-triples": "roh-gents-triples",
+    "mitchell":      "roh-mitchell",
+    "ladies-singles":"roh-ladies-singles",
+    "ladies-pairs":  "roh-ladies-pairs",
+  };
+
+  async function recordDrawResult(de, resultRow) {
+    const { draw_id: _, ...row } = { draw_id: de.drawId, ...resultRow };
+    const full = { draw_id: de.drawId, ...resultRow };
+    const { error } = await supabase.from("draw_results").upsert(full, { onConflict: "draw_id,round_num,player_slot" });
+    if (error) { alert("Error saving result: " + error.message); return; }
+    setDrawResults(prev => {
+      const filtered = prev.filter(r => !(r.draw_id === full.draw_id && r.round_num === full.round_num && r.player_slot === full.player_slot));
+      return [...filtered, full];
+    });
+    // If Final win, prompt for Roll of Honour
+    if (full.round_num === 6 && full.result === 'W') {
+      setRohPrompt({ tournamentId: de.tournamentId, tournamentName: de.tournamentName, playerName: full.player_name, seasonYear: de.seasonYear });
+    }
+  }
+
+  const [activeDrawEntry, setActiveDrawEntry] = useState(null);
+  const [rohPrompt, setRohPrompt]             = useState(null);
 
   // ── Sign-in flow ──
   const [pinConfirm, setPinConfirm]   = useState("");
@@ -1916,17 +1992,24 @@ export default function BowlsTracker() {
                           {futureDrawEntries.map(de => {
                             const t = TOURNAMENTS.find(t2 => t2.id === de.tournamentId);
                             const color = t?.color || MID;
-                            const roundDate = de.roundDate ? new Date(de.roundDate + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : null;
+                            const status = de.playerSlot ? getPlayerDrawStatus(de.drawId, de.playerSlot, de.roundDates) : null;
+                            const roundLabel = status?.roundLabel || (de.isPrelim ? "Preliminary" : "1st Round");
+                            const opponent = status?.opponentName ?? de.opponent;
+                            const isBye = status ? (status.opponentName === null) : de.isBye;
+                            const roundDate = status?.roundDate ? new Date(status.roundDate + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : null;
+                            const canRecord = !status?.eliminated && !status?.winner && !de.draw?.is_test;
                             return (
-                              <div key={de.drawId} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${color}`, borderRadius: "10px", padding: "12px 14px", marginBottom: "8px" }}>
+                              <div key={de.drawId} onClick={() => canRecord && setActiveDrawEntry({ de, status })}
+                                style={{ background: SURFACE, border: `1px solid ${status?.eliminated ? LOSS_RED + "55" : status?.winner ? GOLD + "88" : BORDER}`, borderLeft: `3px solid ${status?.eliminated ? LOSS_RED : status?.winner ? GOLD : color}`, borderRadius: "10px", padding: "12px 14px", marginBottom: "8px", cursor: canRecord ? "pointer" : "default" }}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
                                   <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT }}>{de.tournamentName}</div>
-                                  <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>{de.seasonYear} season</div>
+                                  <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: status?.eliminated ? LOSS_RED : status?.winner ? GOLD : GREEN }}>{status?.winner ? "🏆 Winner!" : status?.eliminated ? "Eliminated" : "Draw live ✓"}</div>
                                 </div>
                                 <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2 }}>
-                                  {de.isPrelim ? "Preliminary" : "Round 1"} · {de.isBye ? <span style={{ color: GOLD_MUTED, fontWeight: "600" }}>BYE</span> : <>vs <span style={{ fontWeight: "600", color: TEXT }}>{de.opponent}</span></>}
+                                  {roundLabel} · {isBye ? <span style={{ color: GOLD_MUTED, fontWeight: "600" }}>BYE</span> : opponent === "TBD" ? <span style={{ color: TEXT3 }}>Awaiting opponent</span> : <>vs <span style={{ fontWeight: "600", color: TEXT }}>{opponent}</span></>}
                                 </div>
-                                {roundDate && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "3px" }}>Must play by: {roundDate}</div>}
+                                {roundDate && !status?.eliminated && !status?.winner && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "3px" }}>Must play by: {roundDate}</div>}
+                                {canRecord && <div style={{ fontFamily: F_UI, fontSize: "11px", color: MID, fontWeight: "600", marginTop: "5px" }}>Tap to record result →</div>}
                               </div>
                             );
                           })}
@@ -2013,17 +2096,24 @@ export default function BowlsTracker() {
                             {futureDrawEntries.map(de => {
                               const t = TOURNAMENTS.find(t2 => t2.id === de.tournamentId);
                               const color = t?.color || MID;
-                              const roundDate = de.roundDate ? new Date(de.roundDate + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : null;
+                              const status = de.playerSlot ? getPlayerDrawStatus(de.drawId, de.playerSlot, de.roundDates) : null;
+                              const roundLabel = status?.roundLabel || (de.isPrelim ? "Preliminary" : "1st Round");
+                              const opponent = status?.opponentName ?? de.opponent;
+                              const isBye = status ? (status.opponentName === null) : de.isBye;
+                              const roundDate = status?.roundDate ? new Date(status.roundDate + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : null;
+                              const canRecord = !status?.eliminated && !status?.winner && !de.draw?.is_test;
                               return (
-                                <div key={de.drawId} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${color}`, borderRadius: "10px", padding: "12px 14px", marginBottom: "8px" }}>
+                                <div key={de.drawId} onClick={() => canRecord && setActiveDrawEntry({ de, status })}
+                                  style={{ background: SURFACE, border: `1px solid ${status?.eliminated ? LOSS_RED + "55" : status?.winner ? GOLD + "88" : BORDER}`, borderLeft: `3px solid ${status?.eliminated ? LOSS_RED : status?.winner ? GOLD : color}`, borderRadius: "10px", padding: "12px 14px", marginBottom: "8px", cursor: canRecord ? "pointer" : "default" }}>
                                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
                                     <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT }}>{de.tournamentName}</div>
-                                    <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: GREEN }}>Draw live ✓</div>
+                                    <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: status?.eliminated ? LOSS_RED : status?.winner ? GOLD : GREEN }}>{status?.winner ? "🏆 Winner!" : status?.eliminated ? "Eliminated" : "Draw live ✓"}</div>
                                   </div>
                                   <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2 }}>
-                                    {de.isPrelim ? "Preliminary" : "Round 1"} · {de.isBye ? <span style={{ color: GOLD_MUTED, fontWeight: "600" }}>BYE</span> : <>vs <span style={{ fontWeight: "600", color: TEXT }}>{de.opponent}</span></>}
+                                    {roundLabel} · {isBye ? <span style={{ color: GOLD_MUTED, fontWeight: "600" }}>BYE</span> : opponent === "TBD" ? <span style={{ color: TEXT3 }}>Awaiting opponent</span> : <>vs <span style={{ fontWeight: "600", color: TEXT }}>{opponent}</span></>}
                                   </div>
-                                  {roundDate && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "3px" }}>Must play by: {roundDate}</div>}
+                                  {roundDate && !status?.eliminated && !status?.winner && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "3px" }}>Must play by: {roundDate}</div>}
+                                  {canRecord && <div style={{ fontFamily: F_UI, fontSize: "11px", color: MID, fontWeight: "600", marginTop: "5px" }}>Tap to record result →</div>}
                                 </div>
                               );
                             })}
@@ -3628,6 +3718,55 @@ export default function BowlsTracker() {
           })}
         </div>
       </div>
+
+      {/* Draw result entry sheet */}
+      {activeDrawEntry && (
+        <DrawResultSheet
+          open={!!activeDrawEntry}
+          onClose={() => setActiveDrawEntry(null)}
+          draw={activeDrawEntry.de.draw}
+          mySlot={activeDrawEntry.de.playerSlot}
+          myName={myName}
+          currentRound={activeDrawEntry.status?.currentRound || 1}
+          opponentName={activeDrawEntry.status?.opponentName ?? activeDrawEntry.de.opponent}
+          onSave={row => recordDrawResult(activeDrawEntry.de, row)}
+        />
+      )}
+
+      {/* Roll of Honour confirm after Final win */}
+      {rohPrompt && (
+        <BottomSheet open={!!rohPrompt} onClose={() => setRohPrompt(null)} title="Add to Roll of Honour?">
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ textAlign: "center", padding: "8px 0" }}>
+              <div style={{ fontSize: "48px", marginBottom: "10px" }}>🏆</div>
+              <div style={{ fontFamily: F_UI, fontSize: "17px", fontWeight: "700", color: TEXT }}>{rohPrompt.playerName}</div>
+              <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginTop: "4px" }}>Won the {rohPrompt.tournamentName} — {rohPrompt.seasonYear}</div>
+              <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginTop: "8px" }}>Add this win to the club's Roll of Honour?</div>
+            </div>
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button onClick={() => setRohPrompt(null)}
+                style={{ flex: 1, padding: "12px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT2, cursor: "pointer" }}>
+                Not now
+              </button>
+              <button onClick={async () => {
+                const rohId = ROH_MAP[rohPrompt.tournamentId];
+                if (rohId) {
+                  const { data: current } = await supabase.from("roll_of_honour").select("winners").eq("id", rohId).single();
+                  const winners = Array.isArray(current?.winners) ? current.winners : [];
+                  if (!winners.some(w => w.year === rohPrompt.seasonYear && w.name === rohPrompt.playerName)) {
+                    await supabase.from("roll_of_honour").update({ winners: [...winners, { year: rohPrompt.seasonYear, name: rohPrompt.playerName }] }).eq("id", rohId);
+                  }
+                }
+                setRohPrompt(null);
+                alert(`${rohPrompt.playerName} added to the Roll of Honour for ${rohPrompt.seasonYear}!`);
+              }}
+                style={{ flex: 2, padding: "12px", background: GOLD, border: `1px solid ${GOLD}`, borderRadius: "10px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: "#fff", cursor: "pointer" }}>
+                Yes — add to Roll of Honour
+              </button>
+            </div>
+          </div>
+        </BottomSheet>
+      )}
 
     </div>
   );
