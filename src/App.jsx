@@ -241,6 +241,7 @@ export default function BowlsTracker() {
   const [entryOppSearch, setEntryOppSearch] = useState("");
   const [entryOppPicked, setEntryOppPicked] = useState(null);
   const [entryRound1Bye, setEntryRound1Bye] = useState(false);
+  const [adhocCompName, setAdhocCompName] = useState("");
   const [entryDate, setEntryDate]       = useState("");
   const [entryTime, setEntryTime]       = useState("");
   const [teamPartners, setTeamPartners] = useState(() => load("ipbc_team_partners_v1", {}));
@@ -1179,21 +1180,31 @@ export default function BowlsTracker() {
 
   // ── Tournament entry handlers ──
   function createEntry() {
-    if (!entryTournId || !myName) return;
-    const t = TOURNAMENTS.find(t2 => t2.id === entryTournId);
+    if (!myName) return;
+    // If ad-hoc comp name entered, create a personal comp on the fly first
+    let resolvedTournId = entryTournId;
+    if (entryTournId === "__adhoc__" && adhocCompName.trim()) {
+      const newId = `personal-${Date.now()}`;
+      const newComp = { id: newId, owner: myName, section: effectiveSection, name: adhocCompName.trim(), type: "Singles", color: "#2d6a4f", rounds: [], custom: true, source: "personal" };
+      setPersonalComps(prev => [...prev, newComp]);
+      resolvedTournId = newId;
+    }
+    if (!resolvedTournId) return;
+    const t = TOURNAMENTS.find(t2 => t2.id === resolvedTournId) || (entryTournId === "__adhoc__" && adhocCompName.trim() ? { id: resolvedTournId, name: adhocCompName.trim(), color: "#2d6a4f", rounds: [] } : null);
+    if (!t) return;
     const rounds = t?.rounds?.length > 0 ? t.rounds.length : Math.max(1, entryRounds);
     const firstTie = entryRound1Bye
       ? { roundIdx: 0, roundLabel: getRoundLabel(0, rounds), opponent: "", oppPhone: "", date: "", time: "", myScore: null, oppScore: null, result: "BYE" }
       : entryOppPicked
       ? { roundIdx: 0, roundLabel: getRoundLabel(0, rounds), opponent: entryOppPicked.name, oppPhone: entryOppPicked.phone || "", date: entryDate, time: entryTime, myScore: null, oppScore: null, result: null }
       : null;
-    const tournName = t?.name || entryTournId;
+    const tournName = t?.name || resolvedTournId;
     setEntries(prev => [...prev, {
       id: `entry-${Date.now()}`,
       myName,
       section: effectiveSection,
       year: settings.seasonYear || new Date().getFullYear(),
-      tournamentId: entryTournId,
+      tournamentId: resolvedTournId,
       tournamentName: tournName,
       tournamentColor: t?.color || GOLD,
       totalRounds: rounds,
@@ -1201,8 +1212,8 @@ export default function BowlsTracker() {
       myPartners: [...entryMyPartners],
       ties: firstTie ? [firstTie] : [],
     }]);
-    if (entryMyPartners.length > 0 && entryTournId !== "balloted-pairs") {
-      const updated = { ...teamPartners, [entryTournId]: entryMyPartners };
+    if (entryMyPartners.length > 0 && resolvedTournId !== "balloted-pairs") {
+      const updated = { ...teamPartners, [resolvedTournId]: entryMyPartners };
       setTeamPartners(updated);
       save("ipbc_team_partners_v1", updated);
     }
@@ -1210,6 +1221,7 @@ export default function BowlsTracker() {
     setEntryOppSearch(""); setEntryOppPicked(null); setEntryRound1Bye(false);
     setEntryDate(""); setEntryTime("");
     setEntryMyPartners([]); setEntryPartnerSearch("");
+    setAdhocCompName("");
     setLastAddedTournName(tournName);
     setEntryJustSaved(true);
   }
@@ -2927,7 +2939,7 @@ export default function BowlsTracker() {
                       })()}
 
                       {/* ══ BOTTOM SHEET: Add Tournament ══ */}
-                      <BottomSheet open={showEntrySheet} onClose={() => { setShowEntrySheet(false); setEntryJustSaved(false); setEntryRound1Bye(false); setEntryOppPicked(null); setEntryOppSearch(""); setEntryMyPartners([]); setEntryPartnerSearch(""); }} title="Add Tournament">
+                      <BottomSheet open={showEntrySheet} onClose={() => { setShowEntrySheet(false); setEntryJustSaved(false); setEntryRound1Bye(false); setEntryOppPicked(null); setEntryOppSearch(""); setEntryMyPartners([]); setEntryPartnerSearch(""); setAdhocCompName(""); setEntryTournId(""); }} title="Add Tournament">
                         {entryJustSaved ? (
                           <div style={{ textAlign: "center", padding: "12px 0 8px" }}>
                             <div style={{ display: "flex", justifyContent: "center", marginBottom: "14px" }}>
@@ -2954,7 +2966,7 @@ export default function BowlsTracker() {
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
                             {TOURNAMENTS.map(t => (
                               <button key={t.id} onClick={() => {
-                                  setEntryTournId(t.id);
+                                  setEntryTournId(t.id); setAdhocCompName("");
                                   setEntryDate(getRoundDateForComp(t.id, 0));
                                   if (t.id !== "balloted-pairs" && teamPartners[t.id]?.length > 0) {
                                     setEntryMyPartners(teamPartners[t.id]);
@@ -2970,9 +2982,27 @@ export default function BowlsTracker() {
                                 fontWeight: entryTournId === t.id ? "600" : "400",
                               }}>{t.name}</button>
                             ))}
+                            {/* Ad-hoc pill */}
+                            <button onClick={() => { setEntryTournId("__adhoc__"); setEntryDate(""); setEntryMyPartners([]); }}
+                              style={{ background: entryTournId === "__adhoc__" ? GREEN : SURFACE2, border: `1px solid ${entryTournId === "__adhoc__" ? GREEN : BORDER}`, borderRadius: "20px", color: entryTournId === "__adhoc__" ? "#fff" : TEXT2, padding: "7px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: entryTournId === "__adhoc__" ? "600" : "400" }}>
+                              + Other / External
+                            </button>
                           </div>
+                          {/* Ad-hoc name input */}
+                          {entryTournId === "__adhoc__" && (
+                            <div style={{ marginTop: "10px" }}>
+                              <input
+                                autoFocus
+                                value={adhocCompName}
+                                onChange={e => setAdhocCompName(e.target.value)}
+                                placeholder="Competition name…"
+                                style={{ width: "100%", boxSizing: "border-box", padding: "11px 12px", border: `1px solid ${GREEN}`, borderRadius: "10px", fontSize: "15px", fontFamily: F_UI, color: TEXT, background: SURFACE, outline: "none" }}
+                              />
+                              <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px" }}>This will be saved as your own personal competition</div>
+                            </div>
+                          )}
                         </div>
-                        {entryTournId && !(TOURNAMENTS.find(t => t.id === entryTournId)?.rounds?.length > 0) && (
+                        {(entryTournId && entryTournId !== "__adhoc__") && !(TOURNAMENTS.find(t => t.id === entryTournId)?.rounds?.length > 0) && (
                           <div style={{ marginBottom: "16px" }}>
                             <div style={{ fontSize: "10px", color: TEXT3, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "1.5px" }}>Number of Rounds</div>
                             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -3078,10 +3108,12 @@ export default function BowlsTracker() {
                           </div>
                         )}
                         <div style={{ display: "flex", gap: "8px" }}>
-                          <button onClick={createEntry} disabled={!entryTournId}
-                            style={{ flex: 1, background: entryTournId ? MID : BORDER, border: "none", borderRadius: "8px", color: entryTournId ? "#fff" : TEXT3, padding: "12px", fontSize: "13px", cursor: entryTournId ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
+                          {(() => { const canSave = entryTournId && (entryTournId !== "__adhoc__" || adhocCompName.trim()); return (
+                          <button onClick={createEntry} disabled={!canSave}
+                            style={{ flex: 1, background: canSave ? MID : BORDER, border: "none", borderRadius: "8px", color: canSave ? "#fff" : TEXT3, padding: "12px", fontSize: "13px", cursor: canSave ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
                             Save
                           </button>
+                          ); })()}
                           <button onClick={() => { setEntryJustSaved(false); setShowEntrySheet(false); }} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "12px 16px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>Cancel</button>
                         </div>
                         </>}
