@@ -876,7 +876,7 @@ export default function BowlsTracker() {
   const [allDraws, setAllDraws]         = useState([]);
   const [drawPairings, setDrawPairings] = useState([]);
   const [drawResults, setDrawResults]   = useState([]);
-  const publishedDraws = useMemo(() => allDraws.filter(d => d.published && (!d.is_test || isSuperAdmin)), [allDraws, isSuperAdmin]);
+  const publishedDraws = useMemo(() => allDraws.filter(d => d.published && (!d.is_test || isSuperAdmin) && (d.section || "gents") === activeSection), [allDraws, isSuperAdmin, activeSection]);
   useEffect(() => {
     supabase.from("draws").select("*")
       .then(({ data }) => { if (data) setAllDraws(data); });
@@ -1017,12 +1017,15 @@ export default function BowlsTracker() {
 
   // Roll of Honour tournament mapping
   const ROH_MAP = {
-    "gents-singles": "roh-gents-singles",
-    "gents-pairs":   "roh-gents-pairs",
-    "gents-triples": "roh-gents-triples",
-    "mitchell":      "roh-mitchell",
-    "ladies-singles":"roh-ladies-singles",
-    "ladies-pairs":  "roh-ladies-pairs",
+    "championship":        "roh-gents-singles",
+    "presidents":          "roh-president",
+    "pairs":               "roh-gents-pairs",
+    "triples":             "roh-gents-triples",
+    "rinks":               "roh-gents-rinks",
+    "ladies-championship": "roh-ladies-singles",
+    "ladies-pairs":        "roh-ladies-pairs",
+    "ladies-triples":      "roh-ladies-triples",
+    "ladies-rinks":        "roh-ladies-rinks",
   };
 
   async function recordDrawResult(de, resultRow) {
@@ -3485,6 +3488,7 @@ export default function BowlsTracker() {
             unlockAppAccount={unlockAppAccount}
             deleteAppAccount={deleteAppAccount}
             isDrawAdmin={isDrawAdmin}
+            activeSection={activeSection}
             seasonYear={settings.seasonYear || new Date().getFullYear()}
             allDraws={allDraws}
             onDrawSaved={(draw, pairings) => {
