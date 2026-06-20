@@ -803,7 +803,7 @@ function AdminLockouts({ lockouts, clearLockout }) {
 // ─────────────────────────────────────────────
 // DRAW GENERATOR SECTION (draw_admin only)
 // ─────────────────────────────────────────────
-const V1_DRAW_IDS  = new Set(['championship','presidents','morton','donaldson','mitchell','mixed-pairs','ladies-championship','ladies-pairs','ladies-triples','ladies-rinks']);
+const V1_DRAW_IDS  = new Set(['championship','presidents','morton','donaldson','mitchell','mixed-pairs','ladies-championship','ladies-pairs','ladies-triples','ladies-rinks','seniors-championship','seniors-pairs','seniors-triples','ladies-seniors-championship','ladies-seniors-pairs']);
 
 function fisherYates(arr) {
   const a = [...arr];
