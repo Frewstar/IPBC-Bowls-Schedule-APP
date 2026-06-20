@@ -828,6 +828,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
   const [saving, setSaving]             = useState(false);
   const [confirmPub, setConfirmPub]     = useState(false);
   const [existingDraw, setExistingDraw] = useState(null);
+  const [confirmUnpub, setConfirmUnpub] = useState(false);
   const [pubRows, setPubRows]           = useState([]);
   const [roundDates, setRoundDates]     = useState(Array(6).fill(""));
 
@@ -849,7 +850,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     }
   }, [tournId, allDraws, seasonYear]);
 
-  function reset() { setTournId(""); setStep(1); setSelected(new Set()); setHandicaps({}); setResult(null); setExistingDraw(null); setPubRows([]); setConfirmPub(false); setRoundDates(Array(6).fill("")); }
+  function reset() { setTournId(""); setStep(1); setSelected(new Set()); setHandicaps({}); setResult(null); setExistingDraw(null); setPubRows([]); setConfirmPub(false); setConfirmUnpub(false); setRoundDates(Array(6).fill("")); }
 
   async function saveRoundDate(ri, value) {
     const updated = [...roundDates];
@@ -885,10 +886,21 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     if (!tournament || !result) return;
     setSaving(true);
     setConfirmPub(false);
+    const isRepublish = publish && existingDraw?.published;
+    const prevVersion = existingDraw?.version || 1;
+    const newVersion  = isRepublish ? prevVersion + 1 : (existingDraw?.version || 1);
+    const historyEntry = isRepublish ? {
+      version: prevVersion,
+      revised_by: generatedBy,
+      revised_at: new Date().toISOString(),
+    } : null;
+    const prevHistory = existingDraw?.revision_history || [];
     const drawRow = {
       tournament_id: tournId, tournament_name: tournament.name,
       season_year: seasonYear, generated_by: generatedBy,
       published: publish, published_at: publish ? new Date().toISOString() : null,
+      version: newVersion,
+      revision_history: historyEntry ? [...prevHistory, historyEntry] : prevHistory,
     };
     const { data: draw, error } = await supabase.from("draws").upsert(drawRow, { onConflict: "tournament_id,season_year" }).select().maybeSingle();
     if (error || !draw) { setSaving(false); alert("Error saving draw. Please try again."); return; }
@@ -911,6 +923,30 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
       .update({ published: true, published_at: new Date().toISOString() })
       .eq("id", existingDraw.id).select().maybeSingle();
     if (error || !draw) { setSaving(false); alert("Error publishing draw. Please try again."); return; }
+    onDrawSaved(draw, null);
+    setExistingDraw(draw);
+    setSaving(false);
+  }
+
+  function editPublishedDraw() {
+    // Go back to member selection, keeping existing entries pre-selected
+    const existingNames = new Set(pubRows.filter(r => r.round_type === "main" && r.player_name).map(r => r.player_name));
+    const existingHandicaps = {};
+    pubRows.filter(r => r.round_type === "main" && r.handicap).forEach(r => { existingHandicaps[r.player_name] = r.handicap; });
+    setSelected(existingNames);
+    setHandicaps(existingHandicaps);
+    setResult(null);
+    setStep(2);
+  }
+
+  async function unpublishDraw() {
+    if (!existingDraw) return;
+    setSaving(true);
+    setConfirmUnpub(false);
+    const { data: draw, error } = await supabase.from("draws")
+      .update({ published: false, published_at: null })
+      .eq("id", existingDraw.id).select().maybeSingle();
+    if (error || !draw) { setSaving(false); alert("Error unpublishing draw. Please try again."); return; }
     onDrawSaved(draw, null);
     setExistingDraw(draw);
     setSaving(false);
@@ -956,12 +992,53 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
             )}
           </div>
         ) : (
-          <div style={{ background: `${GREEN}12`, border: `1px solid ${GREEN}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{ fontSize: "18px" }}>✅</div>
-            <div>
-              <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: GREEN }}>{existingDraw?.tournament_name} — Published {existingDraw?.season_year}</div>
-              <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "2px" }}>Published by {existingDraw?.generated_by} · visible to all members</div>
+          <div style={{ background: `${GREEN}12`, border: `1px solid ${GREEN}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ fontSize: "18px" }}>✅</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: GREEN }}>
+                  {existingDraw?.tournament_name} — Published {existingDraw?.season_year}
+                  {(existingDraw?.version || 1) > 1 && <span style={{ marginLeft: "6px", fontSize: "10px", fontWeight: "600", background: `${GREEN}22`, color: GREEN, borderRadius: "4px", padding: "1px 5px" }}>v{existingDraw.version}</span>}
+                </div>
+                <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "2px" }}>
+                  Published by {existingDraw?.generated_by} · visible to all members
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button onClick={() => editPublishedDraw()}
+                  style={{ padding: "7px 11px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT2, fontFamily: F_UI, fontSize: "12px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  ✏️ Edit
+                </button>
+                <button onClick={() => setConfirmUnpub(true)}
+                  style={{ padding: "7px 11px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT3, fontFamily: F_UI, fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  Unpublish
+                </button>
+              </div>
             </div>
+            {confirmUnpub && (
+              <div style={{ marginTop: "10px", padding: "10px 12px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ flex: 1, fontFamily: F_UI, fontSize: "12px", color: TEXT2 }}>Unpublish this draw? Members will no longer see it until you republish.</div>
+                <button onClick={unpublishDraw} disabled={saving}
+                  style={{ padding: "7px 12px", background: "#c0392b", border: "none", borderRadius: "6px", color: "#fff", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>
+                  {saving ? "…" : "Confirm"}
+                </button>
+                <button onClick={() => setConfirmUnpub(false)}
+                  style={{ padding: "7px 10px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, fontFamily: F_UI, fontSize: "12px", cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            )}
+            {/* Revision history */}
+            {(existingDraw?.revision_history || []).length > 0 && (
+              <div style={{ marginTop: "10px", borderTop: `1px solid ${GREEN}30`, paddingTop: "8px" }}>
+                <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GREEN, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Revision history</div>
+                {[...(existingDraw.revision_history)].reverse().map((r, i) => (
+                  <div key={i} style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginBottom: "2px" }}>
+                    v{r.version} · {new Date(r.revised_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · {r.revised_by}{r.note ? ` — ${r.note}` : ""}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {/* Round date editor */}
@@ -1002,7 +1079,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
   return (
     <div>
       <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "16px", lineHeight: 1.6 }}>
-        Generate and publish the first-round draw for each competition. <strong>Published draws are permanent</strong> — double-check before publishing.
+        Generate and publish the first-round draw for each competition. Published draws can be edited and republished by admins — each revision is logged for transparency.
       </div>
 
       {/* ── Step 1: Pick competition ── */}
@@ -1109,7 +1186,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
             <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: TEXT }}>{tournament?.name} — Preview</div>
           </div>
           <div style={{ background: `${GOLD}0d`, border: `1px solid ${GOLD}44`, borderRadius: "8px", padding: "10px 12px", marginBottom: "14px", fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED, lineHeight: 1.5 }}>
-            ⚠️ Published draws are permanent and visible to all members. Double-check every pairing before publishing.
+            ⚠️ Double-check every pairing before publishing. You can edit and republish later if needed — all changes are logged.
           </div>
 
           <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
