@@ -212,6 +212,7 @@ export default function AdminPanel({
 }) {
   const sections = isDrawAdmin ? DRAW_SECTIONS : ADMIN_SECTIONS;
   const [section, setSection] = useState(isDrawAdmin ? "Draw" : "Members");
+  const [drawSection, setDrawSection] = useState(activeSection);
 
   return (
     <div>
@@ -238,7 +239,19 @@ export default function AdminPanel({
       {section === "Club"         && <AdminClub rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
       {section === "Access" && isSuperAdmin && <AdminAccess adminList={adminList} pendingAdminRequests={pendingAdminRequests} approveAdminRequest={approveAdminRequest} revokeAdmin={revokeAdmin} grantAdmin={grantAdmin} members={members} myName={myName} />}
       {section === "Lockouts"     && <AdminLockouts lockouts={lockouts} clearLockout={clearLockout} />}
-      {section === "Draw"         && <AdminDrawGenerator members={members.filter(m => (m.section || "gents") === activeSection)} tournaments={tournaments} seasonYear={seasonYear} allDraws={allDraws.filter(d => (d.section || "gents") === activeSection)} generatedBy={myName} onDrawSaved={onDrawSaved} isSuperAdmin={isSuperAdmin} activeSection={activeSection} />}
+      {section === "Draw" && (
+        <div>
+          <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
+            {[["gents","Gents"],["ladies","Ladies"],["gents-seniors","Gents Seniors"],["ladies-seniors","Ladies Seniors"]].map(([val, label]) => (
+              <button key={val} onClick={() => setDrawSection(val)}
+                style={{ padding: "6px 13px", borderRadius: "20px", border: `1px solid ${drawSection === val ? MID : BORDER}`, background: drawSection === val ? MID : SURFACE, color: drawSection === val ? "#fff" : TEXT2, fontFamily: F_UI, fontSize: "12px", fontWeight: drawSection === val ? "700" : "400", cursor: "pointer", whiteSpace: "nowrap" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <AdminDrawGenerator members={members.filter(m => (m.section || "gents") === drawSection)} tournaments={tournaments} seasonYear={seasonYear} allDraws={allDraws.filter(d => (d.section || "gents") === drawSection)} generatedBy={myName} onDrawSaved={onDrawSaved} isSuperAdmin={isSuperAdmin} activeSection={drawSection} />
+        </div>
+      )}
     </div>
   );
 }
@@ -951,11 +964,17 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
       return;
     }
 
-    const isRepublish = publish && existingDraw?.published;
+    const isOverwrite = !!existingDraw;
     const prevVersion = existingDraw?.version || 1;
-    const newVersion  = isRepublish ? prevVersion + 1 : prevVersion;
+    const newVersion  = isOverwrite ? prevVersion + 1 : 1;
     const prevHistory = existingDraw?.revision_history || [];
-    const historyEntry = isRepublish ? { version: prevVersion, revised_by: generatedBy, revised_at: new Date().toISOString() } : null;
+    // Snapshot current pairings so this version can be restored later
+    const pairingSnapshot = pubRows.length > 0
+      ? pubRows.map(({ draw_id: _d, id: _i, ...rest }) => rest)
+      : null;
+    const historyEntry = isOverwrite
+      ? { version: prevVersion, revised_by: generatedBy, revised_at: new Date().toISOString(), pairings: pairingSnapshot }
+      : null;
     const drawRow = {
       tournament_id: tournId, tournament_name: tournament.name,
       season_year: seasonYear, generated_by: generatedBy,
@@ -975,6 +994,87 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     setPubRows(rows);
     setSaving(false);
     setStep(4);
+  }
+
+  async function submitForApproval() {
+    if (!existingDraw) return;
+    setSaving(true);
+    if (testMode) {
+      const updated = { ...existingDraw, pending_approval: true, approval_requested_by: generatedBy, approval_requested_at: new Date().toISOString() };
+      onDrawSaved(updated, null);
+      setExistingDraw(updated);
+      setSaving(false);
+      return;
+    }
+    const { data: draw, error } = await supabase.from("draws")
+      .update({ pending_approval: true, approval_requested_by: generatedBy, approval_requested_at: new Date().toISOString() })
+      .eq("id", existingDraw.id).select().maybeSingle();
+    if (error || !draw) { setSaving(false); alert("Error submitting for approval."); return; }
+    onDrawSaved(draw, null);
+    setExistingDraw(draw);
+    setSaving(false);
+  }
+
+  async function approveAndPublish() {
+    if (!existingDraw) return;
+    setSaving(true);
+    setConfirmPub(false);
+    if (testMode) {
+      const updated = { ...existingDraw, published: true, published_at: new Date().toISOString(), pending_approval: false, approved_by: generatedBy, approved_at: new Date().toISOString() };
+      onDrawSaved(updated, null);
+      setExistingDraw(updated);
+      setSaving(false);
+      return;
+    }
+    const { data: draw, error } = await supabase.from("draws")
+      .update({ published: true, published_at: new Date().toISOString(), pending_approval: false, approved_by: generatedBy, approved_at: new Date().toISOString() })
+      .eq("id", existingDraw.id).select().maybeSingle();
+    if (error || !draw) { setSaving(false); alert("Error approving draw. Please try again."); return; }
+    onDrawSaved(draw, null);
+    setExistingDraw(draw);
+    setSaving(false);
+  }
+
+  async function recallApproval() {
+    if (!existingDraw) return;
+    setSaving(true);
+    if (testMode) {
+      const updated = { ...existingDraw, pending_approval: false, approval_requested_by: null, approval_requested_at: null };
+      onDrawSaved(updated, null);
+      setExistingDraw(updated);
+      setSaving(false);
+      return;
+    }
+    const { data: draw, error } = await supabase.from("draws")
+      .update({ pending_approval: false, approval_requested_by: null, approval_requested_at: null })
+      .eq("id", existingDraw.id).select().maybeSingle();
+    if (error || !draw) { setSaving(false); alert("Error recalling approval request."); return; }
+    onDrawSaved(draw, null);
+    setExistingDraw(draw);
+    setSaving(false);
+  }
+
+  async function restoreDrawVersion(histEntry) {
+    if (!existingDraw || !histEntry?.pairings) return;
+    if (!window.confirm(`Restore v${histEntry.version} (drawn ${new Date(histEntry.revised_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })})? The current draw will be overwritten.`)) return;
+    setSaving(true);
+    const prevHistory = existingDraw?.revision_history || [];
+    // Snapshot the current pairings before overwriting
+    const currentSnapshot = pubRows.length > 0 ? pubRows.map(({ draw_id: _d, id: _i, ...rest }) => rest) : null;
+    const newHistEntry = { version: existingDraw.version, revised_by: generatedBy, revised_at: new Date().toISOString(), pairings: currentSnapshot, note: `Restored from v${histEntry.version}` };
+    const newVersion = (existingDraw.version || 1) + 1;
+    const { data: draw, error } = await supabase.from("draws")
+      .update({ version: newVersion, revision_history: [...prevHistory, newHistEntry] })
+      .eq("id", existingDraw.id).select().maybeSingle();
+    if (error || !draw) { setSaving(false); alert("Error restoring draw."); return; }
+    await supabase.from("draw_pairings").delete().eq("draw_id", existingDraw.id);
+    const restoredRows = histEntry.pairings.map(p => ({ ...p, draw_id: existingDraw.id }));
+    const { error: insertErr } = await supabase.from("draw_pairings").insert(restoredRows);
+    if (insertErr) { setSaving(false); alert("Error restoring pairings."); return; }
+    onDrawSaved(draw, restoredRows);
+    setExistingDraw(draw);
+    setPubRows(restoredRows);
+    setSaving(false);
   }
 
   async function publishExistingDraw() {
@@ -1067,28 +1167,56 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
         )}
         {/* Status banner */}
         {isDraft ? (
-          <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{ fontSize: "18px" }}>📋</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: GOLD_MUTED }}>{existingDraw?.tournament_name} — Draft saved</div>
-              <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "2px" }}>Not visible to members yet — publish when ready</div>
-            </div>
-            {confirmPub ? (
-              <div style={{ display: "flex", gap: "6px" }}>
-                <button onClick={() => { publishExistingDraw(); }} disabled={saving}
-                  style={{ padding: "8px 12px", background: GREEN, border: "none", borderRadius: "7px", color: "#fff", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>
-                  {saving ? "Publishing…" : "Confirm"}
-                </button>
-                <button onClick={() => setConfirmPub(false)}
-                  style={{ padding: "8px 10px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT2, fontFamily: F_UI, fontSize: "12px", cursor: "pointer" }}>
-                  Cancel
-                </button>
+          <div style={{ borderRadius: "10px", marginBottom: "16px", overflow: "hidden", border: `1px solid ${existingDraw?.pending_approval ? "#7b4f00" : GOLD}44` }}>
+            {/* Draft header */}
+            <div style={{ background: `${GOLD}12`, padding: "12px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ fontSize: "18px" }}>📋</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: GOLD_MUTED }}>{existingDraw?.tournament_name} — Draft saved</div>
+                <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "2px" }}>
+                  {existingDraw?.pending_approval
+                    ? `Submitted for approval by ${existingDraw.approval_requested_by} — awaiting second sign-off`
+                    : "Not visible to members — requires two-person approval before going live"}
+                </div>
               </div>
-            ) : (
-              <button onClick={() => setConfirmPub(true)}
-                style={{ padding: "8px 14px", background: GREEN, border: "none", borderRadius: "7px", color: "#fff", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer", whiteSpace: "nowrap" }}>
-                Publish
-              </button>
+              {!existingDraw?.pending_approval && (
+                <button onClick={submitForApproval} disabled={saving}
+                  style={{ padding: "8px 13px", background: GOLD_MUTED, border: "none", borderRadius: "7px", color: "#fff", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  {saving ? "…" : "Submit for Approval"}
+                </button>
+              )}
+              {existingDraw?.pending_approval && existingDraw.approval_requested_by === generatedBy && (
+                <button onClick={recallApproval} disabled={saving}
+                  style={{ padding: "8px 11px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT3, fontFamily: F_UI, fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  Recall
+                </button>
+              )}
+            </div>
+            {/* Approval action — shown to anyone who didn't submit */}
+            {existingDraw?.pending_approval && existingDraw.approval_requested_by !== generatedBy && (
+              <div style={{ background: "#fff8e1", padding: "12px 14px", borderTop: "1px solid #f0c040", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ fontSize: "16px" }}>🔐</div>
+                <div style={{ flex: 1, fontFamily: F_UI, fontSize: "12px", color: "#7b4f00", fontWeight: "600" }}>
+                  Awaiting your approval to go live
+                </div>
+                {confirmPub ? (
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button onClick={approveAndPublish} disabled={saving}
+                      style={{ padding: "8px 12px", background: GREEN, border: "none", borderRadius: "7px", color: "#fff", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>
+                      {saving ? "Publishing…" : "Confirm & Publish"}
+                    </button>
+                    <button onClick={() => setConfirmPub(false)}
+                      style={{ padding: "8px 10px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT2, fontFamily: F_UI, fontSize: "12px", cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmPub(true)}
+                    style={{ padding: "8px 14px", background: GREEN, border: "none", borderRadius: "7px", color: "#fff", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    Approve & Publish
+                  </button>
+                )}
+              </div>
             )}
           </div>
         ) : (
@@ -1105,10 +1233,12 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
                 </div>
               </div>
               <div style={{ display: "flex", gap: "6px" }}>
-                <button onClick={() => editPublishedDraw()}
-                  style={{ padding: "7px 11px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT2, fontFamily: F_UI, fontSize: "12px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap" }}>
-                  ✏️ Edit
-                </button>
+                {(!existingDraw?.published || testMode) && (
+                  <button onClick={() => editPublishedDraw()}
+                    style={{ padding: "7px 11px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT2, fontFamily: F_UI, fontSize: "12px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    ✏️ Edit
+                  </button>
+                )}
                 <button onClick={() => setConfirmUnpub(true)}
                   style={{ padding: "7px 11px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT3, fontFamily: F_UI, fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap" }}>
                   Unpublish
@@ -1133,8 +1263,16 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
               <div style={{ marginTop: "10px", borderTop: `1px solid ${GREEN}30`, paddingTop: "8px" }}>
                 <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GREEN, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Revision history</div>
                 {[...(existingDraw.revision_history)].reverse().map((r, i) => (
-                  <div key={i} style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginBottom: "2px" }}>
-                    v{r.version} · {new Date(r.revised_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · {r.revised_by}{r.note ? ` — ${r.note}` : ""}
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                    <div style={{ flex: 1, fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
+                      v{r.version} · {new Date(r.revised_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · {r.revised_by}{r.note ? ` — ${r.note}` : ""}
+                    </div>
+                    {r.pairings && isSuperAdmin && (
+                      <button onClick={() => restoreDrawVersion(r)} disabled={saving}
+                        style={{ padding: "3px 8px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "5px", color: TEXT2, fontFamily: F_UI, fontSize: "10px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap" }}>
+                        ↩ Restore
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
