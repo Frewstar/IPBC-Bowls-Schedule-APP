@@ -76,7 +76,10 @@ export default function FindTab({ search, setSearch, playerGames, tournaments, p
           </button>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: F_UI, fontSize: "15px", fontWeight: "700", color: TEXT }}>{draw.tournament_name}</div>
-            <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>{draw.season_year} season · {draw.published_at ? `Published ${new Date(draw.published_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}</div>
+            <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
+              <span>{draw.season_year} season{draw.published_at ? ` · ${new Date(draw.published_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}</span>
+              {(draw.version || 1) > 1 && <span style={{ background: "#e8f5ee", color: GREEN, borderRadius: "4px", padding: "1px 6px", fontSize: "10px", fontWeight: "700" }}>Updated · v{draw.version}</span>}
+            </div>
           </div>
           <button onClick={() => printTieSheet(draw, slots, prelims, roundDates)}
             style={{ padding: "7px 12px", background: GREEN, border: "none", borderRadius: "8px", color: "#fff", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer", flexShrink: 0 }}>
