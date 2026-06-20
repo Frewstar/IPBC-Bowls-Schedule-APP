@@ -21,7 +21,7 @@ import {
   Binoculars, Award, Calendar, Users,
   Phone, Check, X, Pencil, Plus,
   ChevronLeft, ChevronRight, ChevronDown, Download, Upload,
-  Clock, MapPin, Settings, HelpCircle,
+  Clock, MapPin, Settings, HelpCircle, Share2,
   Shield, Info, RefreshCw, Target, Search,
   Medal, Bell, Trophy, Lock,
 } from "lucide-react";
@@ -35,6 +35,8 @@ import { supabase } from "./lib/supabase.js";
 
 // ── component imports ─────────────────────────────────────────────────────────
 import BottomSheet from "./components/BottomSheet.jsx";
+import AvatarBubble from "./components/AvatarBubble.jsx";
+import ProfileSheet from "./components/ProfileSheet.jsx";
 import SettingsTab from "./components/tabs/Settings.jsx";
 import HelpTab from "./components/tabs/Help.jsx";
 import ClubTab, { ROLL_OF_HONOUR, HONORARY_MEMBERS } from "./components/tabs/Club.jsx";
@@ -152,12 +154,21 @@ export default function BowlsTracker() {
   const [myName, setMyName]       = useState(() => load("bowls_myname", "") || "");
   const [myPin, setMyPin]         = useState(() => load("bowls_mypin", "") || "");
   const cloudKey = myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null;
+  // Linked member: canonical name from members list (used for draw lookups)
+  const [linkedMemberName, setLinkedMemberName] = useState(() => load("bowls_linked_member", "") || "");
+  const [profile, setProfile] = useState(() => load("bowls_profile", { displayName: "", avatar: null, avatarPublic: true }));
+  const [showProfileSheet, setShowProfileSheet] = useState(false);
+  const [memberProfiles, setMemberProfiles] = useState({});
+  const [showLinkSheet, setShowLinkSheet] = useState(false);
+  const [linkSearch, setLinkSearch] = useState("");
+  const [linkStatus, setLinkStatus] = useState(null); // null | "linking" | "claimed" | "done"
+  const [claimRequests, setClaimRequests] = useState([]);
   const [settingName, setSettingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [pinInput, setPinInput]   = useState("");
   const [nameStep, setNameStep]   = useState("name"); // "name" | "pin"
   // ── Admin role (Supabase-backed) ──
-  const [adminRole, setAdminRole] = useState(null); // null | "admin" | "super_admin"
+  const [adminRole, setAdminRole] = useState(null); // null | "admin" | "super_admin" | "draw_admin"
   const [adminClaimMsg, setAdminClaimMsg] = useState(null);
 
   useEffect(() => {
@@ -171,6 +182,7 @@ export default function BowlsTracker() {
       const rows = [...(r1.data || []), ...(r2.data || [])];
       const role = rows.some(r => r.role === "super_admin") ? "super_admin"
                  : rows.some(r => r.role === "admin")       ? "admin"
+                 : rows.some(r => r.role === "draw_admin")  ? "draw_admin"
                  : null;
       setAdminRole(role);
     });
@@ -178,6 +190,7 @@ export default function BowlsTracker() {
 
   const isAdmin = adminRole === "admin" || adminRole === "super_admin";
   const isSuperAdmin = adminRole === "super_admin";
+  const isDrawAdmin = adminRole === "draw_admin";
 
   async function claimSuperAdmin() {
     if (!cloudKey || !myName) return;
@@ -253,7 +266,7 @@ export default function BowlsTracker() {
     if (!editOppSearch || editOppSearch.length < 2) return [];
     const q = editOppSearch.toUpperCase();
     return members
-      .filter(m => (m.section || "gents") === memberSection)
+      .filter(m => (m.section || "gents") === activeSection)
       .filter(m => m.name.toUpperCase().includes(q))
       .slice(0, 6);
   }, [editOppSearch, members, activeSection]);
@@ -261,25 +274,25 @@ export default function BowlsTracker() {
   const entryPartnerResults = useMemo(() => {
     if (!entryPartnerSearch || entryPartnerSearch.length < 2) return [];
     const q = entryPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === memberSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [entryPartnerSearch, members, activeSection]);
 
   const nextOppPartnerResults = useMemo(() => {
     if (!nextOppPartnerSearch || nextOppPartnerSearch.length < 2) return [];
     const q = nextOppPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === memberSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [nextOppPartnerSearch, members, activeSection]);
 
   const editOppPartnerResults = useMemo(() => {
     if (!editOppPartnerSearch || editOppPartnerSearch.length < 2) return [];
     const q = editOppPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === memberSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [editOppPartnerSearch, members, activeSection]);
 
   const editMyPartnerResults = useMemo(() => {
     if (!editMyPartnerSearch || editMyPartnerSearch.length < 2) return [];
     const q = editMyPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === memberSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [editMyPartnerSearch, members, activeSection]);
 
   function teamSizeFor(tournamentId) {
@@ -582,7 +595,7 @@ export default function BowlsTracker() {
     setShowManageCompsSheet(false);
   }
 
-  // Master round dates: now stored in tournaments.round_dates in Supabase (no localStorage needed)
+  // Master round dates: stored in tournaments.round_dates in Supabase
 
   const [showRoundDatesSheet, setShowRoundDatesSheet] = useState(false);
   const [roundDatesCompId, setRoundDatesCompId] = useState("");
@@ -595,31 +608,29 @@ export default function BowlsTracker() {
     return getTournRoundDate(tournamentId, roundIdx, settings.seasonYear || new Date().getFullYear());
   }
 
-  function openRoundDatesEditor(t) {
+  function openAllRoundDatesEditor(t) {
     if (!isSuperAdmin) return;
-    const existing = t.round_dates || [];
-    const base = (t.rounds || []).map(r => parseTournRoundDate(r, settings.seasonYear || new Date().getFullYear())).filter(Boolean);
-    const len = Math.max(existing.length, base.length, 1);
+    const yr = settings.seasonYear || new Date().getFullYear();
+    const existing = Array.isArray(t.round_dates) ? t.round_dates : [];
+    const rounds = Array.isArray(t.rounds) ? t.rounds : [];
+    const base = rounds.map(r => parseTournRoundDate(r, yr));
+    const len = Math.max(existing.length, rounds.length, 1);
     const merged = Array.from({ length: len }, (_, i) => existing[i] || base[i] || "");
     setRoundDatesCompId(t.id);
     setRoundDatesValues(merged);
     setShowRoundDatesSheet(true);
   }
 
-  async function saveRoundDatesEditor() {
+  async function saveAllRoundDates() {
     if (!isSuperAdmin) return;
     if (!roundDatesCompId) return;
+    const dates = [...roundDatesValues];
     setBaseTournaments(prev => prev.map(t =>
-      t.id === roundDatesCompId ? { ...t, round_dates: [...roundDatesValues] } : t
+      t.id === roundDatesCompId ? { ...t, round_dates: dates } : t
     ));
-    await supabase.from("tournaments").update({ round_dates: roundDatesValues }).eq("id", roundDatesCompId);
-    setShowRoundDatesSheet(false);
-  }
-
-  function resetRoundDatesEditor() {
-    if (!isSuperAdmin) return;
-    if (!roundDatesCompId) return;
-    setMasterRoundDates(prev => { const n = { ...prev }; delete n[roundDatesCompId]; return n; });
+    await supabase.from("tournaments").update({ round_dates: dates }).eq("id", roundDatesCompId);
+    // Push dates to any existing draws for this competition so Find tab shows them
+    await supabase.from("draws").update({ round_dates: dates }).eq("tournament_id", roundDatesCompId);
     setShowRoundDatesSheet(false);
   }
 
@@ -635,6 +646,24 @@ export default function BowlsTracker() {
     if (!key) return;
     setOppNotes(prev => ({ ...prev, [key]: note }));
     setEditingNote(null);
+  }
+
+  const [appShareToast, setAppShareToast] = useState(null);
+
+  async function shareApp() {
+    const url = window.location.origin;
+    const title = "Irvine Park Bowling Club";
+    const text = "Join me on the IPBC Bowls app — track tournament draws, results and the member directory for Irvine Park Bowling Club. Install it on your phone in seconds!";
+    if (navigator.share) {
+      try { await navigator.share({ title, text: `${text}\n\n${url}`, url }); return; } catch {}
+    }
+    try {
+      await navigator.clipboard.writeText(`${title}\n${text}\n\n${url}`);
+      setAppShareToast("Link copied to clipboard!");
+    } catch {
+      setAppShareToast(url);
+    }
+    setTimeout(() => setAppShareToast(null), 4000);
   }
 
   function shareResult(tie, tournamentName) {
@@ -656,6 +685,8 @@ export default function BowlsTracker() {
   useEffect(() => { save(TIES_KEY, ties); },       [ties]);
   useEffect(() => { save("bowls_myname", myName); }, [myName]);
   useEffect(() => { save("bowls_mypin", myPin); }, [myPin]);
+  useEffect(() => { save("bowls_linked_member", linkedMemberName); }, [linkedMemberName]);
+  useEffect(() => { save("bowls_profile", profile); }, [profile]);
   useEffect(() => { save("bowls_entries_v1", entries); }, [entries]);
 
   // ── Supabase cloud sync ──
@@ -671,13 +702,13 @@ export default function BowlsTracker() {
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On load: pull entries from cloud and merge with local
+  // On load: pull entries + ties + profile from cloud
   useEffect(() => {
     if (!cloudKey) return;
     setSyncStatus("syncing");
     supabase
       .from("player_data")
-      .select("entries")
+      .select("entries, ties, profile")
       .eq("player_name", cloudKey)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -689,22 +720,46 @@ export default function BowlsTracker() {
             return merged;
           });
         }
+        if (data?.ties && Object.keys(data.ties).length > 0) {
+          setTies(prev => ({ ...data.ties, ...prev }));
+        }
+        if (data?.profile && Object.keys(data.profile).length > 0) {
+          setProfile(data.profile);
+        }
         setSyncStatus("synced");
       });
   }, [cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On entries change: debounced upsert to cloud
+  // On entries, ties or profile change: debounced upsert to cloud
   useEffect(() => {
     if (!cloudKey) return;
     const timer = setTimeout(() => {
       setSyncStatus("syncing");
       supabase
         .from("player_data")
-        .upsert({ player_name: cloudKey, entries, updated_at: new Date().toISOString() }, { onConflict: "player_name" })
+        .upsert({ player_name: cloudKey, entries, ties, profile, updated_at: new Date().toISOString() }, { onConflict: "player_name" })
         .then(({ error }) => setSyncStatus(error ? "error" : "synced"));
     }, 2500);
     return () => clearTimeout(timer);
-  }, [entries, cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entries, ties, profile, cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch profiles + entries for all members who have linked their account
+  useEffect(() => {
+    const cloudKeys = members.filter(m => m.linked_cloudkey).map(m => m.linked_cloudkey);
+    if (cloudKeys.length === 0) return;
+    supabase.from("player_data").select("player_name, profile, entries")
+      .in("player_name", cloudKeys)
+      .then(({ data }) => {
+        if (!data) return;
+        const map = {};
+        data.forEach(row => {
+          if (row.profile && Object.keys(row.profile).length > 0) {
+            map[row.player_name] = { ...row.profile, entries: row.entries || [] };
+          }
+        });
+        setMemberProfiles(map);
+      });
+  }, [members]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One-time migration: ensure entries/ties have section for proper Ladies/Gents split
   useEffect(() => {
@@ -813,11 +868,102 @@ export default function BowlsTracker() {
     return g;
   }, [filteredMembers]);
 
-  // ── Find games ── (draw lookup disabled — data lives in constants.js DRAW_ENTRIES, re-enable when live)
+  // ── All draws (admin sees drafts + published; Find tab sees only published) ──
+  const [allDraws, setAllDraws]         = useState([]);
+  const [drawPairings, setDrawPairings] = useState([]);
+  const publishedDraws = useMemo(() => allDraws.filter(d => d.published), [allDraws]);
+  useEffect(() => {
+    supabase.from("draws").select("*")
+      .then(({ data }) => { if (data) setAllDraws(data); });
+    supabase.from("draw_pairings").select("*")
+      .then(({ data }) => { if (data) setDrawPairings(data); });
+  }, []);
+
   const playerGames = useMemo(() => {
     if (!search || search.length < 2) return [];
-    return null;
-  }, [search]);
+    const upper = search.toUpperCase().trim();
+
+    function getMainOpponent(row) {
+      if (row.slot_index == null) return null;
+      const partnerSlot = row.slot_index % 2 === 1 ? row.slot_index + 1 : row.slot_index - 1;
+      const partner = drawPairings.find(p => p.draw_id === row.draw_id && p.round_type === 'main' && p.slot_index === partnerSlot);
+      return partner?.player_name || null;
+    }
+
+    const publishedIds = new Set(publishedDraws.map(d => d.id));
+    const matches = drawPairings.filter(p => {
+      if (!publishedIds.has(p.draw_id)) return false;
+      if (p.player_name.toUpperCase().includes(upper)) return true;
+      if (p.round_type === 'prelim') return (p.opponent_name || "").toUpperCase().includes(upper);
+      return (getMainOpponent(p) || "").toUpperCase().includes(upper);
+    });
+
+    return matches.map(p => {
+      const draw = publishedDraws.find(d => d.id === p.draw_id);
+      const isSearchedPlayer = p.player_name.toUpperCase().includes(upper);
+      let entry, opponent;
+      if (p.round_type === 'prelim') {
+        entry    = isSearchedPlayer ? p.player_name : p.opponent_name;
+        opponent = isSearchedPlayer ? p.opponent_name : p.player_name;
+      } else {
+        const mainOpp = getMainOpponent(p);
+        entry    = isSearchedPlayer ? p.player_name : mainOpp;
+        opponent = isSearchedPlayer ? mainOpp : p.player_name;
+      }
+      return {
+        tournament:   draw?.tournament_name || "",
+        tournamentId: draw?.tournament_id   || "",
+        seasonYear:   draw?.season_year,
+        roundType:    p.round_type || 'main',
+        entry:        entry || "",
+        opponent:     opponent || null,
+        isBye:        !opponent,
+        drawId:       p.draw_id,
+      };
+    });
+  }, [search, drawPairings, publishedDraws]);
+
+  // Auto-derive Round 1 draw entries for the current user from published draws
+  const myDrawEntries = useMemo(() => {
+    const lookupName = linkedMemberName || myName;
+    if (!lookupName) return [];
+    const upper = lookupName.toUpperCase().trim();
+    const publishedIds = new Set(publishedDraws.map(d => d.id));
+    const seen = new Set();
+    const result = [];
+    drawPairings.forEach(p => {
+      if (!publishedIds.has(p.draw_id)) return;
+      if (seen.has(p.draw_id)) return;
+      if (p.player_name.toUpperCase().trim() !== upper) return;
+      seen.add(p.draw_id);
+      const draw = publishedDraws.find(d => d.id === p.draw_id);
+      let opponent = null;
+      if (p.round_type === 'prelim') {
+        opponent = p.opponent_name || null;
+      } else {
+        const pairSlot = p.slot_index % 2 === 1 ? p.slot_index + 1 : p.slot_index - 1;
+        const pair = drawPairings.find(x => x.draw_id === p.draw_id && x.round_type === 'main' && x.slot_index === pairSlot);
+        opponent = pair?.player_name || null;
+      }
+      const roundDates = Array.isArray(draw?.round_dates) ? draw.round_dates : [];
+      result.push({
+        drawId: p.draw_id,
+        tournamentId: draw?.tournament_id || "",
+        tournamentName: draw?.tournament_name || "",
+        seasonYear: draw?.season_year,
+        isPrelim: p.round_type === 'prelim',
+        opponent,
+        isBye: !opponent,
+        roundDate: roundDates[0] || null,
+        roundDates,
+      });
+    });
+    return result;
+  }, [drawPairings, publishedDraws, myName, linkedMemberName]);
+
+  // Only show draw entries for seasons beyond the current season (manual entries cover current season)
+  const currentSeason = settings.seasonYear || new Date().getFullYear();
+  const futureDrawEntries = myDrawEntries.filter(de => de.seasonYear > currentSeason);
 
   // ── Sign-in flow ──
   const [pinConfirm, setPinConfirm]   = useState("");
@@ -878,11 +1024,66 @@ export default function BowlsTracker() {
   }
 
   function commitSignIn() {
-    setMyName(nameInput.toUpperCase().trim());
+    const name = nameInput.toUpperCase().trim();
+    setMyName(name);
     setMyPin(pinInput);
     setNameInput(""); setPinInput(""); setPinConfirm("");
     setSignInState("idle"); setLockoutInfo(null);
     setSettingName(false);
+    // Prompt to link member name if not already linked
+    if (!linkedMemberName) setShowLinkSheet(true);
+  }
+
+  // Filtered members for link search
+  const linkResults = linkSearch.length >= 2
+    ? members.filter(m => m.name.toUpperCase().includes(linkSearch.toUpperCase())).slice(0, 8)
+    : [];
+
+  async function claimMemberLink(member) {
+    if (!cloudKey) return;
+    setLinkStatus("linking");
+    // Check if already claimed by another account
+    const { data } = await supabase.from("members").select("linked_cloudkey, name").eq("id", member.id).maybeSingle();
+    if (data?.linked_cloudkey && data.linked_cloudkey !== cloudKey) {
+      setLinkStatus({ type: "claimed", member, currentHolder: data.linked_cloudkey });
+      return;
+    }
+    // Unclaimed or already ours — claim it
+    await supabase.from("members").update({ linked_cloudkey: cloudKey }).eq("id", member.id);
+    // Remove any previous link this account held on another member
+    await supabase.from("members").update({ linked_cloudkey: null }).eq("linked_cloudkey", cloudKey).neq("id", member.id);
+    setLinkedMemberName(member.name);
+    setLinkStatus("done");
+    setTimeout(() => { setShowLinkSheet(false); setLinkStatus(null); setLinkSearch(""); }, 1200);
+  }
+
+  async function submitClaimRequest(member, currentHolder) {
+    if (!cloudKey) return;
+    await supabase.from("member_claim_requests").insert({
+      requester_cloudkey: cloudKey,
+      requester_display_name: myName,
+      target_member_id: member.id,
+      target_member_name: member.name,
+      current_linked_cloudkey: currentHolder,
+      status: "pending",
+    });
+    setLinkStatus({ type: "requested", member });
+  }
+
+  async function resolveClaimRequest(reqId, approve, req) {
+    if (approve) {
+      // Remove old link, apply new one
+      await supabase.from("members").update({ linked_cloudkey: null }).eq("linked_cloudkey", req.current_linked_cloudkey);
+      await supabase.from("members").update({ linked_cloudkey: req.requester_cloudkey }).eq("id", req.target_member_id);
+    }
+    await supabase.from("member_claim_requests").update({ status: approve ? "approved" : "rejected", resolved_at: new Date().toISOString() }).eq("id", reqId);
+    setClaimRequests(prev => prev.filter(r => r.id !== reqId));
+  }
+
+  function unlinkMember() {
+    if (!cloudKey || !linkedMemberName) return;
+    supabase.from("members").update({ linked_cloudkey: null }).eq("linked_cloudkey", cloudKey);
+    setLinkedMemberName("");
   }
   function saveExistingPin() {
     if (!/^\d{4}$/.test(pinInput)) return;
@@ -905,6 +1106,7 @@ export default function BowlsTracker() {
       id: `entry-${Date.now()}`,
       myName,
       section: effectiveSection,
+      year: settings.seasonYear || new Date().getFullYear(),
       tournamentId: entryTournId,
       tournamentName: tournName,
       tournamentColor: t?.color || GOLD,
@@ -1078,7 +1280,7 @@ export default function BowlsTracker() {
     e.target.value = "";
   }
 
-  function startEdit(m) { setEditingId(m.id); setEditName(m.name); setEditPhone(m.phone); setEditSection(m.section || "gents"); setEditPosition(m.position || ""); setAddMode(false); }
+  function startEdit(m) { setEditingId(m.id); setEditName(m.name); setEditPhone(m.phone); setEditSection(m.section || "gents"); setEditPosition(m.position || ""); }
   function saveEdit() {
     const updated = { name: editName.toUpperCase(), phone: editPhone, section: editSection, position: editPosition, updated_at: new Date().toISOString() };
     const prevMembers = members;
@@ -1097,6 +1299,7 @@ export default function BowlsTracker() {
   const [lockouts, setLockouts]           = useState([]);
   const [adminListState, setAdminListState]             = useState([]);
   const [pendingAdminRequests, setPendingAdminRequests] = useState([]);
+  const [registeredUsers, setRegisteredUsers] = useState([]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -1104,6 +1307,12 @@ export default function BowlsTracker() {
       .then(({ data }) => { if (data) setPhoneRequests(data); });
     supabase.from("login_lockouts").select("*").order("updated_at", { ascending: false })
       .then(({ data }) => { if (data) setLockouts(data); });
+    supabase.from("player_data").select("player_name, updated_at").order("updated_at", { ascending: false })
+      .then(({ data }) => { if (data) setRegisteredUsers(data); });
+    supabase.from("member_join_requests").select("*").eq("status", "pending").order("requested_at")
+      .then(({ data }) => { if (data) setJoinRequests(data); });
+    supabase.from("member_claim_requests").select("*").eq("status", "pending").order("requested_at")
+      .then(({ data }) => { if (data) setClaimRequests(data); });
     if (isSuperAdmin) {
       supabase.from("admins").select("*").then(({ data }) => { if (data) setAdminListState(data); });
       supabase.from("admin_requests").select("*").order("requested_at")
@@ -1116,9 +1325,29 @@ export default function BowlsTracker() {
     await supabase.from("login_lockouts").delete().eq("id", id);
   }
 
-  async function grantAdmin(member) {
+  async function lockAppAccount(name) {
+    const lockedUntil = "2099-01-01T00:00:00.000Z";
+    const row = { name, attempts: 0, locked_until: lockedUntil, updated_at: new Date().toISOString() };
+    await supabase.from("login_lockouts").upsert(row, { onConflict: "name" });
+    setLockouts(l => { const idx = l.findIndex(x => x.name === name); if (idx >= 0) { const c = [...l]; c[idx] = { ...c[idx], ...row }; return c; } return [{ ...row }, ...l]; });
+  }
+
+  async function unlockAppAccount(name) {
+    await supabase.from("login_lockouts").delete().eq("name", name);
+    setLockouts(l => l.filter(x => x.name !== name));
+  }
+
+  async function deleteAppAccount(playerName) {
+    await supabase.from("player_data").delete().eq("player_name", playerName);
+    setRegisteredUsers(u => u.filter(x => x.player_name !== playerName));
+    // Also clear any lockout
+    const namePart = playerName.split("-").slice(0, -1).join("-");
+    if (namePart) { await supabase.from("login_lockouts").delete().eq("name", namePart); setLockouts(l => l.filter(x => x.name !== namePart)); }
+  }
+
+  async function grantAdmin(member, role = "admin") {
     const nameUpper = member.name.toUpperCase();
-    const newRow = { cloud_key: `PENDING-${nameUpper}`, player_name: nameUpper, role: "admin", display_name: member.name };
+    const newRow = { cloud_key: `PENDING-${nameUpper}`, player_name: nameUpper, role, display_name: member.name };
     setAdminListState(l => [...l, newRow]);
     await supabase.from("admins").upsert(newRow, { onConflict: "cloud_key" });
     supabase.from("admins").select("*").then(({ data }) => { if (data) setAdminListState(data); });
@@ -1176,7 +1405,7 @@ export default function BowlsTracker() {
     const newId = Date.now().toString();
     const newMember = { id: newId, name: newName.toUpperCase(), phone: newPhone, section: newSection, sort_order: 999 };
     setMembers(prev => [...prev, newMember]);
-    setNewName(""); setNewPhone(""); setAddMode(false);
+    setNewName(""); setNewPhone("");
     supabase.from("members").insert(newMember).then(({ error }) => {
       if (error) setMembers(prev => prev.filter(m => m.id !== newId)); // revert on error
     });
@@ -1224,7 +1453,7 @@ export default function BowlsTracker() {
     { id: "fixtures",    label: "Fixtures",  Icon: Calendar   },
     { id: "members",     label: "Members",   Icon: Users      },
     { id: "club",        label: "Club",      Icon: Shield     },
-    ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: Lock }] : []),
+    ...(isAdmin || isDrawAdmin ? [{ id: "admin", label: "Admin", Icon: Lock }] : []),
   ];
 
   const selectedT = activeTournament ? TOURNAMENTS.find(t => t.id === activeTournament) : null;
@@ -1406,9 +1635,10 @@ export default function BowlsTracker() {
 
             {/* Logged-in user pill */}
             {myName ? (
-              <button onClick={() => { setSettingName(true); setNameInput(myName); setNameStep("name"); }}
-                style={{ background: "transparent", border: `1px solid ${GREEN}`, borderRadius: "20px", color: GREEN, padding: "5px 12px", fontSize: "11px", cursor: "pointer", fontFamily: F_SANS, fontWeight: "600", flexShrink: 0, letterSpacing: "0.02em" }}>
-                {myName}
+              <button onClick={() => setShowProfileSheet(true)}
+                style={{ background: "transparent", border: `1px solid ${GREEN}44`, borderRadius: "20px", color: GREEN, padding: "4px 10px 4px 4px", fontSize: "11px", cursor: "pointer", fontFamily: F_SANS, fontWeight: "600", flexShrink: 0, letterSpacing: "0.02em", display: "flex", alignItems: "center", gap: "7px" }}>
+                <AvatarBubble displayName={profile.displayName || myName} avatar={profile.avatar} size={26} />
+                <span>{profile.displayName ? profile.displayName.split(" ")[0] : myName}</span>
               </button>
             ) : (
               <div style={{ width: "44px" }} />
@@ -1428,6 +1658,10 @@ export default function BowlsTracker() {
                     animation: syncStatus === "syncing" ? "pulse 1s ease-in-out infinite" : "none",
                   }} />
               )}
+              <button onClick={shareApp} title="Share app"
+                style={{ background: "none", border: "none", cursor: "pointer", padding: "7px 10px", color: TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
+                <Share2 size={20} strokeWidth={1.5} />
+              </button>
               <button onClick={() => navigateTo("help")} title="Help"
                 style={{ background: activeTab === "help" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 10px", color: activeTab === "help" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
                 <HelpCircle size={20} strokeWidth={activeTab === "help" ? 2 : 1.5} />
@@ -1600,6 +1834,13 @@ export default function BowlsTracker() {
                         </div>
                       )}
 
+                      {/* ── App share toast ── */}
+                      {appShareToast && (
+                        <div style={{ position: "fixed", bottom: "80px", left: "50%", transform: "translateX(-50%)", zIndex: 200, background: MID, color: "#fff", borderRadius: "10px", padding: "10px 18px", fontSize: "13px", fontFamily: F_UI, fontWeight: "600", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", whiteSpace: "nowrap", maxWidth: "90vw", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {appShareToast}
+                        </div>
+                      )}
+
                       {/* ─── HERO CARD ─── */}
                       {urgent ? (
                         <div style={{ background: GREEN, borderRadius: "16px", padding: "20px", marginBottom: "14px", position: "relative", overflow: "hidden" }}>
@@ -1644,16 +1885,38 @@ export default function BowlsTracker() {
                         </div>
                       ) : null}
 
-                      {/* ─── EMPTY STATE (no entries yet) ─── */}
-                      {myEntries.length === 0 && (
+                      {/* ─── EMPTY STATE / DRAW ENTRIES ─── */}
+                      {myEntries.length === 0 && futureDrawEntries.length === 0 && (
                         <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "32px 24px", textAlign: "center", marginBottom: "14px" }}>
                           <div style={{ marginBottom: "12px", display: "flex", justifyContent: "center" }}><Target size={32} strokeWidth={1.25} color={GREEN} /></div>
-                          <div style={{ fontFamily: F_SANS, fontSize: "22px", color: GREEN, marginBottom: "8px" }}>No tournaments yet</div>
-                          <div style={{ fontSize: "12px", color: TEXT2, marginBottom: "20px" }}>Pick each competition and add your round 1 opponent</div>
-                          <button onClick={() => { setShowEntrySheet(true); setEntryJustSaved(false); setEntryTournId(""); setEntryRounds(4); setEntryOppSearch(""); setEntryOppPicked(null); setEntryDate(""); setEntryTime(""); }}
-                            style={{ background: MID, border: "none", borderRadius: "10px", color: "#ffffff", padding: "13px 32px", fontSize: "14px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", display: "inline-flex", alignItems: "center", gap: "8px" }}>
-                            <Plus size={16} strokeWidth={2.5} /> Add Tournament
-                          </button>
+                          <div style={{ fontFamily: F_SANS, fontSize: "22px", color: GREEN, marginBottom: "8px" }}>No draws published yet</div>
+                          <div style={{ fontSize: "12px", color: TEXT2, marginBottom: "4px" }}>Your competitions will appear here automatically once draws are published by the admin.</div>
+                        </div>
+                      )}
+
+                      {/* ─── AUTO-POPULATED DRAW ENTRIES ─── */}
+                      {futureDrawEntries.length > 0 && myEntries.length === 0 && (
+                        <div style={{ marginBottom: "14px" }}>
+                          <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>
+                            My Competitions · {settings.seasonYear || new Date().getFullYear()} Season
+                          </div>
+                          {futureDrawEntries.map(de => {
+                            const t = TOURNAMENTS.find(t2 => t2.id === de.tournamentId);
+                            const color = t?.color || MID;
+                            const roundDate = de.roundDate ? new Date(de.roundDate + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : null;
+                            return (
+                              <div key={de.drawId} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${color}`, borderRadius: "10px", padding: "12px 14px", marginBottom: "8px" }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                                  <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT }}>{de.tournamentName}</div>
+                                  <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>{de.seasonYear} season</div>
+                                </div>
+                                <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2 }}>
+                                  {de.isPrelim ? "Preliminary" : "Round 1"} · {de.isBye ? <span style={{ color: GOLD_MUTED, fontWeight: "600" }}>BYE</span> : <>vs <span style={{ fontWeight: "600", color: TEXT }}>{de.opponent}</span></>}
+                                </div>
+                                {roundDate && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "3px" }}>Must play by: {roundDate}</div>}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
 
@@ -1730,6 +1993,30 @@ export default function BowlsTracker() {
 
                       {/* ── CURRENT: Compact competition list ── */}
                       {tiesView === "current" && (<>
+                        {/* Draw entries alongside manual entries */}
+                        {myEntries.length > 0 && futureDrawEntries.length > 0 && (
+                          <div style={{ marginBottom: "14px" }}>
+                            <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>From Draw · {settings.seasonYear || new Date().getFullYear()}</div>
+                            {futureDrawEntries.map(de => {
+                              const t = TOURNAMENTS.find(t2 => t2.id === de.tournamentId);
+                              const color = t?.color || MID;
+                              const roundDate = de.roundDate ? new Date(de.roundDate + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : null;
+                              return (
+                                <div key={de.drawId} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${color}`, borderRadius: "10px", padding: "12px 14px", marginBottom: "8px" }}>
+                                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                                    <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT }}>{de.tournamentName}</div>
+                                    <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: GREEN }}>Draw live ✓</div>
+                                  </div>
+                                  <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2 }}>
+                                    {de.isPrelim ? "Preliminary" : "Round 1"} · {de.isBye ? <span style={{ color: GOLD_MUTED, fontWeight: "600" }}>BYE</span> : <>vs <span style={{ fontWeight: "600", color: TEXT }}>{de.opponent}</span></>}
+                                  </div>
+                                  {roundDate && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "3px" }}>Must play by: {roundDate}</div>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         {myEntries.length > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                           <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
                             {reorderMode
@@ -2702,7 +2989,7 @@ export default function BowlsTracker() {
             FIND GAMES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "search" && (
-          <FindTab search={search} setSearch={setSearch} playerGames={playerGames} tournaments={TOURNAMENTS} onH2H={openH2H} />
+          <FindTab search={search} setSearch={setSearch} playerGames={playerGames} tournaments={TOURNAMENTS} publishedDraws={publishedDraws} drawPairings={drawPairings} onH2H={openH2H} />
         )}
 
         {/* ══════════════════════════════════════════
@@ -3000,6 +3287,7 @@ export default function BowlsTracker() {
             joinRequests={joinRequests}
             approveJoinRequest={approveJoinRequest}
             declineJoinRequest={declineJoinRequest}
+            memberProfiles={memberProfiles}
           />
         )}
 
@@ -3026,7 +3314,7 @@ export default function BowlsTracker() {
               onAddComp={openAddComp}
               onEditComp={openEditComp}
               onAddPersonalComp={openAddPersonalComp}
-              onEditCompDates={openRoundDatesEditor}
+              onEditCompDates={openAllRoundDatesEditor}
               isSuperAdmin={isSuperAdmin}
               isAdmin={isAdmin}
               cloudKey={cloudKey}
@@ -3035,6 +3323,9 @@ export default function BowlsTracker() {
               claimSuperAdmin={claimSuperAdmin}
               adminClaimMsg={adminClaimMsg}
               onBack={() => navigateTo(prevTab)}
+              linkedMemberName={linkedMemberName}
+              onLinkName={() => { setLinkSearch(""); setLinkStatus(null); setShowLinkSheet(true); }}
+              onUnlinkName={unlinkMember}
             />
           );
         })()}
@@ -3057,7 +3348,7 @@ export default function BowlsTracker() {
         {/* ══════════════════════════════════════════
             ADMIN TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "admin" && isAdmin && (
+        {activeTab === "admin" && (isAdmin || isDrawAdmin) && (
           <AdminPanel
             myName={myName}
             isSuperAdmin={isSuperAdmin}
@@ -3070,7 +3361,7 @@ export default function BowlsTracker() {
             editFixture={editFixture}
             deleteFixture={deleteFixture}
             tournaments={baseTournaments}
-            onEditCompDates={openRoundDatesEditor}
+            onEditCompDates={openAllRoundDatesEditor}
             rollOfHonour={rollOfHonour}
             honoraryMembers={honoraryMembers}
             recordWinner={recordWinner}
@@ -3086,6 +3377,19 @@ export default function BowlsTracker() {
             phoneRequests={phoneRequests}
             approvePhoneRequest={approvePhoneRequest}
             declinePhoneRequest={declinePhoneRequest}
+            registeredUsers={registeredUsers}
+            lockAppAccount={lockAppAccount}
+            unlockAppAccount={unlockAppAccount}
+            deleteAppAccount={deleteAppAccount}
+            isDrawAdmin={isDrawAdmin}
+            seasonYear={settings.seasonYear || new Date().getFullYear()}
+            allDraws={allDraws}
+            onDrawSaved={(draw, pairings) => {
+              setAllDraws(p => [...p.filter(d => d.id !== draw.id), draw]);
+              if (pairings) setDrawPairings(p => [...p.filter(x => x.draw_id !== draw.id), ...pairings]);
+            }}
+            claimRequests={claimRequests}
+            resolveClaimRequest={resolveClaimRequest}
           />
         )}
               </div>
@@ -3137,38 +3441,146 @@ export default function BowlsTracker() {
         </div>
       </BottomSheet>
 
-      {/* ── MASTER ROUND DATES SHEET ── */}
-      <BottomSheet open={showRoundDatesSheet} onClose={() => setShowRoundDatesSheet(false)} title="Master Round Dates">
-        <div style={{ marginBottom: "10px", fontSize: "12px", color: TEXT2, fontFamily: F_UI }}>
-          Set once for this competition. Every member will see these dates by default.
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "12px" }}>
-          {roundDatesValues.map((d, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <div style={{ width: "74px", fontSize: "11px", color: TEXT2, fontFamily: F_UI, fontWeight: "600" }}>Round {i + 1}</div>
-              <input type="date" value={d || ""} onChange={e => setRoundDatesValues(prev => prev.map((v, idx) => idx === i ? e.target.value : v))}
-                style={{ flex: 1, boxSizing: "border-box", padding: "9px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "13px", fontFamily: F_UI, outline: "none", color: TEXT, background: SURFACE }} />
+      {/* ── ROUND DATES SHEET (per competition) ── */}
+      {(() => {
+        const rdt = baseTournaments.find(t => t.id === roundDatesCompId);
+        const rdRounds = Array.isArray(rdt?.rounds) ? rdt.rounds : [];
+        return (
+          <BottomSheet open={showRoundDatesSheet} onClose={() => setShowRoundDatesSheet(false)} title={rdt ? `${rdt.name} — Dates` : "Round Dates"}>
+            <div style={{ marginBottom: "14px", fontSize: "12px", color: TEXT2, fontFamily: F_UI, lineHeight: 1.5 }}>
+              Set the date for each round. Shown to all members in the Find tab.
             </div>
-          ))}
-        </div>
-        <button onClick={() => setRoundDatesValues(prev => [...prev, ""])}
-          style={{ width: "100%", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "10px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, marginBottom: "12px" }}>
-          + Add Round
-        </button>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button onClick={saveRoundDatesEditor}
-            style={{ flex: 1, background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "12px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
-            Save Dates
-          </button>
-          <button onClick={resetRoundDatesEditor}
-            style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "12px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI }}>
-            Reset
-          </button>
-          <button onClick={() => setShowRoundDatesSheet(false)}
-            style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "12px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI }}>
-            Cancel
-          </button>
-        </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
+              {roundDatesValues.map((d, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ width: "76px", fontFamily: F_UI, fontSize: "11px", color: TEXT3, flexShrink: 0 }}>
+                    {(rdRounds[i] || "").split("\n")[0] || `Round ${i + 1}`}
+                  </div>
+                  <input type="date" value={d || ""} onChange={e => setRoundDatesValues(prev => prev.map((v, idx) => idx === i ? e.target.value : v))}
+                    style={{ flex: 1, boxSizing: "border-box", padding: "9px 10px", border: `1px solid ${d ? MID : BORDER}`, borderRadius: "7px", fontSize: "13px", fontFamily: F_UI, outline: "none", color: d ? TEXT : TEXT3, background: SURFACE }} />
+                  {d && <button onClick={() => setRoundDatesValues(prev => prev.map((v, idx) => idx === i ? "" : v))}
+                    style={{ background: "none", border: "none", color: TEXT3, cursor: "pointer", padding: "2px 6px", fontSize: "18px", lineHeight: 1, flexShrink: 0 }}>×</button>}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={saveAllRoundDates}
+                style={{ flex: 1, background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "12px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
+                Save
+              </button>
+              <button onClick={() => setShowRoundDatesSheet(false)}
+                style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "12px 14px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI }}>
+                Cancel
+              </button>
+            </div>
+          </BottomSheet>
+        );
+      })()}
+
+      {/* ── LINK MEMBER NAME SHEET ── */}
+      <ProfileSheet
+        open={showProfileSheet}
+        onClose={() => setShowProfileSheet(false)}
+        profile={profile}
+        setProfile={setProfile}
+        myName={myName}
+        myEntries={myEntries}
+        ties={ties}
+        settings={settings}
+        wins={wins}
+        losses={losses}
+        linkedPhone={members.find(m => m.name === linkedMemberName)?.phone || ""}
+        onUpdatePhone={async (phone) => {
+          const linked = members.find(m => m.name === linkedMemberName);
+          if (!linked) return;
+          setMembers(p => p.map(m => m.id === linked.id ? { ...m, phone } : m));
+          await supabase.from("members").update({ phone }).eq("id", linked.id);
+        }}
+        onSwitchAccount={() => { setShowProfileSheet(false); setSettingName(true); setNameInput(myName); setNameStep("name"); }}
+      />
+
+      <BottomSheet open={showLinkSheet} onClose={() => { setShowLinkSheet(false); setLinkStatus(null); setLinkSearch(""); }} title="Link Your Name">
+        {linkStatus === "done" ? (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <div style={{ fontSize: "40px", marginBottom: "12px" }}>✓</div>
+            <div style={{ fontFamily: F_UI, fontSize: "16px", fontWeight: "700", color: GREEN }}>Linked as {linkedMemberName}</div>
+            <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginTop: "6px" }}>Your draws will now appear automatically.</div>
+          </div>
+        ) : (linkStatus?.type === "claimed" || linkStatus?.type === "requested") ? (
+          <div>
+            <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT, marginBottom: "16px", lineHeight: 1.6 }}>
+              <strong>{linkStatus.member.name}</strong> is already linked to another account. If this is you, request a reassignment and an admin will review it.
+            </div>
+            {linkStatus.type === "requested" ? (
+              <div style={{ background: `${GREEN}15`, border: `1px solid ${GREEN}44`, borderRadius: "10px", padding: "14px", textAlign: "center", fontFamily: F_UI, fontSize: "13px", color: GREEN }}>
+                ✓ Request sent — an admin will review it shortly.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <button onClick={() => submitClaimRequest(linkStatus.member, linkStatus.currentHolder)}
+                  style={{ background: MID, border: "none", borderRadius: "9px", color: "#fff", padding: "13px", fontSize: "13px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>
+                  Request Reassignment
+                </button>
+                <button onClick={() => setLinkStatus(null)}
+                  style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "9px", color: TEXT2, padding: "13px", fontSize: "13px", fontFamily: F_UI, cursor: "pointer" }}>
+                  Pick a different name
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "14px", lineHeight: 1.6 }}>
+              Linking your name lets your competitions appear automatically from the draw. You can skip this and use the app manually instead.
+            </div>
+            {linkedMemberName && (
+              <div style={{ background: `${GREEN}15`, border: `1px solid ${GREEN}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em" }}>Currently linked</div>
+                  <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: GREEN, marginTop: "2px" }}>{linkedMemberName}</div>
+                </div>
+                <button onClick={unlinkMember} style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT3, padding: "6px 10px", fontSize: "11px", fontFamily: F_UI, cursor: "pointer" }}>Unlink</button>
+              </div>
+            )}
+            <input
+              type="text" placeholder="Search your name…" value={linkSearch}
+              onChange={e => setLinkSearch(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px", border: `1px solid ${BORDER}`, borderRadius: "9px", fontSize: "14px", fontFamily: F_UI, outline: "none", marginBottom: "10px", background: SURFACE, color: TEXT }}
+              autoFocus
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "16px" }}>
+              {linkResults.map(m => (
+                <button key={m.id} onClick={() => claimMemberLink(m)} disabled={linkStatus === "linking"}
+                  style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", cursor: "pointer", textAlign: "left", width: "100%" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "600", color: TEXT }}>{m.name}</div>
+                    <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "2px", textTransform: "capitalize" }}>{m.section || "Gents"}</div>
+                  </div>
+                  {m.linked_cloudkey && m.linked_cloudkey !== cloudKey
+                    ? <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "3px 8px" }}>Claimed</div>
+                    : m.linked_cloudkey === cloudKey
+                    ? <div style={{ fontFamily: F_UI, fontSize: "10px", color: GREEN, fontWeight: "700" }}>✓ You</div>
+                    : null}
+                </button>
+              ))}
+              {linkSearch.length >= 2 && linkResults.length === 0 && (
+                <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, textAlign: "center", padding: "20px" }}>No members found for "{linkSearch}"</div>
+              )}
+            </div>
+            {linkedMemberName ? (
+              <button onClick={() => { setShowLinkSheet(false); setLinkSearch(""); }}
+                style={{ width: "100%", background: GREEN, border: "none", borderRadius: "9px", color: "#fff", padding: "13px", fontSize: "14px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>
+                Done
+              </button>
+            ) : (
+              <button onClick={() => { setShowLinkSheet(false); setLinkSearch(""); }}
+                style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "9px", color: TEXT2, padding: "12px", fontSize: "13px", fontFamily: F_UI, cursor: "pointer" }}>
+                Skip — I'll use the app manually
+              </button>
+            )}
+          </div>
+        )}
       </BottomSheet>
 
       {/* ── BOTTOM NAV BAR ── */}
