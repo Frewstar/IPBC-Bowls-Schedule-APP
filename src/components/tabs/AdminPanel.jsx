@@ -4,7 +4,7 @@ import { Users, Calendar, Shield, Lock, Plus, Pencil, Trash2, Crown, Trophy, Shu
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { supabase } from "../../lib/supabase.js";
 
-function printTieSheet(draw, slots, prelims, roundDates) {
+export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolbar = true } = {}) {
   const LABELS  = ["1st Round", "2nd Round", "3rd Round", "4th Round", "Semi-Final", "Final"];
   const ROW_H   = 13;
   const N       = BRACKET_SIZE; // 64
@@ -81,11 +81,22 @@ function printTieSheet(draw, slots, prelims, roundDates) {
     </table>
   </div>` : "";
 
-  const html = `<!DOCTYPE html>
+  const safeName = (draw?.tournament_name || "Draw").replace(/"/g, "");
+  const toolbarHtml = withToolbar ? `
+  <div class="toolbar" style="display:flex;gap:8px;padding:10px 14px;background:#f5f5f5;border-bottom:1px solid #ddd;margin:-10px -14px 12px;">
+    <button onclick="doPrint()" style="flex:1;padding:9px 16px;background:#1a5e35;color:#fff;border:none;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;">🖨️ Print</button>
+    <button onclick="doSavePdf()" style="flex:1;padding:9px 16px;background:#fff;color:#1a5e35;border:2px solid #1a5e35;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;">💾 Save as PDF</button>
+    <button onclick="window.close()" style="padding:9px 14px;background:#fff;color:#888;border:1px solid #ccc;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;cursor:pointer;">✕ Close</button>
+  </div>
+  <div class="toolbar" style="font-family:Arial,sans-serif;font-size:11px;color:#666;background:#fffbe6;border-bottom:1px solid #e8d88a;margin:-12px -14px 12px;padding:6px 14px;">
+    💡 To save a PDF: tap <strong>Save as PDF</strong> above, then in the print dialog change the destination to <strong>Save as PDF</strong>.
+  </div>` : "";
+
+  return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>${draw?.tournament_name || "Draw"} ${draw?.season_year || ""}</title>
+<title>${safeName} ${draw?.season_year || ""}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:Arial,sans-serif;color:#111;padding:10px 14px;}
@@ -94,14 +105,7 @@ function printTieSheet(draw, slots, prelims, roundDates) {
 </style>
 </head>
 <body>
-  <div class="toolbar" style="display:flex;gap:8px;padding:10px 14px;background:#f5f5f5;border-bottom:1px solid #ddd;margin:-10px -14px 12px;">
-    <button onclick="doPrint()" style="flex:1;padding:9px 16px;background:#1a5e35;color:#fff;border:none;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;">🖨️ Print</button>
-    <button onclick="doSavePdf()" style="flex:1;padding:9px 16px;background:#fff;color:#1a5e35;border:2px solid #1a5e35;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;">💾 Save as PDF</button>
-    <button onclick="window.close()" style="padding:9px 14px;background:#fff;color:#888;border:1px solid #ccc;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;cursor:pointer;">✕ Close</button>
-  </div>
-  <div style="font-family:Arial,sans-serif;font-size:11px;color:#666;padding:0 14px 8px;background:#fffbe6;border-bottom:1px solid #e8d88a;margin:-12px -14px 12px;padding:6px 14px;" class="toolbar">
-    💡 To save a PDF: tap <strong>Save as PDF</strong> above, then in the print dialog change the destination to <strong>Save as PDF</strong>.
-  </div>
+  ${toolbarHtml}
   <div style="text-align:center;border-bottom:2px solid #111;padding-bottom:7px;margin-bottom:8px;">
     <div style="font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:#777;">Irvine Park Bowling Club</div>
     <div style="font-size:17px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">${draw?.tournament_name || "Competition"}</div>
@@ -122,19 +126,50 @@ function printTieSheet(draw, slots, prelims, roundDates) {
   <script>
     function doPrint() { window.print(); }
     function doSavePdf() {
-      // Suggest PDF filename via document title, then open print dialog
-      // (user picks "Save as PDF" in the print destination)
       var orig = document.title;
-      document.title = "${(draw?.tournament_name || "Draw").replace(/"/g, "")}_${draw?.season_year || ""}.pdf";
+      document.title = "${safeName}_${draw?.season_year || ""}.pdf";
       window.print();
       document.title = orig;
     }
   <\/script>
 </body>
 </html>`;
+}
 
+function printTieSheet(draw, slots, prelims, roundDates) {
+  const html = buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolbar: true });
   const w = window.open("", "_blank");
   if (w) { w.document.write(html); w.document.close(); }
+}
+
+function SheetPreviewOverlay({ draw, slots, prelims, roundDates, onClose, onPrint }) {
+  const html = buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolbar: false });
+  const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(0,0,0,0.6)", display: "flex", flexDirection: "column" }}>
+      {/* Top bar */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", background: "#1a1a1a", flexShrink: 0 }}>
+        <button onClick={onClose}
+          style={{ padding: "8px 12px", background: "transparent", border: "1px solid #555", borderRadius: "7px", color: "#fff", fontFamily: F_UI, fontSize: "13px", cursor: "pointer" }}>
+          ← Back
+        </button>
+        <div style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: "#fff" }}>
+          {draw?.tournament_name} — Sheet Preview
+        </div>
+        <button onClick={onPrint}
+          style={{ padding: "8px 14px", background: GREEN, border: "none", borderRadius: "7px", color: "#fff", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>
+          🖨️ Print / Save PDF
+        </button>
+      </div>
+      {/* Sheet in iframe */}
+      <iframe
+        src={blobUrl}
+        style={{ flex: 1, border: "none", background: "#fff" }}
+        onLoad={() => URL.revokeObjectURL(blobUrl)}
+        title="Tie Sheet Preview"
+      />
+    </div>
+  );
 }
 
 const ADMIN_SECTIONS = ["Members", "Fixtures", "Competitions", "Club", "Access", "Lockouts", "Draw"];
@@ -830,6 +865,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
   const [existingDraw, setExistingDraw] = useState(null);
   const [confirmUnpub, setConfirmUnpub] = useState(false);
   const [testMode, setTestMode]         = useState(false);
+  const [showPreview, setShowPreview]   = useState(false);
   const [pubRows, setPubRows]           = useState([]);
   const [roundDates, setRoundDates]     = useState(Array(6).fill(""));
 
@@ -992,6 +1028,13 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     const { slots, prelims } = pubRows.length ? rowsToDisplay(pubRows) : { slots: Array(BRACKET_SIZE).fill(null).map((_, i) => ({ slotIndex: i+1, name: null, handicap: null })), prelims: [] };
     return (
       <div>
+        {showPreview && (
+          <SheetPreviewOverlay
+            draw={existingDraw} slots={slots} prelims={prelims} roundDates={roundDates}
+            onClose={() => setShowPreview(false)}
+            onPrint={() => printTieSheet(existingDraw, slots, prelims, roundDates)}
+          />
+        )}
         {/* Test mode banner */}
         {isSuperAdmin && (
           <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", background: testMode ? "#fff3cd" : SURFACE, border: `1px solid ${testMode ? "#f0ad4e" : BORDER}`, borderRadius: "8px", marginBottom: "12px" }}>
@@ -1104,13 +1147,17 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
             ? <BracketTreeView slots={slots} prelims={prelims} roundDates={roundDates} />
             : <BracketDisplay slots={slots} prelims={prelims} />
         }
-        <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
-          <button
-            onClick={() => printTieSheet(existingDraw, slots, prelims, roundDates)}
-            style={{ flex: 1, padding: "11px", border: `1px solid ${GREEN}`, borderRadius: "8px", background: GREEN, color: "#fff", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>
-            🖨️ Print Tie Sheet
+        <div style={{ display: "flex", gap: "8px", marginTop: "16px", flexWrap: "wrap" }}>
+          <button onClick={() => setShowPreview(true)}
+            style={{ flex: 1, minWidth: "120px", padding: "11px", border: `1px solid ${MID}`, borderRadius: "8px", background: SURFACE, color: MID, fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>
+            👁️ Preview Sheet
           </button>
-          <button onClick={reset} style={{ flex: 1, padding: "11px", border: `1px solid ${BORDER}`, borderRadius: "8px", background: SURFACE, color: TEXT2, fontFamily: F_UI, fontSize: "13px", cursor: "pointer" }}>
+          <button onClick={() => printTieSheet(existingDraw, slots, prelims, roundDates)}
+            style={{ flex: 1, minWidth: "120px", padding: "11px", border: `1px solid ${GREEN}`, borderRadius: "8px", background: GREEN, color: "#fff", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>
+            🖨️ Print / Save PDF
+          </button>
+          <button onClick={reset}
+            style={{ padding: "11px 16px", border: `1px solid ${BORDER}`, borderRadius: "8px", background: SURFACE, color: TEXT2, fontFamily: F_UI, fontSize: "13px", cursor: "pointer" }}>
             ← Back
           </button>
         </div>
