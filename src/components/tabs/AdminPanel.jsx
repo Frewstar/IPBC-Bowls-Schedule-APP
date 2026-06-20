@@ -4,6 +4,110 @@ import { Users, Calendar, Shield, Lock, Plus, Pencil, Trash2, Crown, Trophy, Shu
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { supabase } from "../../lib/supabase.js";
 
+function printTieSheet(draw, slots, prelims, roundDates) {
+  const ROUND_LABELS = ["1st Round", "2nd Round", "3rd Round", "4th Round", "Semi-Final", "Final"];
+  const pairs = [];
+  for (let i = 0; i < BRACKET_SIZE; i += 2) {
+    const a = slots[i];
+    const b = slots[i + 1];
+    if (a?.name || b?.name) pairs.push({ a, b });
+  }
+
+  const fmtDate = iso => {
+    if (!iso) return "";
+    const d = new Date(iso + "T12:00:00");
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  };
+
+  const roundDatesRows = roundDates.map((d, i) => d
+    ? `<tr><td style="padding:2px 10px 2px 0;font-weight:600;">${ROUND_LABELS[i]}</td><td style="padding:2px 0;">Complete by ${fmtDate(d)}</td></tr>`
+    : ""
+  ).join("");
+
+  const prelimHtml = prelims.length > 0 ? `
+    <div class="section-title">Preliminary Round</div>
+    <p style="font-size:10px;color:#555;margin:0 0 6px;">Play these matches first — winners enter the main draw at Round 1.</p>
+    <table class="pairings">
+      ${prelims.map(m => `
+        <tr>
+          <td class="player">${m.p1?.name || ""}${m.p1?.handicap ? ` <span class="hcap">(${m.p1.handicap})</span>` : ""}</td>
+          <td class="vs">vs</td>
+          <td class="player right">${m.p2 ? (m.p2.name + (m.p2.handicap ? ` <span class="hcap">(${m.p2.handicap})</span>` : "")) : "BYE"}</td>
+          <td class="score">Score _____ – _____</td>
+        </tr>`).join("")}
+    </table>` : "";
+
+  const round1Html = `
+    <div class="section-title">Round 1</div>
+    <table class="pairings">
+      ${pairs.map(({ a, b }) => {
+        const aName = a?.name ? `${a.name}${a.handicap ? ` <span class="hcap">(${a.handicap})</span>` : ""}` : "—";
+        const bName = b?.name ? `${b.name}${b.handicap ? ` <span class="hcap">(${b.handicap})</span>` : ""}` : "BYE";
+        return `<tr>
+          <td class="slot">${a?.slotIndex ?? ""}</td>
+          <td class="player">${aName}</td>
+          <td class="vs">${b?.name ? "vs" : ""}</td>
+          <td class="player right">${bName}</td>
+          <td class="slot">${b?.name ? (b?.slotIndex ?? "") : ""}</td>
+          <td class="score">${b?.name ? "Score _____ – _____" : ""}</td>
+        </tr>`;
+      }).join("")}
+    </table>`;
+
+  const laterRoundsHtml = ROUND_LABELS.slice(1).map((label, ri) => {
+    const count = pairs.length / Math.pow(2, ri + 1);
+    const rows = Array.from({ length: Math.max(1, Math.ceil(count)) }, (_, i) =>
+      `<tr><td class="slot">${i + 1}</td><td class="player"></td><td class="vs">vs</td><td class="player right"></td><td class="slot"></td><td class="score">Score _____ – _____</td></tr>`
+    ).join("");
+    return `<div class="section-title">${label}</div><table class="pairings">${rows}</table>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${draw?.tournament_name || "Draw"} ${draw?.season_year || ""} — Tie Sheet</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 20px; max-width: 800px; margin: 0 auto; }
+    .header { text-align: center; border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
+    .club-name { font-size: 20px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .comp-name { font-size: 16px; font-weight: 700; margin-top: 4px; }
+    .season { font-size: 12px; color: #555; margin-top: 2px; }
+    .dates-table { margin: 10px auto; font-size: 11px; }
+    .section-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1.5px solid #111; padding-bottom: 3px; margin: 14px 0 6px; }
+    table.pairings { width: 100%; border-collapse: collapse; }
+    table.pairings tr { border-bottom: 1px solid #ddd; }
+    table.pairings td { padding: 5px 4px; vertical-align: middle; }
+    td.slot { width: 22px; font-size: 10px; color: #888; text-align: center; }
+    td.player { width: 32%; font-weight: 600; }
+    td.player.right { text-align: right; }
+    td.vs { width: 28px; text-align: center; font-size: 10px; color: #888; }
+    td.score { width: 150px; text-align: right; font-size: 11px; color: #555; white-space: nowrap; }
+    .hcap { font-weight: 400; font-size: 10px; color: #777; }
+    .footer { margin-top: 20px; font-size: 10px; color: #aaa; text-align: center; border-top: 1px solid #ddd; padding-top: 8px; }
+    @media print { body { padding: 10px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="club-name">Irvine Park Bowling Club</div>
+    <div class="comp-name">${draw?.tournament_name || ""}</div>
+    <div class="season">${draw?.season_year || ""} Season</div>
+    ${roundDatesRows ? `<table class="dates-table"><tbody>${roundDatesRows}</tbody></table>` : ""}
+  </div>
+  ${prelimHtml}
+  ${round1Html}
+  ${laterRoundsHtml}
+  <div class="footer">Printed from IPBC Bowls App · irvine-park-bowls.vercel.app</div>
+  <script>window.onload = () => window.print();<\/script>
+</body>
+</html>`;
+
+  const w = window.open("", "_blank");
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
 const ADMIN_SECTIONS = ["Members", "Fixtures", "Competitions", "Club", "Access", "Lockouts", "Draw"];
 const DRAW_SECTIONS  = ["Draw"];
 const SECTION_ICONS  = { Members: Users, Fixtures: Calendar, Competitions: Trophy, Club: Shield, Access: Crown, Lockouts: Lock, Draw: Shuffle };
@@ -852,9 +956,16 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
             ? <BracketTreeView slots={slots} prelims={prelims} roundDates={roundDates} />
             : <BracketDisplay slots={slots} prelims={prelims} />
         }
-        <button onClick={reset} style={{ marginTop: "16px", width: "100%", padding: "11px", border: `1px solid ${BORDER}`, borderRadius: "8px", background: SURFACE, color: TEXT2, fontFamily: F_UI, fontSize: "13px", cursor: "pointer" }}>
-          ← Back to competitions
-        </button>
+        <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
+          <button
+            onClick={() => printTieSheet(existingDraw, slots, prelims, roundDates)}
+            style={{ flex: 1, padding: "11px", border: `1px solid ${GREEN}`, borderRadius: "8px", background: GREEN, color: "#fff", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>
+            🖨️ Print Tie Sheet
+          </button>
+          <button onClick={reset} style={{ flex: 1, padding: "11px", border: `1px solid ${BORDER}`, borderRadius: "8px", background: SURFACE, color: TEXT2, fontFamily: F_UI, fontSize: "13px", cursor: "pointer" }}>
+            ← Back
+          </button>
+        </div>
       </div>
     );
   }
