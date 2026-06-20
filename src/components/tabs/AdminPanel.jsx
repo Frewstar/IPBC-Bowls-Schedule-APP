@@ -943,6 +943,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
         published: publish, published_at: publish ? new Date().toISOString() : null,
         is_test: true, version: 1, revision_history: [], round_dates: roundDates,
       };
+      onDrawSaved(fakeDraw, rows);
       setExistingDraw(fakeDraw);
       setPubRows(rows);
       setSaving(false);
@@ -982,7 +983,9 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     setConfirmPub(false);
     // Test mode: in-memory only
     if (testMode) {
-      setExistingDraw(d => ({ ...d, published: true, published_at: new Date().toISOString() }));
+      const updated = { ...existingDraw, published: true, published_at: new Date().toISOString() };
+      onDrawSaved(updated, null);
+      setExistingDraw(updated);
       setSaving(false);
       return;
     }
@@ -1012,7 +1015,9 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     setConfirmUnpub(false);
     // Test mode: in-memory only
     if (testMode) {
-      setExistingDraw(d => ({ ...d, published: false, published_at: null }));
+      const updated = { ...existingDraw, published: false, published_at: null };
+      onDrawSaved(updated, null);
+      setExistingDraw(updated);
       setSaving(false);
       return;
     }
