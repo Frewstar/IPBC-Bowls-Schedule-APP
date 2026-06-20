@@ -206,7 +206,7 @@ export default function AdminPanel({
   // app accounts
   registeredUsers = [], lockAppAccount, unlockAppAccount, deleteAppAccount,
   // draws
-  seasonYear, allDraws = [], onDrawSaved,
+  seasonYear, allDraws = [], onDrawSaved, activeSection = "gents",
   // claim requests
   claimRequests = [], resolveClaimRequest,
 }) {
@@ -238,7 +238,7 @@ export default function AdminPanel({
       {section === "Club"         && <AdminClub rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
       {section === "Access" && isSuperAdmin && <AdminAccess adminList={adminList} pendingAdminRequests={pendingAdminRequests} approveAdminRequest={approveAdminRequest} revokeAdmin={revokeAdmin} grantAdmin={grantAdmin} members={members} myName={myName} />}
       {section === "Lockouts"     && <AdminLockouts lockouts={lockouts} clearLockout={clearLockout} />}
-      {section === "Draw"         && <AdminDrawGenerator members={members} tournaments={tournaments} seasonYear={seasonYear} allDraws={allDraws} generatedBy={myName} onDrawSaved={onDrawSaved} isSuperAdmin={isSuperAdmin} />}
+      {section === "Draw"         && <AdminDrawGenerator members={members.filter(m => (m.section || "gents") === activeSection)} tournaments={tournaments} seasonYear={seasonYear} allDraws={allDraws.filter(d => (d.section || "gents") === activeSection)} generatedBy={myName} onDrawSaved={onDrawSaved} isSuperAdmin={isSuperAdmin} activeSection={activeSection} />}
     </div>
   );
 }
@@ -803,7 +803,7 @@ function AdminLockouts({ lockouts, clearLockout }) {
 // ─────────────────────────────────────────────
 // DRAW GENERATOR SECTION (draw_admin only)
 // ─────────────────────────────────────────────
-const V1_DRAW_IDS  = new Set(['championship','presidents','morton','donaldson','mitchell','mixed-pairs']);
+const V1_DRAW_IDS  = new Set(['championship','presidents','morton','donaldson','mitchell','mixed-pairs','ladies-championship','ladies-pairs','ladies-triples','ladies-rinks']);
 
 function fisherYates(arr) {
   const a = [...arr];
@@ -862,7 +862,7 @@ function bracketToRows(drawId, slots, prelims) {
 }
 
 
-function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, generatedBy, onDrawSaved, isSuperAdmin }) {
+function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, generatedBy, onDrawSaved, isSuperAdmin, activeSection = "gents" }) {
   const [step, setStep]                 = useState(1);
   const [viewMode, setViewMode]         = useState("list"); // "list" | "bracket"
   const [tournId, setTournId]           = useState("");
@@ -941,7 +941,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
         id: "TEST", tournament_id: tournId, tournament_name: tournament.name,
         season_year: seasonYear, generated_by: generatedBy,
         published: publish, published_at: publish ? new Date().toISOString() : null,
-        is_test: true, version: 1, revision_history: [], round_dates: roundDates,
+        is_test: true, section: activeSection, version: 1, revision_history: [], round_dates: roundDates,
       };
       onDrawSaved(fakeDraw, rows);
       setExistingDraw(fakeDraw);
@@ -960,7 +960,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
       tournament_id: tournId, tournament_name: tournament.name,
       season_year: seasonYear, generated_by: generatedBy,
       published: publish, published_at: publish ? new Date().toISOString() : null,
-      is_test: false,
+      is_test: false, section: activeSection,
       version: newVersion,
       revision_history: historyEntry ? [...prevHistory, historyEntry] : prevHistory,
     };
@@ -1205,7 +1205,7 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
         <div>
           <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>Select Competition</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {tournaments.filter(t => t.source !== "personal").map(t => {
+            {tournaments.filter(t => t.source !== "personal" && (t.section || "gents") === activeSection).map(t => {
               const inScope = V1_DRAW_IDS.has(t.id);
               const pub     = allDraws.find(d => d.tournament_id === t.id && d.season_year === seasonYear);
               return (
