@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, Component } from "react";
+import { useRegisterSW } from "virtual:pwa-register/react";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -67,6 +68,8 @@ function MemberPill({ name, phone, color = GOLD }) {
 
 // ── MAIN APP ───────────────────────────────────────────────────────────────
 export default function BowlsTracker() {
+  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
+
   const [members, setMembers] = useState(() =>
     DEFAULT_MEMBERS.map(m => ({ ...m, section: m.section || "gents" }))
   );
@@ -1591,6 +1594,17 @@ export default function BowlsTracker() {
           </div>
         );
       })()}
+
+      {/* ── UPDATE BANNER ── */}
+      {needRefresh && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: GREEN, color: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", fontFamily: F_UI, fontSize: "14px", gap: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.25)" }}>
+          <span>A new version is available</span>
+          <button onClick={() => updateServiceWorker(true)}
+            style={{ background: "#fff", color: GREEN, border: "none", borderRadius: "8px", padding: "6px 14px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer", flexShrink: 0 }}>
+            Update now
+          </button>
+        </div>
+      )}
 
       {/* ── FLOATING HELP BUTTON ── */}
       {!showWelcome && (
