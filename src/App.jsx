@@ -964,9 +964,8 @@ export default function BowlsTracker() {
     return result;
   }, [drawPairings, publishedDraws, myName, linkedMemberName]);
 
-  // Only show draw entries for seasons beyond the current season (manual entries cover current season)
   const currentSeason = settings.seasonYear || new Date().getFullYear();
-  const futureDrawEntries = myDrawEntries.filter(de => de.seasonYear > currentSeason);
+  const futureDrawEntries = myDrawEntries.filter(de => de.seasonYear >= currentSeason);
 
   // ── Sign-in flow ──
   const [pinConfirm, setPinConfirm]   = useState("");
