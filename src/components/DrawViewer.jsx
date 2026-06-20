@@ -142,8 +142,14 @@ export function BracketTreeView({ slots, prelims = [], roundDates = [] }) {
         </div>
       )}
       <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "72vh", border: `1px solid ${BORDER}`, borderRadius: "8px", WebkitOverflowScrolling: "touch" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", minWidth: "fit-content", padding: "0 6px 6px" }}>
-          <div style={{ flexShrink: 0 }}>
+        <div style={{ position: "relative", display: "flex", alignItems: "flex-start", minWidth: "fit-content", padding: "0 6px 6px" }}>
+          {/* Pair banding */}
+          <div style={{ position: "absolute", top: HDR, left: 0, right: 0, pointerEvents: "none" }}>
+            {Array.from({ length: N / 2 }, (_, p) => (
+              <div key={p} style={{ position: "absolute", top: p * 2 * ROW_H, left: 0, right: 0, height: 2 * ROW_H, background: p % 2 === 0 ? "#e4f4ea" : "#fef0e0" }} />
+            ))}
+          </div>
+          <div style={{ flexShrink: 0, position: "relative" }}>
             <div style={{ height: HDR }} />
             {Array.from({ length: N }, (_, i) => {
               const name = nameMap[i + 1];

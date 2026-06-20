@@ -24,14 +24,23 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
   const bTop = (ri, g) => ri === 0 ? ply(2 * g)     : rly(ri - 1, 2 * g);
   const bBot = (ri, g) => ri === 0 ? ply(2 * g + 1) : rly(ri - 1, 2 * g + 1);
 
+  // ── Pair stripe layer (spans full row width) ──
+  const PAIR_GREEN  = "#e4f4ea";
+  const PAIR_ORANGE = "#fef0e0";
+  let stripeRows = "";
+  for (let p = 0; p < N / 2; p++) {
+    const bg = p % 2 === 0 ? PAIR_GREEN : PAIR_ORANGE;
+    stripeRows += `<div style="position:absolute;top:${HDR + p * 2 * ROW_H}px;left:0;right:0;height:${2 * ROW_H}px;background:${bg};"></div>`;
+  }
+
   // ── Name column ──
   let nameRows = "";
   for (let i = 0; i < N; i++) {
     const s = nameMap[i + 1];
     const filled = !!s?.name;
-    nameRows += `<div style="height:${ROW_H}px;display:flex;align-items:flex-end;">
-      <span style="width:${NUM_W}px;font-size:8px;color:#999;text-align:right;padding-right:3px;flex-shrink:0;padding-bottom:1px;">${i + 1}</span>
-      <div style="width:${NAME_W}px;border-bottom:1px solid ${filled ? "#333" : "#bbb"};font-size:${filled ? "10" : "9"}px;font-weight:${filled ? "600" : "400"};color:${filled ? "#111" : "#ccc"};padding-left:3px;padding-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s?.name ? s.name + (s.handicap ? ` (${s.handicap})` : "") : ""}</div>
+    nameRows += `<div style="height:${ROW_H}px;display:flex;align-items:flex-end;position:relative;">
+      <span style="width:${NUM_W}px;font-size:8px;color:#666;text-align:right;padding-right:3px;flex-shrink:0;padding-bottom:1px;">${i + 1}</span>
+      <div style="width:${NAME_W}px;border-bottom:1px solid ${filled ? "#333" : "#ccc"};font-size:${filled ? "10" : "9"}px;font-weight:${filled ? "700" : "400"};color:${filled ? "#111" : "#ccc"};padding-left:3px;padding-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s?.name ? s.name + (s.handicap ? ` (${s.handicap})` : "") : ""}</div>
     </div>`;
   }
 
@@ -112,8 +121,9 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
     <div style="font-size:9px;color:#666;margin-top:2px;">${draw?.season_year || ""} Season</div>
   </div>
   ${prelimHtml}
-  <div style="display:flex;align-items:flex-start;">
-    <div style="flex-shrink:0;">
+  <div style="position:relative;display:flex;align-items:flex-start;">
+    <div style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;">${stripeRows}</div>
+    <div style="flex-shrink:0;position:relative;">
       <div style="height:${HDR}px;display:flex;align-items:flex-end;padding-bottom:3px;">
         <span style="width:${NUM_W}px;"></span>
         <div style="width:${NAME_W}px;font-size:7px;font-weight:700;text-transform:uppercase;color:#999;letter-spacing:0.08em;padding-left:3px;">Player</div>
