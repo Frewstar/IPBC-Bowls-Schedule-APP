@@ -887,22 +887,35 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     if (!tournament || !result) return;
     setSaving(true);
     setConfirmPub(false);
-    const isRepublish = publish && existingDraw?.published && !testMode;
+
+    // ── Test mode: in-memory only, nothing written to DB ──
+    if (testMode) {
+      const rows = bracketToRows("TEST", result.slots, result.prelims);
+      const fakeDraw = {
+        id: "TEST", tournament_id: tournId, tournament_name: tournament.name,
+        season_year: seasonYear, generated_by: generatedBy,
+        published: publish, published_at: publish ? new Date().toISOString() : null,
+        is_test: true, version: 1, revision_history: [], round_dates: roundDates,
+      };
+      setExistingDraw(fakeDraw);
+      setPubRows(rows);
+      setSaving(false);
+      setStep(4);
+      return;
+    }
+
+    const isRepublish = publish && existingDraw?.published;
     const prevVersion = existingDraw?.version || 1;
-    const newVersion  = isRepublish ? prevVersion + 1 : (existingDraw?.version || 1);
-    const historyEntry = isRepublish ? {
-      version: prevVersion,
-      revised_by: generatedBy,
-      revised_at: new Date().toISOString(),
-    } : null;
+    const newVersion  = isRepublish ? prevVersion + 1 : prevVersion;
     const prevHistory = existingDraw?.revision_history || [];
+    const historyEntry = isRepublish ? { version: prevVersion, revised_by: generatedBy, revised_at: new Date().toISOString() } : null;
     const drawRow = {
       tournament_id: tournId, tournament_name: tournament.name,
       season_year: seasonYear, generated_by: generatedBy,
       published: publish, published_at: publish ? new Date().toISOString() : null,
-      is_test: testMode,
-      version: testMode ? (existingDraw?.version || 1) : newVersion,
-      revision_history: (testMode || !historyEntry) ? prevHistory : [...prevHistory, historyEntry],
+      is_test: false,
+      version: newVersion,
+      revision_history: historyEntry ? [...prevHistory, historyEntry] : prevHistory,
     };
     const { data: draw, error } = await supabase.from("draws").upsert(drawRow, { onConflict: "tournament_id,season_year" }).select().maybeSingle();
     if (error || !draw) { setSaving(false); alert("Error saving draw. Please try again."); return; }
@@ -921,8 +934,14 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     if (!existingDraw) return;
     setSaving(true);
     setConfirmPub(false);
+    // Test mode: in-memory only
+    if (testMode) {
+      setExistingDraw(d => ({ ...d, published: true, published_at: new Date().toISOString() }));
+      setSaving(false);
+      return;
+    }
     const { data: draw, error } = await supabase.from("draws")
-      .update({ published: true, published_at: new Date().toISOString(), is_test: testMode })
+      .update({ published: true, published_at: new Date().toISOString() })
       .eq("id", existingDraw.id).select().maybeSingle();
     if (error || !draw) { setSaving(false); alert("Error publishing draw. Please try again."); return; }
     onDrawSaved(draw, null);
@@ -945,6 +964,12 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     if (!existingDraw) return;
     setSaving(true);
     setConfirmUnpub(false);
+    // Test mode: in-memory only
+    if (testMode) {
+      setExistingDraw(d => ({ ...d, published: false, published_at: null }));
+      setSaving(false);
+      return;
+    }
     const { data: draw, error } = await supabase.from("draws")
       .update({ published: false, published_at: null })
       .eq("id", existingDraw.id).select().maybeSingle();
@@ -1226,14 +1251,18 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
             : <BracketDisplay slots={result.slots} prelims={result.prelims} />
           }
 
-          <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
+          <div style={{ display: "flex", gap: "8px", marginTop: "16px", flexWrap: "wrap" }}>
             <button onClick={reshuffle}
-              style={{ flex: 1, padding: "12px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", color: TEXT2, fontFamily: F_UI, fontSize: "13px", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+              style={{ flex: 1, minWidth: "100px", padding: "12px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", color: TEXT2, fontFamily: F_UI, fontSize: "13px", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
               <Shuffle size={14} strokeWidth={2} /> Re-shuffle
             </button>
             <button onClick={() => saveDraw(false)} disabled={saving}
-              style={{ flex: 1, padding: "12px", background: SURFACE, border: `1px solid ${MID}`, borderRadius: "10px", color: MID, fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>
+              style={{ flex: 1, minWidth: "100px", padding: "12px", background: SURFACE, border: `1px solid ${MID}`, borderRadius: "10px", color: MID, fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>
               {saving ? "Saving…" : "Save Draft"}
+            </button>
+            <button onClick={() => saveDraw(true)} disabled={saving}
+              style={{ flex: 1, minWidth: "100px", padding: "12px", background: testMode ? "#f0ad4e" : GREEN, border: "none", borderRadius: "10px", color: "#fff", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>
+              {saving ? "Publishing…" : testMode ? "🧪 Publish (Test)" : "Publish"}
             </button>
           </div>
         </div>
