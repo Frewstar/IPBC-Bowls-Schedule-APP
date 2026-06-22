@@ -145,14 +145,18 @@ export default function BowlsTracker() {
   }
 
   // ── Section toggle (used across tabs) ──
-  const [activeSection, setActiveSection] = useState(
-    () => load(SETTINGS_KEY, { defaultSection: "gents" }).defaultSection || "gents"
-  );
-  const [seniorMode, setSeniorMode] = useState(false);
-  // seniorMode modifies activeSection: gents+senior → "gents-seniors", ladies+senior → "ladies-seniors"
-  const effectiveSection = seniorMode ? `${activeSection}-seniors` : activeSection;
-  const accentColor = activeSection === "ladies" ? LADIES_MID : GOLD;
-  const accentDark  = activeSection === "ladies" ? LADIES     : GREEN;
+  // activeSection: "gents" | "ladies" | "gents-senior" | "ladies-senior"
+  const [activeSection, setActiveSection] = useState(() => {
+    const raw = load(SETTINGS_KEY, { defaultSection: "gents" }).defaultSection || "gents";
+    // normalise legacy "gents-seniors" → "gents-senior" etc.
+    return raw === "gents-seniors" ? "gents-senior" : raw === "ladies-seniors" ? "ladies-senior" : raw;
+  });
+  // memberBaseSection: which pool of members to search / filter (strips the -senior suffix)
+  const memberBaseSection = activeSection.startsWith("ladies") ? "ladies" : "gents";
+  const accentColor = memberBaseSection === "ladies" ? LADIES_MID : GOLD;
+  const accentDark  = memberBaseSection === "ladies" ? LADIES     : GREEN;
+  // kept as alias so downstream callers that still reference effectiveSection compile
+  const effectiveSection = activeSection;
 
   // ── My Ties state ──
   const [myName, setMyName]       = useState(() => load("bowls_myname", "") || "");
@@ -271,7 +275,7 @@ export default function BowlsTracker() {
     if (!editOppSearch || editOppSearch.length < 2) return [];
     const q = editOppSearch.toUpperCase();
     return members
-      .filter(m => (m.section || "gents") === activeSection)
+      .filter(m => (m.section || "gents") === memberBaseSection)
       .filter(m => m.name.toUpperCase().includes(q))
       .slice(0, 6);
   }, [editOppSearch, members, activeSection]);
@@ -279,25 +283,25 @@ export default function BowlsTracker() {
   const entryPartnerResults = useMemo(() => {
     if (!entryPartnerSearch || entryPartnerSearch.length < 2) return [];
     const q = entryPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === memberBaseSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [entryPartnerSearch, members, activeSection]);
 
   const nextOppPartnerResults = useMemo(() => {
     if (!nextOppPartnerSearch || nextOppPartnerSearch.length < 2) return [];
     const q = nextOppPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === memberBaseSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [nextOppPartnerSearch, members, activeSection]);
 
   const editOppPartnerResults = useMemo(() => {
     if (!editOppPartnerSearch || editOppPartnerSearch.length < 2) return [];
     const q = editOppPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === memberBaseSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [editOppPartnerSearch, members, activeSection]);
 
   const editMyPartnerResults = useMemo(() => {
     if (!editMyPartnerSearch || editMyPartnerSearch.length < 2) return [];
     const q = editMyPartnerSearch.toUpperCase();
-    return members.filter(m => (m.section || "gents") === activeSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
+    return members.filter(m => (m.section || "gents") === memberBaseSection).filter(m => m.name.toUpperCase().includes(q)).slice(0, 6);
   }, [editMyPartnerSearch, members, activeSection]);
 
   function teamSizeFor(tournamentId) {
@@ -457,18 +461,21 @@ export default function BowlsTracker() {
   const [personalComps, setPersonalComps] = useState(() => load(PERSONAL_COMPS_KEY, []));
   useEffect(() => { save(PERSONAL_COMPS_KEY, personalComps); }, [personalComps]);
 
-  const memberSection = activeSection; // seniors are still gents or ladies members
+  function tournamentVisibleToMember(tSection, memSection) {
+    if (tSection === "mixed") return true;
+    if (tSection === "gents" && memSection.startsWith("gents")) return true;
+    if (tSection === "ladies" && memSection.startsWith("ladies")) return true;
+    if (tSection === "seniors" && memSection.includes("senior")) return true;
+    return false;
+  }
 
   const TOURNAMENTS = useMemo(() => {
     const personal = personalComps
-      .filter(c => c.owner === myName && ((c.section || "gents") === effectiveSection))
+      .filter(c => c.owner === myName && tournamentVisibleToMember(c.section || "gents", activeSection))
       .map(c => ({ ...c, source: "personal", sourceLabel: "Personal" }));
-    // seniors see their base section comps + seniors-specific comps
-    const base = seniorMode
-      ? baseTournaments.filter(t => t.section === activeSection || t.section === effectiveSection)
-      : baseTournaments.filter(t => t.section === activeSection);
+    const base = baseTournaments.filter(t => tournamentVisibleToMember(t.section || "gents", activeSection));
     return [...base, ...personal];
-  }, [baseTournaments, personalComps, myName, activeSection, seniorMode, effectiveSection]);
+  }, [baseTournaments, personalComps, myName, activeSection]);
 
   // ── Fixtures (Supabase-first, fallback to hardcoded) ──
   const [fixtures, setFixtures] = useState(() => FIXTURES.map(f => ({ ...f })));
@@ -783,20 +790,20 @@ export default function BowlsTracker() {
   }, [activeSection]);
 
   // ── Derived ──
-  const sectionMembers = useMemo(() => members.filter(m => (m.section || "gents") === memberSection), [members, activeSection]);
+  const sectionMembers = useMemo(() => members.filter(m => (m.section || "gents") === memberBaseSection), [members, memberBaseSection]);
 
   const myTiesList = useMemo(() =>
     Object.values(ties)
-      .filter(t => t.myName === myName && ((t.section || "gents") === effectiveSection))
+      .filter(t => t.myName === myName && tournamentVisibleToMember(t.section || "gents", activeSection))
       .sort((a, b) => a.tournamentId.localeCompare(b.tournamentId) || a.roundIdx - b.roundIdx),
-    [ties, myName, effectiveSection]
+    [ties, myName, activeSection]
   );
   const wins   = myTiesList.filter(t => t.result === "W").length;
   const losses = myTiesList.filter(t => t.result === "L").length;
 
   const myEntries = useMemo(
-    () => entries.filter(e => e && e.myName?.replace(/\s+/g,"").toUpperCase() === myName?.replace(/\s+/g,"").toUpperCase() && ((e.section || "gents") === effectiveSection)),
-    [entries, myName, effectiveSection]
+    () => entries.filter(e => e && e.myName?.replace(/\s+/g,"").toUpperCase() === myName?.replace(/\s+/g,"").toUpperCase() && tournamentVisibleToMember(e.section || "gents", activeSection)),
+    [entries, myName, activeSection]
   );
 
   const [remindersExpanded, setRemindersExpanded] = useState(false);
@@ -877,7 +884,7 @@ export default function BowlsTracker() {
   const [allDraws, setAllDraws]         = useState([]);
   const [drawPairings, setDrawPairings] = useState([]);
   const [drawResults, setDrawResults]   = useState([]);
-  const publishedDraws = useMemo(() => allDraws.filter(d => d.published && (!d.is_test || isSuperAdmin) && (d.section || "gents") === effectiveSection), [allDraws, isSuperAdmin, effectiveSection]);
+  const publishedDraws = useMemo(() => allDraws.filter(d => d.published && (!d.is_test || isSuperAdmin) && tournamentVisibleToMember(d.section || "gents", activeSection)), [allDraws, isSuperAdmin, activeSection]);
   useEffect(() => {
     supabase.from("draws").select("*")
       .then(({ data }) => { if (data) setAllDraws(data); });
@@ -1560,28 +1567,37 @@ export default function BowlsTracker() {
 
   // ── Section toggle ──
   function SectionToggle({ style = {} }) {
+    const isSenior = activeSection.includes("senior");
+    const baseSection = memberBaseSection; // "gents" | "ladies"
+    function toggleBase(s) {
+      setActiveSection(isSenior ? `${s}-senior` : s);
+    }
+    function toggleSenior() {
+      if (isSenior) setActiveSection(baseSection);
+      else setActiveSection(`${baseSection}-senior`);
+    }
     return (
       <div style={{ display: "inline-flex", flexDirection: "column", gap: "4px", ...style }}>
         <div style={{ display: "inline-flex", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "2px" }}>
           {[["gents","Gents"],["ladies","Ladies"]].map(([s, label]) => (
-            <button key={s} onClick={() => setActiveSection(s)} style={{
-              background: activeSection === s ? MID : "transparent",
+            <button key={s} onClick={() => toggleBase(s)} style={{
+              background: baseSection === s ? MID : "transparent",
               border: "none", borderRadius: "4px",
-              color: activeSection === s ? "#ffffff" : TEXT2,
+              color: baseSection === s ? "#ffffff" : TEXT2,
               padding: "5px 14px", fontSize: "11px", cursor: "pointer",
-              fontFamily: F_UI, fontWeight: activeSection === s ? "600" : "400",
+              fontFamily: F_UI, fontWeight: baseSection === s ? "600" : "400",
               letterSpacing: "0.08em", textTransform: "uppercase",
               transition: "all 0.15s",
             }}>{label}</button>
           ))}
         </div>
-        <button onClick={() => setSeniorMode(v => !v)} style={{
-          background: seniorMode ? `${GOLD}22` : "transparent",
-          border: `1px solid ${seniorMode ? GOLD : BORDER}`,
+        <button onClick={toggleSenior} style={{
+          background: isSenior ? `${GOLD}22` : "transparent",
+          border: `1px solid ${isSenior ? GOLD : BORDER}`,
           borderRadius: "5px", padding: "3px 10px",
           fontSize: "10px", cursor: "pointer", fontFamily: F_UI,
-          fontWeight: seniorMode ? "700" : "400",
-          color: seniorMode ? GOLD : TEXT3,
+          fontWeight: isSenior ? "700" : "400",
+          color: isSenior ? GOLD : TEXT3,
           letterSpacing: "0.1em", textTransform: "uppercase",
           transition: "all 0.15s", alignSelf: "stretch", textAlign: "center",
         }}>Seniors</button>
@@ -1738,7 +1754,7 @@ export default function BowlsTracker() {
                 Irvine Park Bowling Club
               </div>
               <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "500", color: GOLD_MUTED, letterSpacing: "0.15em", textTransform: "uppercase", marginTop: "3px" }}>
-                {activeSection === "ladies" ? (seniorMode ? "Ladies Seniors" : "Ladies Section") : (seniorMode ? "Gents Seniors" : "Gents Section")} · {settings.seasonYear || new Date().getFullYear()}
+                {activeSection === "gents" ? "Gents Section" : activeSection === "ladies" ? "Ladies Section" : activeSection === "gents-senior" ? "Gents Seniors" : "Ladies Seniors"} · {settings.seasonYear || new Date().getFullYear()}
               </div>
             </div>
 
@@ -3453,7 +3469,8 @@ export default function BowlsTracker() {
               backupFileRef={backupFileRef}
               handleBackupImport={handleBackupImport}
               backupMsg={backupMsg}
-              tournaments={TOURNAMENTS}
+              tournaments={baseTournaments}
+              activeSection={activeSection}
               onAddComp={openAddComp}
               onEditComp={openEditComp}
               onAddPersonalComp={openAddPersonalComp}
@@ -3525,7 +3542,7 @@ export default function BowlsTracker() {
             unlockAppAccount={unlockAppAccount}
             deleteAppAccount={deleteAppAccount}
             isDrawAdmin={isDrawAdmin}
-            activeSection={effectiveSection}
+            activeSection={activeSection}
             seasonYear={settings.seasonYear || new Date().getFullYear()}
             allDraws={allDraws}
             onDrawSaved={(draw, pairings) => {
@@ -3676,7 +3693,7 @@ export default function BowlsTracker() {
         ) : (
           <div>
             <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "14px", lineHeight: 1.6 }}>
-              Linking your name lets your competitions appear automatically from the draw. You can skip this and use the app manually instead.
+              Linking your name lets your competitions appear automatically from the draw. Search by your <strong>last name</strong> to find yourself. You can skip this and use the app manually instead.
             </div>
             {linkedMemberName && (
               <div style={{ background: `${GREEN}15`, border: `1px solid ${GREEN}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -3688,7 +3705,7 @@ export default function BowlsTracker() {
               </div>
             )}
             <input
-              type="text" placeholder="Search your name…" value={linkSearch}
+              type="text" placeholder="Search by last name…" value={linkSearch}
               onChange={e => setLinkSearch(e.target.value)}
               style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px", border: `1px solid ${BORDER}`, borderRadius: "9px", fontSize: "14px", fontFamily: F_UI, outline: "none", marginBottom: "10px", background: SURFACE, color: TEXT }}
               autoFocus
