@@ -4,7 +4,8 @@ import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, T
 import { save } from "../../lib/storage.js";
 import { supabase } from "../../lib/supabase.js";
 
-export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, isSuperAdmin = false, isAdmin = false, cloudKey = null, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack, linkedMemberName = "", onLinkName, onUnlinkName }) {
+export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, activeSection = "gents", exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, isSuperAdmin = false, isAdmin = false, cloudKey = null, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack, linkedMemberName = "", onLinkName, onUnlinkName }) {
+  const [compSectionFilter, setCompSectionFilter] = useState("all");
 
   // Admin request state (non-admins only)
   const [requestRoleInput, setRequestRoleInput] = useState("");
@@ -107,13 +108,13 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
         )}
 
         <Row label="Default Section" hint="Which section to show when you open the app" last>
-          <div style={{ display: "flex", gap: "8px" }}>
-            {["gents", "ladies"].map(s => {
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            {[["gents","Gents"],["ladies","Ladies"],["gents-senior","Gents Senior"],["ladies-senior","Ladies Senior"]].map(([s, label]) => {
               const active = (settings.defaultSection || "gents") === s;
               return (
                 <button key={s} onClick={() => { updateSetting("defaultSection", s); setActiveSection(s); }}
-                  style={{ flex: 1, padding: "10px", borderRadius: "8px", border: `2px solid ${active ? GREEN : BORDER}`, background: active ? `${GREEN}08` : SURFACE, cursor: "pointer", fontFamily: F_UI, fontSize: "13px", fontWeight: active ? "600" : "400", color: active ? GREEN : TEXT2, minHeight: "44px" }}>
-                  {s === "gents" ? "Gents" : "Ladies"}
+                  style={{ flex: "1 1 calc(50% - 4px)", padding: "10px 6px", borderRadius: "8px", border: `2px solid ${active ? GREEN : BORDER}`, background: active ? `${GREEN}08` : SURFACE, cursor: "pointer", fontFamily: F_UI, fontSize: "12px", fontWeight: active ? "600" : "400", color: active ? GREEN : TEXT2, minHeight: "44px", textAlign: "center" }}>
+                  {label}
                 </button>
               );
             })}
@@ -165,25 +166,34 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
           </div>
         </div>
         {isSuperAdmin && (
-          <div style={{ padding: "10px 16px", borderBottom: `1px solid ${BORDER}`, background: `${GOLD}10`, display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, flex: 1 }}>Season Year</div>
-            <input
-              type="number" min={2020} max={2100}
-              value={settings.seasonYear || new Date().getFullYear()}
-              onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) updateSetting("seasonYear", Math.min(2100, Math.max(2020, v))); }}
-              style={{ width: "80px", padding: "5px 8px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "13px", fontFamily: F_UI, color: TEXT, background: SURFACE, outline: "none" }}
-            />
-          </div>
+          <>
+            <div style={{ padding: "10px 16px", borderBottom: `1px solid ${BORDER}`, background: `${GOLD}10`, display: "flex", alignItems: "center", gap: "12px" }}>
+              <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, flex: 1 }}>Season Year</div>
+              <input
+                type="number" min={2020} max={2100}
+                value={settings.seasonYear || new Date().getFullYear()}
+                onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) updateSetting("seasonYear", Math.min(2100, Math.max(2020, v))); }}
+                style={{ width: "80px", padding: "5px 8px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "13px", fontFamily: F_UI, color: TEXT, background: SURFACE, outline: "none" }}
+              />
+            </div>
+            <div style={{ padding: "8px 16px", borderBottom: `1px solid ${BORDER}`, display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {[["all","All"],["gents","Gents"],["ladies","Ladies"],["seniors","Seniors"],["mixed","Mixed"]].map(([f, label]) => (
+                <button key={f} onClick={() => setCompSectionFilter(f)} style={{ padding: "4px 10px", borderRadius: "12px", fontSize: "10px", fontFamily: F_UI, fontWeight: compSectionFilter === f ? "700" : "400", border: `1px solid ${compSectionFilter === f ? GREEN : BORDER}`, background: compSectionFilter === f ? `${GREEN}10` : "transparent", color: compSectionFilter === f ? GREEN : TEXT3, cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
         )}
         <div>
-          {tournaments.map((t, i) => {
+          {tournaments.filter(t => compSectionFilter === "all" || (t.section || "gents") === compSectionFilter).map((t, i, arr) => {
             const isPersonal = t.source === "personal";
             return (
-              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 16px", borderBottom: i < tournaments.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 16px", borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                 <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: t.color || GREEN, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: F_SANS, fontSize: "14px", fontWeight: "600", color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
-                  <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>{t.type || "Singles"} · {isPersonal ? "Personal" : "IPBC"}</div>
+                  <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>{t.type || "Singles"} · {isPersonal ? "Personal" : "IPBC"} · {(t.section || "gents").charAt(0).toUpperCase() + (t.section || "gents").slice(1)}</div>
                 </div>
                 {(isSuperAdmin || isPersonal) ? (
                   <div style={{ display: "flex", gap: "5px" }}>

@@ -274,7 +274,7 @@ export default function MembersTab({
       {/* ── Member profile card ── */}
       {viewMember && (() => {
         const mp = getMemberProfile(viewMember);
-        const recordShared = !mp || (mp.shareProfile ?? true);
+        const recordShared = mp && (mp.shareProfile ?? false);
         const memberEntries = recordShared ? (mp?.entries || []) : [];
         const activeEntries = memberEntries.filter(e => e.ties?.length > 0 || e.status === "active");
         const currentYear = new Date().getFullYear();

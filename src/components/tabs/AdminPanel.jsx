@@ -242,14 +242,14 @@ export default function AdminPanel({
       {section === "Draw" && (
         <div>
           <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
-            {[["gents","Gents"],["ladies","Ladies"],["gents-seniors","Gents Seniors"],["ladies-seniors","Ladies Seniors"]].map(([val, label]) => (
+            {[["gents","Gents"],["ladies","Ladies"],["gents-senior","Gents Senior"],["ladies-senior","Ladies Senior"]].map(([val, label]) => (
               <button key={val} onClick={() => setDrawSection(val)}
                 style={{ padding: "6px 13px", borderRadius: "20px", border: `1px solid ${drawSection === val ? MID : BORDER}`, background: drawSection === val ? MID : SURFACE, color: drawSection === val ? "#fff" : TEXT2, fontFamily: F_UI, fontSize: "12px", fontWeight: drawSection === val ? "700" : "400", cursor: "pointer", whiteSpace: "nowrap" }}>
                 {label}
               </button>
             ))}
           </div>
-          <AdminDrawGenerator members={members.filter(m => (m.section || "gents") === drawSection)} tournaments={tournaments} seasonYear={seasonYear} allDraws={allDraws.filter(d => (d.section || "gents") === drawSection)} generatedBy={myName} onDrawSaved={onDrawSaved} isSuperAdmin={isSuperAdmin} activeSection={drawSection} />
+          <AdminDrawGenerator members={members.filter(m => { const ms = m.section || "gents"; const base = drawSection.startsWith("ladies") ? "ladies" : "gents"; const isSeniorDraw = drawSection.includes("senior"); return ms === base || (isSeniorDraw && ms === `${base}-senior`); })} tournaments={tournaments} seasonYear={seasonYear} allDraws={allDraws.filter(d => (d.section || "gents") === drawSection)} generatedBy={myName} onDrawSaved={onDrawSaved} isSuperAdmin={isSuperAdmin} activeSection={drawSection} />
         </div>
       )}
     </div>
@@ -260,10 +260,10 @@ export default function AdminPanel({
 // COMPETITIONS SECTION
 // ─────────────────────────────────────────────
 function AdminCompetitions({ tournaments = [], onEditCompDates }) {
-  const SECTION_LABELS = { gents: "Gents", ladies: "Ladies", "gents-seniors": "Gents Seniors", "ladies-seniors": "Ladies Seniors" };
+  const SECTION_LABELS = { gents: "Gents", ladies: "Ladies", seniors: "Seniors", mixed: "Mixed", "gents-senior": "Gents Senior", "ladies-senior": "Ladies Senior" };
   const grouped = (tournaments || []).filter(t => t && t.source !== "personal")
     .reduce((g, t) => { const s = t.section || "gents"; (g[s] = g[s] || []).push(t); return g; }, {});
-  const sectionOrder = ["gents", "ladies", "gents-seniors", "ladies-seniors"];
+  const sectionOrder = ["gents", "ladies", "seniors", "mixed"];
 
   return (
     <div>
@@ -816,7 +816,7 @@ function AdminLockouts({ lockouts, clearLockout }) {
 // ─────────────────────────────────────────────
 // DRAW GENERATOR SECTION (draw_admin only)
 // ─────────────────────────────────────────────
-const V1_DRAW_IDS  = new Set(['championship','presidents','morton','donaldson','mitchell','mixed-pairs','ladies-championship','ladies-pairs','ladies-triples','ladies-rinks','seniors-championship','seniors-pairs','seniors-triples','ladies-seniors-championship','ladies-seniors-pairs']);
+const V1_DRAW_IDS  = new Set(['championship','presidents','morton','donaldson','mitchell','mixed-pairs','ladies-championship','ladies-presidents','ladies-triples','jenny-brown','marion-carroll','mary-mcguire','club-pairs','three-bowl-pairs','nominated-pairs','senior-singles','senior-pairs','senior-triples','senior-rinks']);
 
 function fisherYates(arr) {
   const a = [...arr];
@@ -891,6 +891,13 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
   const [showPreview, setShowPreview]   = useState(false);
   const [pubRows, setPubRows]           = useState([]);
   const [roundDates, setRoundDates]     = useState(Array(6).fill(""));
+  const [adminMode, setAdminMode]       = useState("draw"); // "draw" | "results"
+  const [adminResults, setAdminResults] = useState([]);
+  const [resultRound, setResultRound]   = useState(1);
+  const [entryKey, setEntryKey]         = useState(null); // slotA index of open row
+  const [entryScoreA, setEntryScoreA]   = useState("");
+  const [entryScoreB, setEntryScoreB]   = useState("");
+  const [entryDate, setEntryDate]       = useState("");
 
   const tournament    = tournaments.find(t => t.id === tournId);
   const isMitchell    = tournId === 'mitchell';
@@ -905,8 +912,11 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     if (existing) {
       supabase.from("draw_pairings").select("*").eq("draw_id", existing.id).order("pairing_index")
         .then(({ data, error }) => { if (!error) setPubRows(data || []); });
+      supabase.from("draw_results").select("*").eq("draw_id", existing.id)
+        .then(({ data }) => { if (data) setAdminResults(data); });
     } else {
       setPubRows([]);
+      setAdminResults([]);
     }
   }, [tournId, allDraws, seasonYear]);
 
@@ -1130,6 +1140,50 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
     setSaving(false);
   }
 
+  function findGroupWinner(groupSlots, results, fromRound) {
+    const r = results.find(res => groupSlots.includes(res.player_slot) && res.round_num === fromRound && (res.result === 'W' || res.result === 'BYE'));
+    return r ? { name: r.player_name, slot: r.player_slot } : null;
+  }
+
+  function computeRoundMatches(slots, results, roundNum) {
+    const groupSize = Math.pow(2, roundNum - 1);
+    const matches = [];
+    for (let g = 0; g < BRACKET_SIZE / groupSize; g += 2) {
+      const gA = Array.from({ length: groupSize }, (_, i) => g * groupSize + i + 1);
+      const gB = Array.from({ length: groupSize }, (_, i) => (g + 1) * groupSize + i + 1);
+      let playerA, playerB;
+      if (roundNum === 1) {
+        const sA = slots.find(s => s.slotIndex === gA[0]);
+        const sB = slots.find(s => s.slotIndex === gB[0]);
+        playerA = sA?.name ? { name: sA.name, slot: sA.slotIndex } : null;
+        playerB = sB?.name ? { name: sB.name, slot: sB.slotIndex } : null;
+      } else {
+        playerA = findGroupWinner(gA, results, roundNum - 1);
+        playerB = findGroupWinner(gB, results, roundNum - 1);
+      }
+      if (!playerA && !playerB) continue;
+      const existing = results.find(r => r.round_num === roundNum && (gA.includes(r.player_slot) || gB.includes(r.player_slot)));
+      matches.push({ gA, gB, playerA, playerB, isBye: !!(playerA && !playerB) || !!(!playerA && playerB), existing });
+    }
+    return matches;
+  }
+
+  async function saveAdminResult(match) {
+    const { playerA, playerB, isBye, gA } = match;
+    const sA = parseInt(entryScoreA), sB = parseInt(entryScoreB);
+    const rows = [];
+    if (isBye) {
+      const p = playerA || playerB;
+      rows.push({ draw_id: existingDraw.id, round_num: resultRound, player_slot: p.slot, player_name: p.name, opponent_name: null, player_score: null, opponent_score: null, result: 'BYE', date_played: entryDate || null });
+    } else {
+      if (playerA) rows.push({ draw_id: existingDraw.id, round_num: resultRound, player_slot: playerA.slot, player_name: playerA.name, opponent_name: playerB.name, player_score: sA, opponent_score: sB, result: sA > sB ? 'W' : 'L', date_played: entryDate || null });
+      if (playerB) rows.push({ draw_id: existingDraw.id, round_num: resultRound, player_slot: playerB.slot, player_name: playerB.name, opponent_name: playerA.name, player_score: sB, opponent_score: sA, result: sB > sA ? 'W' : 'L', date_played: entryDate || null });
+    }
+    const { data } = await supabase.from("draw_results").upsert(rows, { onConflict: "draw_id,round_num,player_slot" }).select();
+    if (data) setAdminResults(prev => { const f = prev.filter(r => !rows.some(nr => nr.player_slot === r.player_slot && nr.round_num === r.round_num)); return [...f, ...data]; });
+    setEntryKey(null); setEntryScoreA(""); setEntryScoreB(""); setEntryDate("");
+  }
+
   const filteredMembers = members.filter(m => m.name.toUpperCase().includes(memberSearch.toUpperCase()));
   const entrantCount    = selected.size;
   const overflowCount   = Math.max(0, entrantCount - BRACKET_SIZE);
@@ -1279,27 +1333,139 @@ function AdminDrawGenerator({ members, tournaments, seasonYear, allDraws, genera
             )}
           </div>
         )}
-        {/* Round date editor */}
-        <div style={{ marginBottom: "14px" }}>
-          <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Round Dates</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {["1st Round","2nd Round","3rd Round","4th Round","Semi-Final","Final"].map((label, ri) => (
-              <div key={ri} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ width: "90px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, flexShrink: 0 }}>{label}</span>
-                <input type="date" value={roundDates[ri] || ""} onChange={e => saveRoundDate(ri, e.target.value)}
-                  style={{ flex: 1, padding: "6px 8px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontFamily: F_UI, fontSize: "12px", color: TEXT, background: SURFACE, outline: "none" }} />
-                {roundDates[ri] && <span style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, whiteSpace: "nowrap" }}>{fmtRoundDate(roundDates[ri])}</span>}
-              </div>
-            ))}
-          </div>
+        {/* Mode toggle */}
+        <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
+          {[["draw","📋  Draw"], ["results","⚽  Enter Results"]].map(([mode, label]) => (
+            <button key={mode} onClick={() => setAdminMode(mode)}
+              style={{ flex: 1, padding: "9px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", border: `1px solid ${adminMode === mode ? MID : BORDER}`, borderRadius: "8px", cursor: "pointer", background: adminMode === mode ? MID : SURFACE, color: adminMode === mode ? "#fff" : TEXT2 }}>
+              {label}
+            </button>
+          ))}
         </div>
-        <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
-        {pubRows.length === 0
-          ? <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, textAlign: "center", padding: "20px" }}>Loading…</div>
-          : viewMode === "bracket"
-            ? <BracketTreeView slots={slots} prelims={prelims} roundDates={roundDates} />
-            : <BracketDisplay slots={slots} prelims={prelims} />
-        }
+
+        {adminMode === "draw" ? (
+          <>
+            {/* Round date editor */}
+            <div style={{ marginBottom: "14px" }}>
+              <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Round Dates</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {["1st Round","2nd Round","3rd Round","4th Round","Semi-Final","Final"].map((label, ri) => (
+                  <div key={ri} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ width: "90px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, flexShrink: 0 }}>{label}</span>
+                    <input type="date" value={roundDates[ri] || ""} onChange={e => saveRoundDate(ri, e.target.value)}
+                      style={{ flex: 1, padding: "6px 8px", border: `1px solid ${BORDER}`, borderRadius: "6px", fontFamily: F_UI, fontSize: "12px", color: TEXT, background: SURFACE, outline: "none" }} />
+                    {roundDates[ri] && <span style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, whiteSpace: "nowrap" }}>{fmtRoundDate(roundDates[ri])}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
+            {pubRows.length === 0
+              ? <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, textAlign: "center", padding: "20px" }}>Loading…</div>
+              : viewMode === "bracket"
+                ? <BracketTreeView slots={slots} prelims={prelims} roundDates={roundDates} />
+                : <BracketDisplay slots={slots} prelims={prelims} />
+            }
+          </>
+        ) : (() => {
+          const ROUND_LABELS = ["","1st Round","2nd Round","3rd Round","4th Round","Semi-Final","Final"];
+          const matches = computeRoundMatches(slots, adminResults, resultRound);
+          const done = matches.filter(m => m.existing).length;
+          const scoreANum = parseInt(entryScoreA), scoreBNum = parseInt(entryScoreB);
+          const autoResult = entryScoreA !== "" && entryScoreB !== "" && !isNaN(scoreANum) && !isNaN(scoreBNum)
+            ? (scoreANum > scoreBNum ? "A" : scoreANum < scoreBNum ? "B" : null) : null;
+          return (
+            <div>
+              {/* Round pills */}
+              <div style={{ display: "flex", gap: "5px", marginBottom: "12px", overflowX: "auto" }}>
+                {[1,2,3,4,5,6].map(r => (
+                  <button key={r} onClick={() => { setResultRound(r); setEntryKey(null); }}
+                    style={{ padding: "5px 12px", borderRadius: "20px", border: `1px solid ${resultRound === r ? MID : BORDER}`, background: resultRound === r ? MID : SURFACE, color: resultRound === r ? "#fff" : TEXT2, fontFamily: F_UI, fontSize: "11px", fontWeight: resultRound === r ? "700" : "400", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                    {ROUND_LABELS[r]}
+                  </button>
+                ))}
+              </div>
+              {/* Progress */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                <div style={{ flex: 1, height: "5px", background: BORDER, borderRadius: "3px" }}>
+                  <div style={{ height: "100%", width: matches.length ? `${(done/matches.length)*100}%` : "0%", background: GREEN, borderRadius: "3px", transition: "width 0.3s" }} />
+                </div>
+                <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, whiteSpace: "nowrap" }}>{done}/{matches.length} entered</div>
+              </div>
+              {matches.length === 0 && (
+                <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, textAlign: "center", padding: "30px" }}>
+                  {resultRound === 1 ? "No players in this draw yet." : "No results from previous round yet — enter results for earlier rounds first."}
+                </div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {matches.map((match) => {
+                  const key = match.gA[0];
+                  const isOpen = entryKey === key;
+                  const hasResult = !!match.existing;
+                  const winnerSlot = match.existing?.result === 'W' ? match.existing.player_slot : match.existing?.result === 'BYE' ? (match.playerA || match.playerB)?.slot : null;
+                  const winnerName = match.existing?.result === 'W' ? match.existing.player_name : match.existing?.result === 'BYE' ? (match.playerA || match.playerB)?.name : null;
+                  return (
+                    <div key={key} style={{ border: `1px solid ${hasResult ? GREEN+"55" : isOpen ? MID+"88" : BORDER}`, borderRadius: "10px", overflow: "hidden" }}>
+                      <div style={{ padding: "11px 13px", display: "flex", alignItems: "center", gap: "10px", background: hasResult ? GREEN+"08" : SURFACE, cursor: "pointer" }}
+                        onClick={() => { setEntryKey(isOpen ? null : key); setEntryScoreA(match.existing?.player_score ?? ""); setEntryScoreB(match.existing?.opponent_score ?? ""); setEntryDate(match.existing?.date_played || ""); }}>
+                        <div style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: match.playerA ? TEXT : TEXT3 }}>{match.playerA?.name || "TBD"}</div>
+                        <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textAlign: "center", minWidth: "42px" }}>
+                          {hasResult && !match.isBye ? `${match.existing.player_score}–${match.existing.opponent_score}` : match.isBye ? "BYE" : "vs"}
+                        </div>
+                        <div style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: match.playerB ? TEXT : TEXT3, textAlign: "right" }}>{match.playerB?.name || (match.isBye ? "" : "TBD")}</div>
+                        <div style={{ fontFamily: F_UI, fontSize: "12px", color: hasResult ? GREEN : MID, fontWeight: "700", minWidth: "16px", textAlign: "right" }}>{hasResult ? "✓" : "›"}</div>
+                      </div>
+                      {isOpen && (
+                        <div style={{ padding: "12px 13px", borderTop: `1px solid ${BORDER}`, background: SURFACE2 }}>
+                          {match.isBye ? (
+                            <div style={{ display: "flex", gap: "6px" }}>
+                              <button onClick={() => saveAdminResult(match)}
+                                style={{ flex: 1, padding: "10px", background: GOLD_MUTED, border: "none", borderRadius: "8px", color: "#fff", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>
+                                Record BYE
+                              </button>
+                              <button onClick={() => setEntryKey(null)}
+                                style={{ padding: "10px 14px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, fontFamily: F_UI, fontSize: "13px", cursor: "pointer" }}>
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{ display: "flex", gap: "6px", alignItems: "center", marginBottom: "8px" }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, marginBottom: "3px" }}>{match.playerA?.name}</div>
+                                  <input type="number" min="0" max="99" value={entryScoreA} onChange={e => setEntryScoreA(e.target.value)} placeholder="0" autoFocus
+                                    style={{ width: "100%", boxSizing: "border-box", padding: "10px", border: `1px solid ${autoResult === "A" ? GREEN : autoResult === "B" ? LOSS_RED : BORDER}`, borderRadius: "8px", fontSize: "22px", fontFamily: F_SANS, fontWeight: "700", color: TEXT, background: SURFACE, outline: "none", textAlign: "center" }} />
+                                </div>
+                                <div style={{ fontFamily: F_UI, fontSize: "18px", color: TEXT3, paddingTop: "16px" }}>–</div>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, marginBottom: "3px", textAlign: "right" }}>{match.playerB?.name}</div>
+                                  <input type="number" min="0" max="99" value={entryScoreB} onChange={e => setEntryScoreB(e.target.value)} placeholder="0"
+                                    style={{ width: "100%", boxSizing: "border-box", padding: "10px", border: `1px solid ${autoResult === "B" ? GREEN : autoResult === "A" ? LOSS_RED : BORDER}`, borderRadius: "8px", fontSize: "22px", fontFamily: F_SANS, fontWeight: "700", color: TEXT, background: SURFACE, outline: "none", textAlign: "center" }} />
+                                </div>
+                              </div>
+                              <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)}
+                                style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", border: `1px solid ${BORDER}`, borderRadius: "8px", fontSize: "14px", fontFamily: F_UI, color: TEXT, background: SURFACE, outline: "none", marginBottom: "8px" }} />
+                              <div style={{ display: "flex", gap: "6px" }}>
+                                <button onClick={() => saveAdminResult(match)} disabled={!autoResult}
+                                  style={{ flex: 1, padding: "10px", background: autoResult ? GREEN : BORDER, border: "none", borderRadius: "8px", color: "#fff", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: autoResult ? "pointer" : "default" }}>
+                                  Save Result
+                                </button>
+                                <button onClick={() => setEntryKey(null)}
+                                  style={{ padding: "10px 14px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, fontFamily: F_UI, fontSize: "13px", cursor: "pointer" }}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
         <div style={{ display: "flex", gap: "8px", marginTop: "16px", flexWrap: "wrap" }}>
           <button onClick={() => setShowPreview(true)}
             style={{ flex: 1, minWidth: "120px", padding: "11px", border: `1px solid ${MID}`, borderRadius: "8px", background: SURFACE, color: MID, fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>

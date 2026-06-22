@@ -1,44 +1,100 @@
 // ── TOURNAMENT DATA ────────────────────────────────────────────────────────
 export const DEFAULT_TOURNAMENTS = [
+  // ── GENTS ──────────────────────────────────────────────────────────────
   {
-    id: "championship", name: "Championship", type: "Singles", color: "#ef4444",
+    id: "championship", name: "Championship", type: "Singles", color: "#ef4444", section: "gents",
     rounds: ["1st Round\n9th June","2nd Round\n30th June","3rd Round\n23rd July","4th Round\n11th Aug","Semi Final\n21st Aug","Final"],
   },
   {
-    id: "presidents", name: "Presidents", type: "Singles", color: "#f59e0b",
+    id: "presidents", name: "Presidents", type: "Singles", color: "#f59e0b", section: "gents",
     rounds: ["1st Round\n11th June","2nd Round\n29th June","3rd Round\n20th July","4th Round\n10th Aug","Semi Final\n21st Aug","Final"],
   },
   {
-    id: "morton", name: "Morton", type: "Singles", color: "#06b6d4",
+    id: "morton", name: "Morton", type: "Singles", color: "#06b6d4", section: "gents",
     rounds: ["1st Round\n28th May","2nd Round\n18th June","3rd Round\n9th July","4th Round\n30th July","Semi Final\n21st Aug","Final"],
   },
   {
-    id: "donaldson", name: "Donaldson", type: "Singles", color: "#ec4899",
+    id: "donaldson", name: "Donaldson", type: "Singles", color: "#ec4899", section: "gents",
     rounds: ["1st Round\n28th May","2nd Round\n17th June","3rd Round\n14th July","4th Round\n3rd Aug","Semi Final\n21st Aug","Final"],
   },
   {
-    id: "mitchell", name: "Mitchell Handicap", type: "Handicap", color: "#84cc16",
+    id: "mitchell", name: "Mitchell Handicap", type: "Handicap", color: "#84cc16", section: "gents",
     rounds: ["1st Round\n28th May","2nd Round\n18th June","3rd Round\n9th July","4th Round\n30th July","Semi Final\n21st Aug","Final"],
   },
   {
-    id: "pairs", name: "Pairs", type: "Pairs", color: "#f97316",
+    id: "pairs", name: "Pairs", type: "Pairs", color: "#f97316", section: "gents",
     rounds: ["1st Round\n18th June","2nd Round\n9th July","3rd Round\n27th July","Semi Final\n21st Aug","Final"],
   },
   {
-    id: "triples", name: "Triples", type: "Triples", color: "#10b981",
+    id: "triples", name: "Triples", type: "Triples", color: "#10b981", section: "gents",
     rounds: ["1st Round\n4th June","2nd Round\n2nd July","3rd Round\n27th July","Semi Final\n21st Aug","Final"],
   },
   {
-    id: "rinks", name: "Rinks", type: "Rinks", color: "#8b5cf6",
+    id: "rinks", name: "Rinks", type: "Rinks", color: "#8b5cf6", section: "gents",
     rounds: ["1st Round","2nd Round","Semi Final","Final"],
   },
+  // ── MIXED (show to all sections) ────────────────────────────────────────
   {
-    id: "mixed-pairs", name: "Mixed Pairs", type: "Mixed Pairs", color: "#a78bfa",
+    id: "mixed-pairs", name: "Mixed Pairs", type: "Mixed Pairs", color: "#a78bfa", section: "mixed",
     rounds: ["1st Round\n1st June","2nd Round\n23rd June","3rd Round\n13th July","4th Round\n27th July","Semi Final\n21st Aug","Final"],
   },
   {
-    id: "balloted-pairs", name: "Balloted Pairs", type: "Pairs", color: "#c084fc",
+    id: "balloted-pairs", name: "Balloted Pairs", type: "Pairs", color: "#c084fc", section: "mixed",
     rounds: ["1st Round\n26th May","2nd Round\n15th June","3rd Round\n6th July","4th Round\n3rd Aug","Final\n21st Aug"],
+  },
+  // ── LADIES ──────────────────────────────────────────────────────────────
+  {
+    id: "ladies-championship", name: "Club Championship", type: "Singles", color: "#f43f5e", section: "ladies",
+    rounds: [],
+  },
+  {
+    id: "ladies-presidents", name: "Presidents", type: "Singles", color: "#0ea5e9", section: "ladies",
+    rounds: [],
+  },
+  {
+    id: "ladies-triples", name: "Triples", type: "Triples", color: "#d946ef", section: "ladies",
+    rounds: [],
+  },
+  {
+    id: "jenny-brown", name: "Jenny Brown", type: "Singles", color: "#14b8a6", section: "ladies",
+    rounds: [],
+  },
+  {
+    id: "marion-carroll", name: "Marion Carroll", type: "Singles", color: "#6366f1", section: "ladies",
+    rounds: [],
+  },
+  {
+    id: "mary-mcguire", name: "Mary McGuire", type: "Singles", color: "#e879f9", section: "ladies",
+    rounds: [],
+  },
+  {
+    id: "club-pairs", name: "Club Pairs", type: "Pairs", color: "#22d3ee", section: "ladies",
+    rounds: [],
+  },
+  {
+    id: "three-bowl-pairs", name: "3 Bowl Pairs", type: "Pairs", color: "#a3e635", section: "ladies",
+    rounds: [],
+  },
+  {
+    id: "nominated-pairs", name: "Nominated Pairs", type: "Pairs", color: "#f472b6", section: "ladies",
+    rounds: [],
+  },
+  // ── SENIORS (show to both Gents Senior AND Ladies Senior) ───────────────
+  {
+    id: "senior-singles", name: "Senior Singles", type: "Singles", color: "#64748b", section: "seniors",
+    rounds: [],
+  },
+  {
+    id: "senior-pairs", name: "Senior Pairs", type: "Pairs", color: "#78716c", section: "seniors",
+    rounds: [],
+  },
+  {
+    id: "senior-triples", name: "Senior Triples", type: "Triples", color: "#92400e", section: "seniors",
+    rounds: [],
+  },
+  {
+    id: "senior-rinks", name: "Senior Rinks", type: "Rinks", color: "#065f46", section: "seniors",
+    rounds: [],
   },
 ];
 
