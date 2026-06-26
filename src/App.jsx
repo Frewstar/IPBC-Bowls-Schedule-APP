@@ -202,26 +202,20 @@ export default function BowlsTracker() {
 
   async function claimSuperAdmin() {
     if (!cloudKey || !myName) return;
-    const nameUpper = myName.toUpperCase();
-    const { data: existing } = await supabase.from("admins").select("cloud_key, player_name").eq("role", "super_admin");
-    // If the existing super admin record belongs to this user, just restore the role locally
-    const alreadyMe = existing?.some(r => r.cloud_key === cloudKey || r.player_name === nameUpper);
-    if (alreadyMe) {
-      setAdminRole("super_admin");
-      setAdminClaimMsg("Super admin restored!");
-      setTimeout(() => setAdminClaimMsg(null), 4000);
-      return;
-    }
-    if (existing && existing.length > 0) {
-      setAdminClaimMsg("A super admin already exists.");
-      setTimeout(() => setAdminClaimMsg(null), 4000);
-      return;
-    }
-    const { error } = await supabase.from("admins").upsert({ cloud_key: cloudKey, player_name: nameUpper, role: "super_admin", display_name: nameUpper }, { onConflict: "cloud_key" });
-    if (!error) {
-      setAdminRole("super_admin");
-      setAdminClaimMsg("You are now super admin!");
-    } else {
+    try {
+      const { data, error } = await supabase.functions.invoke("claim-super-admin", {
+        body: { cloud_key: cloudKey, player_name: myName },
+      });
+      if (error) throw error;
+      if (data?.status === "CLAIMED" || data?.status === "RESTORED") {
+        setAdminRole("super_admin");
+        setAdminClaimMsg(data.status === "RESTORED" ? "Super admin restored!" : "You are now super admin!");
+      } else if (data?.status === "EXISTS") {
+        setAdminClaimMsg("A super admin already exists.");
+      } else {
+        setAdminClaimMsg("Unexpected response — try again.");
+      }
+    } catch {
       setAdminClaimMsg("Error claiming super admin.");
     }
     setTimeout(() => setAdminClaimMsg(null), 4000);

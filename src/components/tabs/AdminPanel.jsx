@@ -4,6 +4,15 @@ import { Users, Calendar, Shield, Lock, Plus, Pencil, Trash2, Crown, Trophy, Shu
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { supabase } from "../../lib/supabase.js";
 
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolbar = true } = {}) {
   const LABELS  = ["1st Round", "2nd Round", "3rd Round", "4th Round", "Semi-Final", "Final"];
   const ROW_H   = 13;
@@ -40,7 +49,7 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
     const filled = !!s?.name;
     nameRows += `<div style="height:${ROW_H}px;display:flex;align-items:flex-end;position:relative;">
       <span style="width:${NUM_W}px;font-size:8px;color:#666;text-align:right;padding-right:3px;flex-shrink:0;padding-bottom:1px;">${i + 1}</span>
-      <div style="width:${NAME_W}px;border-bottom:1px solid ${filled ? "#333" : "#ccc"};font-size:${filled ? "10" : "9"}px;font-weight:${filled ? "700" : "400"};color:${filled ? "#111" : "#ccc"};padding-left:3px;padding-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s?.name ? s.name + (s.handicap ? ` (${s.handicap})` : "") : ""}</div>
+      <div style="width:${NAME_W}px;border-bottom:1px solid ${filled ? "#333" : "#ccc"};font-size:${filled ? "10" : "9"}px;font-weight:${filled ? "700" : "400"};color:${filled ? "#111" : "#ccc"};padding-left:3px;padding-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s?.name ? escapeHtml(s.name) + (s.handicap ? ` (${escapeHtml(s.handicap)})` : "") : ""}</div>
     </div>`;
   }
 
@@ -82,15 +91,16 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
     <p style="font-size:8px;color:#666;margin-bottom:5px;">Play these matches first — winners enter the main draw.</p>
     <table style="border-collapse:collapse;font-size:10px;">
       ${prelims.map(m => `<tr>
-        <td style="padding:3px 8px 3px 0;font-weight:600;">${m.p1?.name || ""}${m.p1?.handicap ? ` (${m.p1.handicap})` : ""}</td>
+        <td style="padding:3px 8px 3px 0;font-weight:600;">${escapeHtml(m.p1?.name || "")}${m.p1?.handicap ? ` (${escapeHtml(m.p1.handicap)})` : ""}</td>
         <td style="padding:3px 8px;color:#888;font-size:8px;">vs</td>
-        <td style="padding:3px 8px 3px 0;font-weight:600;">${m.p2 ? m.p2.name + (m.p2.handicap ? ` (${m.p2.handicap})` : "") : "BYE"}</td>
+        <td style="padding:3px 8px 3px 0;font-weight:600;">${m.p2 ? escapeHtml(m.p2.name) + (m.p2.handicap ? ` (${escapeHtml(m.p2.handicap)})` : "") : "BYE"}</td>
         <td style="padding:3px 0;color:#666;font-size:9px;">Score _____ – _____</td>
       </tr>`).join("")}
     </table>
   </div>` : "";
 
-  const safeName = (draw?.tournament_name || "Draw").replace(/"/g, "");
+  const safeTournName = draw?.tournament_name || "Draw";
+  const safeYear      = String(draw?.season_year || "");
   const toolbarHtml = withToolbar ? `
   <div class="toolbar" style="display:flex;gap:8px;padding:10px 14px;background:#f5f5f5;border-bottom:1px solid #ddd;margin:-10px -14px 12px;">
     <button onclick="doPrint()" style="flex:1;padding:9px 16px;background:#1a5e35;color:#fff;border:none;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;">🖨️ Print</button>
@@ -105,7 +115,7 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
 <html>
 <head>
 <meta charset="UTF-8">
-<title>${safeName} ${draw?.season_year || ""}</title>
+<title>${escapeHtml(safeTournName)} ${escapeHtml(safeYear)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:Arial,sans-serif;color:#111;padding:10px 14px;}
@@ -117,8 +127,8 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
   ${toolbarHtml}
   <div style="text-align:center;border-bottom:2px solid #111;padding-bottom:7px;margin-bottom:8px;">
     <div style="font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:#777;">Irvine Park Bowling Club</div>
-    <div style="font-size:17px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">${draw?.tournament_name || "Competition"}</div>
-    <div style="font-size:9px;color:#666;margin-top:2px;">${draw?.season_year || ""} Season</div>
+    <div style="font-size:17px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">${escapeHtml(safeTournName)}</div>
+    <div style="font-size:9px;color:#666;margin-top:2px;">${escapeHtml(safeYear)} Season</div>
   </div>
   ${prelimHtml}
   <div style="position:relative;display:flex;align-items:flex-start;">
@@ -137,7 +147,7 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
     function doPrint() { window.print(); }
     function doSavePdf() {
       var orig = document.title;
-      document.title = "${safeName}_${draw?.season_year || ""}.pdf";
+      document.title = ${JSON.stringify(`${safeTournName}_${safeYear}.pdf`)};
       window.print();
       document.title = orig;
     }
@@ -509,11 +519,10 @@ function AppAccounts({ registeredUsers, lockouts = [], lockAppAccount, unlockApp
         const locked = isLocked(u.player_name);
         const lockRow = getLockoutRow(u.player_name);
         const namePart = getLockoutName(u.player_name);
-        const pin = u.player_name.split("-").slice(-1)[0];
         return (
           <div key={u.player_name} style={{ background: SURFACE, border: `1px solid ${locked ? LOSS_RED + "66" : BORDER}`, borderRadius: "10px", padding: "12px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{namePart} <span style={{ color: TEXT3, fontWeight: "400" }}>•••• {pin}</span></div>
+              <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT, display: "flex", alignItems: "center", gap: "5px" }}>{namePart} <Lock size={12} strokeWidth={1.8} color={TEXT3} /></div>
               <div style={{ fontFamily: F_UI, fontSize: "11px", color: locked ? LOSS_RED : TEXT3, marginTop: "2px" }}>
                 {locked ? (lockRow?.locked_until === "2099-01-01T00:00:00.000Z" ? "Locked by admin" : "Locked (too many attempts)") : "Active"}
               </div>
