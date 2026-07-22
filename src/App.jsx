@@ -24,7 +24,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Download, Upload,
   Clock, MapPin, Settings, HelpCircle, Share2,
   Shield, Info, RefreshCw, Target, Search,
-  Medal, Bell, Trophy, Lock,
+  Medal, Bell, Trophy, Lock, Radio,
 } from "lucide-react";
 
 // ── lib imports ──────────────────────────────────────────────────────────────
@@ -45,6 +45,7 @@ import FixturesTab from "./components/tabs/Fixtures.jsx";
 import FindTab from "./components/tabs/Find.jsx";
 import DrawsTab from "./components/tabs/Draws.jsx";
 import MembersTab from "./components/tabs/Members.jsx";
+import LiveGamesTab from "./components/tabs/LiveGames.jsx";
 import AdminPanel from "./components/tabs/AdminPanel.jsx";
 import DrawResultSheet from "./components/DrawResultSheet.jsx";
 
@@ -1553,6 +1554,7 @@ export default function BowlsTracker() {
 
   const TABS = [
     { id: "myties",      label: "My Ties",   Icon: BowlsBallIcon },
+    { id: "live",        label: "Live",      Icon: Radio      },
     { id: "search",      label: "Find",      Icon: Binoculars },
     { id: "honours",     label: "Honours",   Icon: Award      },
     { id: "fixtures",    label: "Fixtures",  Icon: Calendar   },
@@ -3149,6 +3151,13 @@ export default function BowlsTracker() {
         ══════════════════════════════════════════ */}
         {activeTab === "search" && (
           <FindTab search={search} setSearch={setSearch} playerGames={playerGames} tournaments={TOURNAMENTS} publishedDraws={publishedDraws} drawPairings={drawPairings} onH2H={openH2H} />
+        )}
+
+        {/* ══════════════════════════════════════════
+            LIVE GAMES TAB
+        ══════════════════════════════════════════ */}
+        {activeTab === "live" && (
+          <LiveGamesTab myName={myName} cloudKey={cloudKey} isAdmin={isAdmin} setActiveTab={setActiveTab} />
         )}
 
         {/* ══════════════════════════════════════════
