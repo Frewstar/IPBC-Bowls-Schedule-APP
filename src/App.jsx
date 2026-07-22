@@ -3157,7 +3157,7 @@ export default function BowlsTracker() {
             LIVE GAMES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "live" && (
-          <LiveGamesTab myName={myName} cloudKey={cloudKey} isAdmin={isAdmin} setActiveTab={setActiveTab} />
+          <LiveGamesTab myName={myName} cloudKey={cloudKey} isAdmin={isAdmin} setActiveTab={setActiveTab} members={members} />
         )}
 
         {/* ══════════════════════════════════════════

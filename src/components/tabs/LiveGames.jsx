@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-  Radio, Plus, Minus, ChevronLeft, MapPin,
-  Share2, Trash2, Flag, CircleCheckBig,
+  Radio, Plus, Minus, ChevronLeft, MapPin, X,
+  Share2, Trash2, Flag, CircleCheckBig, Users,
 } from "lucide-react";
 import {
   GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER,
@@ -10,6 +10,17 @@ import {
 import { supabase } from "../../lib/supabase.js";
 
 const LIVE_RED = "#c0392b";
+const HOME_GROUND = "Irvine Park Bowling Club";
+
+// discipline → players per side, and score structure
+const DISCIPLINES = [
+  { id: "singles", label: "Singles",    players: 1, format: "single" },
+  { id: "pairs",   label: "Pairs",      players: 2, format: "single" },
+  { id: "triples", label: "Triples",    players: 3, format: "single" },
+  { id: "rinks",   label: "Rinks",      players: 4, format: "single" },
+  { id: "team",    label: "Team match", players: 0, format: "rinks"  },
+];
+const discLabel = id => (DISCIPLINES.find(d => d.id === id) || {}).label || "";
 
 // ── helpers ──────────────────────────────────────────────────────────────
 function totalsFor(g) {
@@ -31,21 +42,23 @@ function timeAgo(iso) {
   if (mins < 60) return `${mins} min ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }) {
+function mapsUrl(location) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+}
+
+export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, members = [] }) {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("list");   // "list" | "detail" | "create"
   const [openId, setOpenId] = useState(null);
   const [toast, setToast] = useState(null);
-  const [, forceTick] = useState(0);           // re-render for "time ago"
+  const [, forceTick] = useState(0);
 
   const canCreate = !!(myName && cloudKey);
 
-  // ── initial load + realtime subscription ──
   useEffect(() => {
     let alive = true;
     supabase.from("live_games").select("*").order("updated_at", { ascending: false })
@@ -66,7 +79,6 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
     return () => { alive = false; supabase.removeChannel(channel); };
   }, []);
 
-  // tick every 30s so "time ago" stays fresh
   useEffect(() => {
     const t = setInterval(() => forceTick(n => n + 1), 30000);
     return () => clearInterval(t);
@@ -77,15 +89,11 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
   const openGame = openId ? games.find(g => g.id === openId) : null;
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 2200); }
+  function canEdit(g) { return !!cloudKey && g && (g.creator_cloudkey === cloudKey || isAdmin); }
 
-  function canEdit(g) {
-    return !!cloudKey && g && (g.creator_cloudkey === cloudKey || isAdmin);
-  }
-
-  // ── mutations ──
   async function patchGame(id, patch) {
     const full = { ...patch, updated_at: new Date().toISOString(), last_updated_by: myName || "Someone" };
-    setGames(prev => prev.map(g => (g.id === id ? { ...g, ...full } : g)));  // optimistic
+    setGames(prev => prev.map(g => (g.id === id ? { ...g, ...full } : g)));
     const { error } = await supabase.from("live_games").update(full).eq("id", id);
     if (error) showToast("Couldn't save — try again");
   }
@@ -96,17 +104,14 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
     );
     patchGame(g.id, { rinks });
   }
-
   function bumpSingle(g, side, delta) {
     const key = side === "home" ? "home_score" : "away_score";
     patchGame(g.id, { [key]: Math.max(0, (Number(g[key]) || 0) + delta) });
   }
-
   async function setFinished(g, finished) {
     await patchGame(g.id, { status: finished ? "finished" : "live" });
     showToast(finished ? "Marked as finished" : "Back to live");
   }
-
   async function deleteGame(g) {
     if (!window.confirm(`Delete "${g.home_team} v ${g.away_team}"? This can't be undone.`)) return;
     setGames(prev => prev.filter(x => x.id !== g.id));
@@ -117,28 +122,23 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
 
   function shareGame(g) {
     const t = totalsFor(g);
-    const lead = `🎳 ${g.home_team} ${t.home}–${t.away} ${g.away_team}`;
-    const occ = g.title ? ` (${g.title})` : "";
-    let body = lead + occ;
+    let body = `🎳 ${g.home_team} ${t.home}–${t.away} ${g.away_team}`;
+    if (g.title) body += ` (${g.title})`;
+    if (g.discipline && g.discipline !== "team") body += `\n${discLabel(g.discipline)}`;
     if (g.format === "rinks" && (g.rinks || []).length) {
       body += "\n" + g.rinks.map(r => `${r.label}: ${r.home || 0}–${r.away || 0}`).join("\n");
     }
+    if (g.location) body += `\n📍 ${g.location}`;
     body += `\n\n${g.status === "finished" ? "Full time" : "Live now"} · IPBC Bowls app`;
-    if (navigator.share) {
-      navigator.share({ text: body }).catch(() => {});
-    } else {
-      navigator.clipboard?.writeText(body).then(() => showToast("Score copied — paste into WhatsApp"));
-    }
+    if (navigator.share) navigator.share({ text: body }).catch(() => {});
+    else navigator.clipboard?.writeText(body).then(() => showToast("Score copied — paste into WhatsApp"));
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  //  CREATE VIEW
   // ════════════════════════════════════════════════════════════════════════
   if (view === "create") {
     return (
       <CreateGame
-        myName={myName}
-        cloudKey={cloudKey}
+        myName={myName} cloudKey={cloudKey} members={members}
         onCancel={() => setView("list")}
         onCreated={id => { setOpenId(id); setView("detail"); }}
         showToast={showToast}
@@ -148,41 +148,47 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  DETAIL / SCOREBOARD VIEW
-  // ════════════════════════════════════════════════════════════════════════
   if (view === "detail" && openGame) {
     const g = openGame;
     const t = totalsFor(g);
     const editable = canEdit(g);
     const leadHome = t.home > t.away, leadAway = t.away > t.home;
+    const homePlayers = Array.isArray(g.home_players) ? g.home_players : [];
+    const awayPlayers = Array.isArray(g.away_players) ? g.away_players : [];
 
     return (
       <div>
-        <button onClick={() => { setView("list"); setOpenId(null); }}
-          style={backBtn}>
+        <button onClick={() => { setView("list"); setOpenId(null); }} style={backBtn}>
           <ChevronLeft size={14} strokeWidth={2} />All games
         </button>
 
         {/* Scoreboard hero */}
         <div style={{ background: GREEN, borderRadius: "14px", padding: "18px 16px", marginBottom: "14px", boxShadow: "0 4px 16px rgba(74,14,31,0.18)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            {g.status === "live"
-              ? <LiveBadge />
-              : <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD, letterSpacing: "0.14em", textTransform: "uppercase", border: `1px solid ${GOLD}66`, borderRadius: "20px", padding: "2px 10px" }}>Full time</span>}
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              {g.venue && <span style={{ fontFamily: F_UI, fontSize: "11px", color: "rgba(255,255,255,0.7)", display: "inline-flex", alignItems: "center", gap: "3px" }}><MapPin size={11} strokeWidth={1.75} />{g.venue === "home" ? "Home" : g.venue === "away" ? "Away" : g.venue}</span>}
-              <button onClick={() => shareGame(g)} style={{ background: "rgba(255,255,255,0.12)", border: "none", borderRadius: "8px", padding: "6px", cursor: "pointer", color: "#fff", display: "flex" }} title="Share score">
-                <Share2 size={15} strokeWidth={1.75} />
-              </button>
-            </div>
+            {g.status === "live" ? <LiveBadge /> : <FullTimeBadge />}
+            <button onClick={() => shareGame(g)} style={{ background: "rgba(255,255,255,0.12)", border: "none", borderRadius: "8px", padding: "6px", cursor: "pointer", color: "#fff", display: "flex" }} title="Share score">
+              <Share2 size={15} strokeWidth={1.75} />
+            </button>
           </div>
 
-          {g.title && <div style={{ fontFamily: F_UI, fontSize: "12px", color: GOLD, fontWeight: "600", textAlign: "center", marginBottom: "8px", letterSpacing: "0.04em" }}>{g.title}</div>}
+          <div style={{ textAlign: "center", marginBottom: "10px", display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" }}>
+            {(g.title || g.discipline) && (
+              <div style={{ fontFamily: F_UI, fontSize: "12px", color: GOLD, fontWeight: "600", letterSpacing: "0.04em" }}>
+                {[g.title, g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : (g.format === "rinks" ? "Team match" : "")].filter(Boolean).join(" · ")}
+              </div>
+            )}
+            {g.location && (
+              <a href={mapsUrl(g.location)} target="_blank" rel="noreferrer"
+                style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.85)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <MapPin size={12} strokeWidth={1.75} color={GOLD} />{g.location}
+              </a>
+            )}
+          </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: "8px" }}>
-            <TeamCol name={g.home_team} score={t.home} lead={leadHome} />
-            <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: "rgba(255,255,255,0.5)" }}>–</div>
-            <TeamCol name={g.away_team} score={t.away} lead={leadAway} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "start", gap: "8px" }}>
+            <TeamCol name={g.home_team} score={t.home} lead={leadHome} players={homePlayers} />
+            <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: "rgba(255,255,255,0.5)", paddingTop: "22px" }}>–</div>
+            <TeamCol name={g.away_team} score={t.away} lead={leadAway} players={awayPlayers} />
           </div>
 
           {g.last_updated_by && (
@@ -192,15 +198,13 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
           )}
         </div>
 
-        {/* View-only note */}
         {!editable && g.status === "live" && (
           <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, display: "flex", alignItems: "center", gap: "8px" }}>
             <Radio size={14} strokeWidth={1.75} color={GOLD_MUTED} />
-            Following live — the score updates automatically. Only {g.creator_name || "the organiser"} & admins can edit.
+            Following live — updates automatically. Only {g.creator_name || "the organiser"} & admins can edit.
           </div>
         )}
 
-        {/* Rinks / single score editor */}
         {g.format === "rinks" ? (
           <div>
             <div style={sectionLabel}>Rinks</div>
@@ -211,11 +215,9 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
                   <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>{r.label || `Rink ${idx + 1}`}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                     <ScoreStepper label={g.home_team} value={rHome} editable={editable}
-                      onDec={() => bumpRink(g, idx, "home", -1)} onInc={() => bumpRink(g, idx, "home", +1)}
-                      lead={rHome > rAway} />
+                      onDec={() => bumpRink(g, idx, "home", -1)} onInc={() => bumpRink(g, idx, "home", +1)} lead={rHome > rAway} />
                     <ScoreStepper label={g.away_team} value={rAway} editable={editable}
-                      onDec={() => bumpRink(g, idx, "away", -1)} onInc={() => bumpRink(g, idx, "away", +1)}
-                      lead={rAway > rHome} />
+                      onDec={() => bumpRink(g, idx, "away", -1)} onInc={() => bumpRink(g, idx, "away", +1)} lead={rAway > rHome} />
                   </div>
                 </div>
               );
@@ -233,7 +235,6 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
           </div>
         )}
 
-        {/* Organiser controls */}
         {editable && (
           <div style={{ display: "flex", gap: "10px", marginTop: "16px", flexWrap: "wrap" }}>
             {g.status === "live" ? (
@@ -257,11 +258,8 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  LIST VIEW
-  // ════════════════════════════════════════════════════════════════════════
   return (
     <div>
-      {/* Header + create */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
         <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: GOLD_MUTED, letterSpacing: "0.12em", textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: "7px" }}>
           <Radio size={14} strokeWidth={2} />Live Games{liveGames.length ? ` · ${liveGames.length} on now` : ""}
@@ -286,13 +284,12 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab }
           <Radio size={32} strokeWidth={1} color={BORDER} style={{ marginBottom: "12px" }} />
           <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>No games yet</div>
           <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, lineHeight: 1.5 }}>
-            {canCreate ? "Tap New to set up a match — then anyone at the green can follow the score live." : "Live scores will appear here when a game is set up."}
+            {canCreate ? "Tap New to set up a match — then anyone can follow the score live." : "Live scores will appear here when a game is set up."}
           </div>
         </div>
       ) : (
         <>
           {liveGames.map(g => <GameCard key={g.id} g={g} onOpen={() => { setOpenId(g.id); setView("detail"); }} />)}
-
           {finishedGames.length > 0 && (
             <>
               <div style={{ ...sectionLabel, marginTop: liveGames.length ? "22px" : "4px" }}>Recent results</div>
@@ -316,12 +313,20 @@ function LiveBadge() {
     </span>
   );
 }
+function FullTimeBadge() {
+  return <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD, letterSpacing: "0.14em", textTransform: "uppercase", border: `1px solid ${GOLD}66`, borderRadius: "20px", padding: "2px 10px" }}>Full time</span>;
+}
 
-function TeamCol({ name, score, lead }) {
+function TeamCol({ name, score, lead, players = [] }) {
   return (
     <div style={{ textAlign: "center", minWidth: 0 }}>
       <div style={{ fontFamily: F_SANS, fontSize: "13px", fontWeight: "600", color: "rgba(255,255,255,0.85)", marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
       <div style={{ fontFamily: F_SANS, fontSize: "44px", fontWeight: "700", color: lead ? GOLD : "#fff", lineHeight: 1 }}>{score}</div>
+      {players.length > 0 && (
+        <div style={{ fontFamily: F_UI, fontSize: "10px", color: "rgba(255,255,255,0.6)", marginTop: "6px", lineHeight: 1.35 }}>
+          {players.join(", ")}
+        </div>
+      )}
     </div>
   );
 }
@@ -329,13 +334,12 @@ function TeamCol({ name, score, lead }) {
 function GameCard({ g, finished, onOpen }) {
   const t = totalsFor(g);
   const leadHome = t.home > t.away, leadAway = t.away > t.home;
+  const meta = [g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : null, g.location].filter(Boolean).join(" · ");
   return (
     <button onClick={onOpen} style={{ width: "100%", textAlign: "left", background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${finished ? BORDER : LIVE_RED}`, borderRadius: "12px", padding: "13px 15px", marginBottom: "9px", cursor: "pointer", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", opacity: finished ? 0.9 : 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
-          {finished
-            ? <span style={{ fontFamily: F_UI, fontSize: "9px", fontWeight: "700", color: GOLD_MUTED, letterSpacing: "0.12em", textTransform: "uppercase", background: SURFACE2, borderRadius: "20px", padding: "2px 8px" }}>Full time</span>
-            : <LiveBadge />}
+          {finished ? <FullTimeBadge /> : <LiveBadge />}
           {g.title && <span style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.title}</span>}
         </div>
         {!finished && <span style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, flexShrink: 0 }}>{timeAgo(g.updated_at)}</span>}
@@ -350,6 +354,11 @@ function GameCard({ g, finished, onOpen }) {
           <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: leadAway ? WIN_GOLD : TEXT, lineHeight: 1.15 }}>{t.away}</div>
         </div>
       </div>
+      {meta && (
+        <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "8px", display: "flex", alignItems: "center", gap: "4px" }}>
+          {g.location && <MapPin size={11} strokeWidth={1.75} />}{meta}
+        </div>
+      )}
     </button>
   );
 }
@@ -359,17 +368,9 @@ function ScoreStepper({ label, value, editable, onDec, onInc, lead, big }) {
     <div style={{ textAlign: "center" }}>
       <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: TEXT2, marginBottom: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-        {editable && (
-          <button onClick={onDec} style={stepBtn} aria-label={`${label} minus one`}>
-            <Minus size={16} strokeWidth={2.5} />
-          </button>
-        )}
+        {editable && <button onClick={onDec} style={stepBtn} aria-label={`${label} minus one`}><Minus size={16} strokeWidth={2.5} /></button>}
         <div style={{ fontFamily: F_SANS, fontSize: big ? "40px" : "30px", fontWeight: "700", color: lead ? WIN_GOLD : TEXT, minWidth: big ? "60px" : "44px", lineHeight: 1 }}>{value}</div>
-        {editable && (
-          <button onClick={onInc} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }} aria-label={`${label} plus one`}>
-            <Plus size={16} strokeWidth={2.5} />
-          </button>
-        )}
+        {editable && <button onClick={onInc} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }} aria-label={`${label} plus one`}><Plus size={16} strokeWidth={2.5} /></button>}
       </div>
     </div>
   );
@@ -383,39 +384,102 @@ function Toast({ msg }) {
   );
 }
 
+// ── Member picker ────────────────────────────────────────────────────────────
+function MemberPicker({ members, selected, onChange, max, placeholder }) {
+  const [q, setQ] = useState("");
+  const results = useMemo(() => {
+    if (q.trim().length < 2) return [];
+    const needle = q.toUpperCase();
+    return members
+      .filter(m => m.name.toUpperCase().includes(needle) && !selected.includes(m.name))
+      .slice(0, 6);
+  }, [q, members, selected]);
+  const atMax = max > 0 && selected.length >= max;
+
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+          {selected.map(name => (
+            <span key={name} style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: `${GREEN}0f`, border: `1px solid ${GREEN}33`, borderRadius: "20px", padding: "4px 6px 4px 11px", fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: GREEN }}>
+              {name}
+              <button onClick={() => onChange(selected.filter(n => n !== name))} style={{ background: "none", border: "none", cursor: "pointer", color: GREEN, display: "flex", padding: 0 }} aria-label={`Remove ${name}`}>
+                <X size={14} strokeWidth={2.5} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {!atMax && (
+        <>
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={placeholder || "Search members…"} style={inp} />
+          {results.length > 0 && (
+            <div style={{ border: `1px solid ${BORDER}`, borderRadius: "10px", overflow: "hidden", marginTop: "6px" }}>
+              {results.map(m => (
+                <button key={m.id} onClick={() => { onChange([...selected, m.name]); setQ(""); }}
+                  style={{ width: "100%", textAlign: "left", background: SURFACE, border: "none", borderBottom: `1px solid ${BORDER}`, padding: "10px 13px", cursor: "pointer", fontFamily: F_SANS, fontSize: "14px", fontWeight: "500", color: TEXT }}>
+                  {m.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Create game form ────────────────────────────────────────────────────────
-function CreateGame({ myName, cloudKey, onCancel, onCreated, showToast, pushGame }) {
+function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast, pushGame }) {
   const [title, setTitle] = useState("");
+  const [discipline, setDiscipline] = useState("team");
   const [homeTeam, setHomeTeam] = useState("IPBC");
   const [awayTeam, setAwayTeam] = useState("");
   const [venue, setVenue] = useState("home");
-  const [format, setFormat] = useState("rinks");
+  const [location, setLocation] = useState(HOME_GROUND);
   const [numRinks, setNumRinks] = useState(4);
+  const [homePlayers, setHomePlayers] = useState([]);
+  const [awayPlayers, setAwayPlayers] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const disc = DISCIPLINES.find(d => d.id === discipline);
+  const isTeam = discipline === "team";
+
+  function pickVenue(v) {
+    setVenue(v);
+    // sensible default location for a home tie
+    if (v === "home" && (!location || location === "")) setLocation(HOME_GROUND);
+    if (v === "away" && location === HOME_GROUND) setLocation("");
+  }
 
   async function create() {
     if (!awayTeam.trim()) { showToast("Add the opponent's name"); return; }
     setSaving(true);
-    const rinks = format === "rinks"
+    const rinks = disc.format === "rinks"
       ? Array.from({ length: numRinks }, (_, i) => ({ id: `r${i + 1}`, label: `Rink ${i + 1}`, home: 0, away: 0 }))
       : [];
+    const away = awayPlayers.split(",").map(s => s.trim()).filter(Boolean);
     const row = {
       title: title.trim() || null,
+      discipline,
       home_team: homeTeam.trim() || "IPBC",
       away_team: awayTeam.trim(),
       venue,
-      format,
+      location: location.trim(),
+      format: disc.format,
       status: "live",
       rinks,
       home_score: 0,
       away_score: 0,
+      home_players: homePlayers,
+      away_players: away,
       creator_cloudkey: cloudKey,
       creator_name: myName,
       last_updated_by: myName,
     };
     const { data, error } = await supabase.from("live_games").insert(row).select().single();
     setSaving(false);
-    if (error || !data) { showToast("Couldn't create game — try again"); return; }
+    if (error || !data) { showToast("Couldn't create — did the DB columns get added?"); return; }
     pushGame(data);
     onCreated(data.id);
   }
@@ -423,8 +487,16 @@ function CreateGame({ myName, cloudKey, onCancel, onCreated, showToast, pushGame
   return (
     <div>
       <button onClick={onCancel} style={backBtn}><ChevronLeft size={14} strokeWidth={2} />Cancel</button>
-
       <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: GREEN, marginBottom: "16px" }}>Set up a live game</div>
+
+      <Field label="Type of game">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(84px, 1fr))", gap: "8px" }}>
+          {DISCIPLINES.map(d => (
+            <button key={d.id} onClick={() => setDiscipline(d.id)} style={toggleBtn(discipline === d.id)}>{d.label}</button>
+          ))}
+        </div>
+        {isTeam && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "6px" }}>Several rinks totalled together — e.g. an Ayrshire or Scotland tie.</div>}
+      </Field>
 
       <Field label="Occasion / competition (optional)">
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Ayrshire Cup" style={inp} />
@@ -435,22 +507,27 @@ function CreateGame({ myName, cloudKey, onCancel, onCreated, showToast, pushGame
         <Field label="Away team"><input value={awayTeam} onChange={e => setAwayTeam(e.target.value)} placeholder="Opponent" style={inp} /></Field>
       </div>
 
+      <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />{isTeam ? "IPBC squad (optional)" : `IPBC players${disc.players ? ` — pick ${disc.players}` : ""}`}</span>}>
+        <MemberPicker members={members} selected={homePlayers} onChange={setHomePlayers}
+          max={isTeam ? 0 : disc.players}
+          placeholder={isTeam ? "Add a player…" : "Search members…"} />
+      </Field>
+
+      <Field label="Opponent players (optional)">
+        <input value={awayPlayers} onChange={e => setAwayPlayers(e.target.value)} placeholder="Names, separated by commas" style={inp} />
+      </Field>
+
       <Field label="Where is it?">
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
           {[["home", "Home"], ["away", "Away"]].map(([v, l]) => (
-            <button key={v} onClick={() => setVenue(v)} style={toggleBtn(venue === v)}>{l}</button>
+            <button key={v} onClick={() => pickVenue(v)} style={toggleBtn(venue === v)}>{l}</button>
           ))}
         </div>
+        <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Green / address so supporters can find it" style={inp} />
+        <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px" }}>Shown as a tappable map link on the scoreboard.</div>
       </Field>
 
-      <Field label="Type of game">
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button onClick={() => setFormat("rinks")} style={toggleBtn(format === "rinks")}>Team match (rinks)</button>
-          <button onClick={() => setFormat("single")} style={toggleBtn(format === "single")}>Single score</button>
-        </div>
-      </Field>
-
-      {format === "rinks" && (
+      {isTeam && (
         <Field label="How many rinks?">
           <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
             <button onClick={() => setNumRinks(n => Math.max(1, n - 1))} style={stepBtn}><Minus size={16} strokeWidth={2.5} /></button>
