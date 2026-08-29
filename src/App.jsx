@@ -714,37 +714,75 @@ export default function BowlsTracker() {
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On load: pull entries + ties + profile from cloud
+  // Set once the cloud copy for the current account has been read. The upload below
+  // waits for it, so a slow first fetch can't push this device's empty state over
+  // data that is already in the cloud.
+  const [hydratedKey, setHydratedKey] = useState(null);
+
+  // On load: pull entries + ties + profile from cloud. Keeps retrying while it fails —
+  // uploads stay parked until it lands, so a phone that opened offline can't overwrite
+  // the cloud copy with an empty one.
   useEffect(() => {
-    if (!cloudKey) return;
-    setSyncStatus("syncing");
-    supabase
-      .from("player_data")
-      .select("entries, ties, profile")
-      .eq("player_name", cloudKey)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (error) { setSyncStatus("error"); return; }
-        if (data?.entries?.length > 0) {
-          setEntries(prev => {
-            const localIds = new Set(prev.map(e => e.id));
-            const merged = [...prev, ...data.entries.filter(e => !localIds.has(e.id))];
-            return merged;
-          });
-        }
-        if (data?.ties && Object.keys(data.ties).length > 0) {
-          setTies(prev => ({ ...data.ties, ...prev }));
-        }
-        if (data?.profile && Object.keys(data.profile).length > 0) {
-          setProfile(data.profile);
-        }
-        setSyncStatus("synced");
-      });
-  }, [cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!cloudKey || hydratedKey === cloudKey) return;
+    let cancelled = false;
+    let timer = null;
+
+    async function hydrate(attempt = 0) {
+      if (cancelled) return;
+      setSyncStatus("syncing");
+      const { data, error } = await supabase
+        .from("player_data")
+        .select("entries, ties, profile")
+        .eq("player_name", cloudKey)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setSyncStatus("error");
+        timer = setTimeout(() => hydrate(attempt + 1), Math.min(30000, 3000 * 2 ** attempt));
+        return;
+      }
+      if (data?.entries?.length > 0) {
+        setEntries(prev => {
+          const localIds = new Set(prev.map(e => e.id));
+          const merged = [...prev, ...data.entries.filter(e => !localIds.has(e.id))];
+          return merged;
+        });
+      }
+      if (data?.ties && Object.keys(data.ties).length > 0) {
+        setTies(prev => ({ ...data.ties, ...prev }));
+      }
+      if (data?.profile && Object.keys(data.profile).length > 0) {
+        setProfile(data.profile);
+      }
+      setHydratedKey(cloudKey);
+      setSyncStatus("synced");
+    }
+
+    hydrate();
+    const onOnline = () => { clearTimeout(timer); hydrate(); };
+    window.addEventListener("online", onOnline);
+    return () => { cancelled = true; clearTimeout(timer); window.removeEventListener("online", onOnline); };
+  }, [cloudKey, hydratedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Restore the member link from the cloud so a device that lost its local storage
+  // isn't asked to link a name that is already linked to this account.
+  useEffect(() => {
+    if (!cloudKey || linkedMemberName) return;
+    let cancelled = false;
+    supabase.from("members").select("name").eq("linked_cloudkey", cloudKey).maybeSingle()
+      .then(({ data }) => { if (!cancelled && data?.name) setLinkedMemberName(data.name); });
+    return () => { cancelled = true; };
+  }, [cloudKey, linkedMemberName]);
+
+  // Ask the browser to keep our storage. Without this iOS evicts localStorage after
+  // about a week of not opening the app, which signs the member out again.
+  useEffect(() => {
+    if (myName && navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+  }, [myName]);
 
   // On entries, ties or profile change: debounced upsert to cloud
   useEffect(() => {
-    if (!cloudKey) return;
+    if (!cloudKey || hydratedKey !== cloudKey) return;
     const timer = setTimeout(() => {
       setSyncStatus("syncing");
       supabase
@@ -753,7 +791,7 @@ export default function BowlsTracker() {
         .then(({ error }) => setSyncStatus(error ? "error" : "synced"));
     }, 2500);
     return () => clearTimeout(timer);
-  }, [entries, ties, profile, cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entries, ties, profile, cloudKey, hydratedKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch profiles + entries for all members who have linked their account
   useEffect(() => {
@@ -1061,8 +1099,39 @@ export default function BowlsTracker() {
 
   // ── Sign-in flow ──
   const [pinConfirm, setPinConfirm]   = useState("");
-  const [signInState, setSignInState] = useState("idle"); // "idle"|"checking"|"confirm-new"|"locked"
+  const [signInState, setSignInState] = useState("idle"); // "idle"|"checking"|"confirm-new"|"wrong-pin"|"offline"|"locked"
   const [lockoutInfo, setLockoutInfo] = useState(null); // { id, attempts, locked_until, unlock_requested }
+
+  // Account keys are "<NAME>-<PIN>". Members retype their name slightly differently
+  // between sign-ins ("J FREW" / "J.FREW" / "J  FREW"), so compare on a squashed form.
+  const normName = n => (n || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const keyName  = k => k.slice(0, k.lastIndexOf("-"));
+  const keyPin   = k => k.slice(k.lastIndexOf("-") + 1);
+
+  // Every account already in the cloud for this name, whatever punctuation was used.
+  // Returns null if the cloud couldn't be reached — never an empty list, so an
+  // offline device can't mistake "can't check" for "not registered".
+  async function findAccounts(nameUpper) {
+    const { data, error } = await supabase.from("player_data").select("player_name");
+    if (error || !data) return null;
+    return data.filter(r => r.player_name?.includes("-") && normName(keyName(r.player_name)) === normName(nameUpper));
+  }
+
+  // Create the account row up front. This used to be left to the debounced sync
+  // effect below, so anyone who closed the app in the first few seconds after
+  // registering had no account to come back to — and was sent through registration
+  // again on their next visit. Only player_name/updated_at are sent so signing in
+  // on a fresh device can never clobber the entries already stored in the cloud.
+  async function ensureAccountRow(key) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { error } = await supabase
+        .from("player_data")
+        .upsert({ player_name: key, updated_at: new Date().toISOString() }, { onConflict: "player_name" });
+      if (!error) return true;
+      await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+    }
+    return false;
+  }
 
   async function handleSignIn() {
     if (!nameInput.trim() || pinInput.length !== 4) return;
@@ -1077,20 +1146,21 @@ export default function BowlsTracker() {
       return;
     }
 
-    // 2. Check cloudKey in player_data
-    const key = `${nameUpper}-${pinInput}`;
-    const { data } = await supabase.from("player_data").select("player_name").eq("player_name", key).maybeSingle();
-    if (data) {
+    // 2. Find their existing account
+    const accounts = await findAccounts(nameUpper);
+    if (accounts === null) { setSignInState("offline"); return; }
+
+    const match = accounts.find(r => keyPin(r.player_name) === pinInput);
+    if (match) {
       // Clear any failed attempts on success
       if (lockRow) await supabase.from("login_lockouts").delete().eq("name", nameUpper);
-      commitSignIn();
+      // Sign in under the exact name already stored so their data follows them.
+      commitSignIn(keyName(match.player_name), pinInput);
       return;
     }
 
-    // 3. Check if name is a known member (wrong PIN scenario)
-    const { data: member } = await supabase.from("members").select("id").ilike("name", nameUpper).maybeSingle();
-    if (member) {
-      // Known member, wrong PIN — increment lockout counter
+    // 3. Account exists for this name but not with this PIN — a genuine wrong PIN.
+    if (accounts.length > 0) {
       const attempts = (lockRow?.attempts || 0) + 1;
       if (attempts >= 3) {
         const lockedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -1100,13 +1170,14 @@ export default function BowlsTracker() {
         setSignInState("locked");
       } else {
         await supabase.from("login_lockouts").upsert({ name: nameUpper, attempts, updated_at: new Date().toISOString() }, { onConflict: "name" });
-        setPinConfirm("");
-        setSignInState("confirm-new");
+        setLockoutInfo({ ...(lockRow || {}), attempts });
+        setSignInState("wrong-pin");
       }
       return;
     }
 
-    // 4. Unknown name — new user flow
+    // 4. No account for this name yet — first-time registration. Being on the members
+    //    roster is not evidence of having registered, so this costs no PIN attempt.
     setPinConfirm("");
     setSignInState("confirm-new");
   }
@@ -1117,15 +1188,26 @@ export default function BowlsTracker() {
     setLockoutInfo(p => ({ ...p, unlock_requested: true }));
   }
 
-  function commitSignIn() {
-    const name = nameInput.toUpperCase().trim();
+  async function commitSignIn(nameOverride, pinOverride) {
+    const name = (typeof nameOverride === "string" ? nameOverride : nameInput).toUpperCase().trim();
+    const pin  = typeof pinOverride === "string" ? pinOverride : pinInput;
+    const key  = `${name}-${pin}`;
+
+    setSignInState("checking");
+    const stored = await ensureAccountRow(key);
+    if (!stored) { setSignInState("offline"); return; }
+
     setMyName(name);
-    setMyPin(pinInput);
+    setMyPin(pin);
     setNameInput(""); setPinInput(""); setPinConfirm("");
     setSignInState("idle"); setLockoutInfo(null);
     setSettingName(false);
-    // Prompt to link member name if not already linked
-    if (!linkedMemberName) setShowLinkSheet(true);
+
+    // Their member link lives in the cloud, so restore it rather than asking again —
+    // a device that lost its local storage is still linked.
+    const { data: linked } = await supabase.from("members").select("name").eq("linked_cloudkey", key).maybeSingle();
+    if (linked?.name) setLinkedMemberName(linked.name);
+    else if (!linkedMemberName) setShowLinkSheet(true);
   }
 
   // Filtered members for link search
@@ -1181,8 +1263,10 @@ export default function BowlsTracker() {
   }
   function saveExistingPin() {
     if (!/^\d{4}$/.test(pinInput)) return;
-    setMyPin(pinInput);
+    const pin = pinInput;
+    setMyPin(pin);
     setPinInput("");
+    ensureAccountRow(`${myName.toUpperCase()}-${pin}`);
   }
 
   // ── Tournament entry handlers ──
@@ -1844,16 +1928,32 @@ export default function BowlsTracker() {
                   </>
                 ) : signInState !== "confirm-new" ? (
                   <>
+                    {signInState === "wrong-pin" && (
+                      <div style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left" }}>
+                        <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: LOSS_RED, marginBottom: "3px" }}>That PIN doesn't match</div>
+                        <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>
+                          You already have an account under this name. Try your PIN again{lockoutInfo?.attempts ? ` — ${3 - lockoutInfo.attempts} attempt${3 - lockoutInfo.attempts === 1 ? "" : "s"} left before it locks` : ""}. If you've forgotten it, ask an admin to reset your account.
+                        </div>
+                      </div>
+                    )}
+                    {signInState === "offline" && (
+                      <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left" }}>
+                        <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT, marginBottom: "3px" }}>Can't reach the club server</div>
+                        <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>
+                          Check your connection and try again. We won't sign you in offline in case it creates a second account by mistake.
+                        </div>
+                      </div>
+                    )}
                     <div style={{ textAlign: "left", marginBottom: "12px" }}>
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Your Name</div>
-                      <input value={nameInput} onChange={e => setNameInput(e.target.value.toUpperCase())}
+                      <input value={nameInput} onChange={e => { setNameInput(e.target.value.toUpperCase()); if (signInState === "wrong-pin" || signInState === "offline") setSignInState("idle"); }}
                         placeholder="e.g. J FREW" autoFocus
                         onKeyDown={e => e.key === "Enter" && document.getElementById("pin-input")?.focus()}
                         style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, letterSpacing: "2px" }} />
                     </div>
                     <div style={{ textAlign: "left", marginBottom: "20px" }}>
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>4-Digit PIN</div>
-                      <input id="pin-input" value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      <input id="pin-input" value={pinInput} onChange={e => { setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4)); if (signInState === "wrong-pin" || signInState === "offline") setSignInState("idle"); }}
                         placeholder="••••" inputMode="numeric" maxLength={4}
                         onKeyDown={e => e.key === "Enter" && handleSignIn()}
                         style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px" }} />
@@ -1896,7 +1996,7 @@ export default function BowlsTracker() {
                         style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
                         Back
                       </button>
-                      <button onClick={commitSignIn} disabled={pinConfirm !== pinInput || pinConfirm.length !== 4}
+                      <button onClick={() => commitSignIn()} disabled={pinConfirm !== pinInput || pinConfirm.length !== 4}
                         style={{ flex: 1, background: pinConfirm === pinInput && pinConfirm.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "13px 28px", fontSize: "14px", cursor: pinConfirm === pinInput && pinConfirm.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
                         Create Account
                       </button>
