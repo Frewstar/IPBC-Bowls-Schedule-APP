@@ -1,0 +1,561 @@
+import { useState, useEffect, useMemo } from "react";
+import {
+  Radio, Plus, Minus, ChevronLeft, MapPin, X,
+  Share2, Trash2, Flag, CircleCheckBig, Users,
+} from "lucide-react";
+import {
+  GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER,
+  TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, F_SANS, F_UI,
+} from "../../lib/theme.js";
+import { supabase } from "../../lib/supabase.js";
+
+const LIVE_RED = "#c0392b";
+const HOME_GROUND = "Irvine Park Bowling Club";
+
+// discipline → players per side, and score structure
+const DISCIPLINES = [
+  { id: "singles", label: "Singles",    players: 1, format: "single" },
+  { id: "pairs",   label: "Pairs",      players: 2, format: "single" },
+  { id: "triples", label: "Triples",    players: 3, format: "single" },
+  { id: "rinks",   label: "Rinks",      players: 4, format: "single" },
+  { id: "team",    label: "Team match", players: 0, format: "rinks"  },
+];
+const discLabel = id => (DISCIPLINES.find(d => d.id === id) || {}).label || "";
+
+// ── helpers ──────────────────────────────────────────────────────────────
+function totalsFor(g) {
+  if (!g) return { home: 0, away: 0 };
+  if (g.format === "single") return { home: g.home_score || 0, away: g.away_score || 0 };
+  const rinks = Array.isArray(g.rinks) ? g.rinks : [];
+  return {
+    home: rinks.reduce((s, r) => s + (Number(r.home) || 0), 0),
+    away: rinks.reduce((s, r) => s + (Number(r.away) || 0), 0),
+  };
+}
+
+function timeAgo(iso) {
+  if (!iso) return "";
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 15) return "just now";
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function mapsUrl(location) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+}
+
+export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, members = [] }) {
+  const [games, setGames] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("list");   // "list" | "detail" | "create"
+  const [openId, setOpenId] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [, forceTick] = useState(0);
+
+  const canCreate = !!(myName && cloudKey);
+
+  useEffect(() => {
+    let alive = true;
+    supabase.from("live_games").select("*").order("updated_at", { ascending: false })
+      .then(({ data }) => { if (alive && data) setGames(data); if (alive) setLoading(false); });
+
+    const channel = supabase
+      .channel("live_games_stream")
+      .on("postgres_changes", { event: "*", schema: "public", table: "live_games" }, payload => {
+        setGames(prev => {
+          if (payload.eventType === "DELETE") return prev.filter(g => g.id !== payload.old.id);
+          const row = payload.new;
+          const without = prev.filter(g => g.id !== row.id);
+          return [row, ...without].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+        });
+      })
+      .subscribe();
+
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => forceTick(n => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const liveGames = useMemo(() => games.filter(g => g.status === "live"), [games]);
+  const finishedGames = useMemo(() => games.filter(g => g.status === "finished"), [games]);
+  const openGame = openId ? games.find(g => g.id === openId) : null;
+
+  function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 2200); }
+  function canEdit(g) { return !!cloudKey && g && (g.creator_cloudkey === cloudKey || isAdmin); }
+
+  async function patchGame(id, patch) {
+    const full = { ...patch, updated_at: new Date().toISOString(), last_updated_by: myName || "Someone" };
+    setGames(prev => prev.map(g => (g.id === id ? { ...g, ...full } : g)));
+    const { error } = await supabase.from("live_games").update(full).eq("id", id);
+    if (error) showToast("Couldn't save — try again");
+  }
+
+  function bumpRink(g, idx, side, delta) {
+    const rinks = (g.rinks || []).map((r, i) =>
+      i === idx ? { ...r, [side]: Math.max(0, (Number(r[side]) || 0) + delta) } : r
+    );
+    patchGame(g.id, { rinks });
+  }
+  function bumpSingle(g, side, delta) {
+    const key = side === "home" ? "home_score" : "away_score";
+    patchGame(g.id, { [key]: Math.max(0, (Number(g[key]) || 0) + delta) });
+  }
+  async function setFinished(g, finished) {
+    await patchGame(g.id, { status: finished ? "finished" : "live" });
+    showToast(finished ? "Marked as finished" : "Back to live");
+  }
+  async function deleteGame(g) {
+    if (!window.confirm(`Delete "${g.home_team} v ${g.away_team}"? This can't be undone.`)) return;
+    setGames(prev => prev.filter(x => x.id !== g.id));
+    await supabase.from("live_games").delete().eq("id", g.id);
+    setView("list"); setOpenId(null);
+    showToast("Game deleted");
+  }
+
+  function shareGame(g) {
+    const t = totalsFor(g);
+    let body = `🎳 ${g.home_team} ${t.home}–${t.away} ${g.away_team}`;
+    if (g.title) body += ` (${g.title})`;
+    if (g.discipline && g.discipline !== "team") body += `\n${discLabel(g.discipline)}`;
+    if (g.format === "rinks" && (g.rinks || []).length) {
+      body += "\n" + g.rinks.map(r => `${r.label}: ${r.home || 0}–${r.away || 0}`).join("\n");
+    }
+    if (g.location) body += `\n📍 ${g.location}`;
+    body += `\n\n${g.status === "finished" ? "Full time" : "Live now"} · IPBC Bowls app`;
+    if (navigator.share) navigator.share({ text: body }).catch(() => {});
+    else navigator.clipboard?.writeText(body).then(() => showToast("Score copied — paste into WhatsApp"));
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  if (view === "create") {
+    return (
+      <CreateGame
+        myName={myName} cloudKey={cloudKey} members={members}
+        onCancel={() => setView("list")}
+        onCreated={id => { setOpenId(id); setView("detail"); }}
+        showToast={showToast}
+        pushGame={row => setGames(prev => [row, ...prev.filter(g => g.id !== row.id)])}
+      />
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  if (view === "detail" && openGame) {
+    const g = openGame;
+    const t = totalsFor(g);
+    const editable = canEdit(g);
+    const leadHome = t.home > t.away, leadAway = t.away > t.home;
+    const homePlayers = Array.isArray(g.home_players) ? g.home_players : [];
+    const awayPlayers = Array.isArray(g.away_players) ? g.away_players : [];
+
+    return (
+      <div>
+        <button onClick={() => { setView("list"); setOpenId(null); }} style={backBtn}>
+          <ChevronLeft size={14} strokeWidth={2} />All games
+        </button>
+
+        {/* Scoreboard hero */}
+        <div style={{ background: GREEN, borderRadius: "14px", padding: "18px 16px", marginBottom: "14px", boxShadow: "0 4px 16px rgba(74,14,31,0.18)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            {g.status === "live" ? <LiveBadge /> : <FullTimeBadge />}
+            <button onClick={() => shareGame(g)} style={{ background: "rgba(255,255,255,0.12)", border: "none", borderRadius: "8px", padding: "6px", cursor: "pointer", color: "#fff", display: "flex" }} title="Share score">
+              <Share2 size={15} strokeWidth={1.75} />
+            </button>
+          </div>
+
+          <div style={{ textAlign: "center", marginBottom: "10px", display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" }}>
+            {(g.title || g.discipline) && (
+              <div style={{ fontFamily: F_UI, fontSize: "12px", color: GOLD, fontWeight: "600", letterSpacing: "0.04em" }}>
+                {[g.title, g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : (g.format === "rinks" ? "Team match" : "")].filter(Boolean).join(" · ")}
+              </div>
+            )}
+            {g.location && (
+              <a href={mapsUrl(g.location)} target="_blank" rel="noreferrer"
+                style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.85)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <MapPin size={12} strokeWidth={1.75} color={GOLD} />{g.location}
+              </a>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "start", gap: "8px" }}>
+            <TeamCol name={g.home_team} score={t.home} lead={leadHome} players={homePlayers} />
+            <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: "rgba(255,255,255,0.5)", paddingTop: "22px" }}>–</div>
+            <TeamCol name={g.away_team} score={t.away} lead={leadAway} players={awayPlayers} />
+          </div>
+
+          {g.last_updated_by && (
+            <div style={{ textAlign: "center", marginTop: "12px", fontFamily: F_UI, fontSize: "11px", color: "rgba(255,255,255,0.6)" }}>
+              Updated by {g.last_updated_by} · {timeAgo(g.updated_at)}
+            </div>
+          )}
+        </div>
+
+        {!editable && g.status === "live" && (
+          <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, display: "flex", alignItems: "center", gap: "8px" }}>
+            <Radio size={14} strokeWidth={1.75} color={GOLD_MUTED} />
+            Following live — updates automatically. Only {g.creator_name || "the organiser"} & admins can edit.
+          </div>
+        )}
+
+        {g.format === "rinks" ? (
+          <div>
+            <div style={sectionLabel}>Rinks</div>
+            {(g.rinks || []).map((r, idx) => {
+              const rHome = Number(r.home) || 0, rAway = Number(r.away) || 0;
+              return (
+                <div key={r.id || idx} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "12px 14px", marginBottom: "8px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
+                  <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>{r.label || `Rink ${idx + 1}`}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <ScoreStepper label={g.home_team} value={rHome} editable={editable}
+                      onDec={() => bumpRink(g, idx, "home", -1)} onInc={() => bumpRink(g, idx, "home", +1)} lead={rHome > rAway} />
+                    <ScoreStepper label={g.away_team} value={rAway} editable={editable}
+                      onDec={() => bumpRink(g, idx, "away", -1)} onInc={() => bumpRink(g, idx, "away", +1)} lead={rAway > rHome} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div>
+            <div style={sectionLabel}>Score</div>
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "16px 14px", marginBottom: "8px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
+              <ScoreStepper label={g.home_team} value={t.home} editable={editable}
+                onDec={() => bumpSingle(g, "home", -1)} onInc={() => bumpSingle(g, "home", +1)} lead={leadHome} big />
+              <ScoreStepper label={g.away_team} value={t.away} editable={editable}
+                onDec={() => bumpSingle(g, "away", -1)} onInc={() => bumpSingle(g, "away", +1)} lead={leadAway} big />
+            </div>
+          </div>
+        )}
+
+        {editable && (
+          <div style={{ display: "flex", gap: "10px", marginTop: "16px", flexWrap: "wrap" }}>
+            {g.status === "live" ? (
+              <button onClick={() => setFinished(g, true)} style={{ flex: 1, minWidth: "150px", background: GOLD, border: "none", borderRadius: "10px", color: "#fff", padding: "12px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
+                <Flag size={15} strokeWidth={2} />Mark as finished
+              </button>
+            ) : (
+              <button onClick={() => setFinished(g, false)} style={{ flex: 1, minWidth: "150px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", color: TEXT2, padding: "12px", fontFamily: F_UI, fontSize: "13px", fontWeight: "600", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
+                <Radio size={15} strokeWidth={1.75} />Reopen as live
+              </button>
+            )}
+            <button onClick={() => deleteGame(g)} style={{ background: SURFACE, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", color: LOSS_RED, padding: "12px 16px", fontFamily: F_UI, fontSize: "13px", fontWeight: "600", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
+              <Trash2 size={15} strokeWidth={1.75} />
+            </button>
+          </div>
+        )}
+
+        {toast && <Toast msg={toast} />}
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+        <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: GOLD_MUTED, letterSpacing: "0.12em", textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: "7px" }}>
+          <Radio size={14} strokeWidth={2} />Live Games{liveGames.length ? ` · ${liveGames.length} on now` : ""}
+        </div>
+        {canCreate && (
+          <button onClick={() => setView("create")} style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "8px 14px", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+            <Plus size={14} strokeWidth={2.5} />New
+          </button>
+        )}
+      </div>
+
+      {!canCreate && (
+        <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "12px 14px", marginBottom: "14px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>
+          Set your name in <button onClick={() => setActiveTab("myties")} style={{ background: "none", border: "none", color: GREEN, fontWeight: "700", cursor: "pointer", padding: 0, fontSize: "12px", textDecoration: "underline" }}>My Ties</button> to set up a game. You can still follow any live game below.
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "40px", fontFamily: F_UI, fontSize: "13px", color: TEXT3 }}>Loading…</div>
+      ) : liveGames.length === 0 && finishedGames.length === 0 ? (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "40px 24px", textAlign: "center", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
+          <Radio size={32} strokeWidth={1} color={BORDER} style={{ marginBottom: "12px" }} />
+          <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>No games yet</div>
+          <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, lineHeight: 1.5 }}>
+            {canCreate ? "Tap New to set up a match — then anyone can follow the score live." : "Live scores will appear here when a game is set up."}
+          </div>
+        </div>
+      ) : (
+        <>
+          {liveGames.map(g => <GameCard key={g.id} g={g} onOpen={() => { setOpenId(g.id); setView("detail"); }} />)}
+          {finishedGames.length > 0 && (
+            <>
+              <div style={{ ...sectionLabel, marginTop: liveGames.length ? "22px" : "4px" }}>Recent results</div>
+              {finishedGames.slice(0, 20).map(g => <GameCard key={g.id} g={g} finished onOpen={() => { setOpenId(g.id); setView("detail"); }} />)}
+            </>
+          )}
+        </>
+      )}
+
+      {toast && <Toast msg={toast} />}
+    </div>
+  );
+}
+
+// ── sub-components ──────────────────────────────────────────────────────────
+function LiveBadge() {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: LIVE_RED, borderRadius: "20px", padding: "3px 10px 3px 8px" }}>
+      <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#fff", animation: "pulse 1.4s ease-in-out infinite" }} />
+      <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: "#fff", letterSpacing: "0.14em", textTransform: "uppercase" }}>Live</span>
+    </span>
+  );
+}
+function FullTimeBadge() {
+  return <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD, letterSpacing: "0.14em", textTransform: "uppercase", border: `1px solid ${GOLD}66`, borderRadius: "20px", padding: "2px 10px" }}>Full time</span>;
+}
+
+function TeamCol({ name, score, lead, players = [] }) {
+  return (
+    <div style={{ textAlign: "center", minWidth: 0 }}>
+      <div style={{ fontFamily: F_SANS, fontSize: "13px", fontWeight: "600", color: "rgba(255,255,255,0.85)", marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+      <div style={{ fontFamily: F_SANS, fontSize: "44px", fontWeight: "700", color: lead ? GOLD : "#fff", lineHeight: 1 }}>{score}</div>
+      {players.length > 0 && (
+        <div style={{ fontFamily: F_UI, fontSize: "10px", color: "rgba(255,255,255,0.6)", marginTop: "6px", lineHeight: 1.35 }}>
+          {players.join(", ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GameCard({ g, finished, onOpen }) {
+  const t = totalsFor(g);
+  const leadHome = t.home > t.away, leadAway = t.away > t.home;
+  const meta = [g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : null, g.location].filter(Boolean).join(" · ");
+  return (
+    <button onClick={onOpen} style={{ width: "100%", textAlign: "left", background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${finished ? BORDER : LIVE_RED}`, borderRadius: "12px", padding: "13px 15px", marginBottom: "9px", cursor: "pointer", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", opacity: finished ? 0.9 : 1 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+          {finished ? <FullTimeBadge /> : <LiveBadge />}
+          {g.title && <span style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.title}</span>}
+        </div>
+        {!finished && <span style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, flexShrink: 0 }}>{timeAgo(g.updated_at)}</span>}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: leadHome ? "700" : "500", color: leadHome ? GREEN : TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.home_team}</div>
+          <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: leadAway ? "700" : "500", color: leadAway ? GREEN : TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.away_team}</div>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: leadHome ? WIN_GOLD : TEXT, lineHeight: 1.15 }}>{t.home}</div>
+          <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: leadAway ? WIN_GOLD : TEXT, lineHeight: 1.15 }}>{t.away}</div>
+        </div>
+      </div>
+      {meta && (
+        <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "8px", display: "flex", alignItems: "center", gap: "4px" }}>
+          {g.location && <MapPin size={11} strokeWidth={1.75} />}{meta}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function ScoreStepper({ label, value, editable, onDec, onInc, lead, big }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: TEXT2, marginBottom: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+        {editable && <button onClick={onDec} style={stepBtn} aria-label={`${label} minus one`}><Minus size={16} strokeWidth={2.5} /></button>}
+        <div style={{ fontFamily: F_SANS, fontSize: big ? "40px" : "30px", fontWeight: "700", color: lead ? WIN_GOLD : TEXT, minWidth: big ? "60px" : "44px", lineHeight: 1 }}>{value}</div>
+        {editable && <button onClick={onInc} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }} aria-label={`${label} plus one`}><Plus size={16} strokeWidth={2.5} /></button>}
+      </div>
+    </div>
+  );
+}
+
+function Toast({ msg }) {
+  return (
+    <div style={{ position: "fixed", bottom: "80px", left: "50%", transform: "translateX(-50%)", zIndex: 200, background: GREEN, color: "#fff", borderRadius: "10px", padding: "10px 18px", fontSize: "13px", fontFamily: F_UI, fontWeight: "600", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", maxWidth: "90vw", textAlign: "center" }}>
+      {msg}
+    </div>
+  );
+}
+
+// ── Member picker ────────────────────────────────────────────────────────────
+function MemberPicker({ members, selected, onChange, max, placeholder }) {
+  const [q, setQ] = useState("");
+  const results = useMemo(() => {
+    if (q.trim().length < 2) return [];
+    const needle = q.toUpperCase();
+    return members
+      .filter(m => m.name.toUpperCase().includes(needle) && !selected.includes(m.name))
+      .slice(0, 6);
+  }, [q, members, selected]);
+  const atMax = max > 0 && selected.length >= max;
+
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+          {selected.map(name => (
+            <span key={name} style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: `${GREEN}0f`, border: `1px solid ${GREEN}33`, borderRadius: "20px", padding: "4px 6px 4px 11px", fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: GREEN }}>
+              {name}
+              <button onClick={() => onChange(selected.filter(n => n !== name))} style={{ background: "none", border: "none", cursor: "pointer", color: GREEN, display: "flex", padding: 0 }} aria-label={`Remove ${name}`}>
+                <X size={14} strokeWidth={2.5} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {!atMax && (
+        <>
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={placeholder || "Search members…"} style={inp} />
+          {results.length > 0 && (
+            <div style={{ border: `1px solid ${BORDER}`, borderRadius: "10px", overflow: "hidden", marginTop: "6px" }}>
+              {results.map(m => (
+                <button key={m.id} onClick={() => { onChange([...selected, m.name]); setQ(""); }}
+                  style={{ width: "100%", textAlign: "left", background: SURFACE, border: "none", borderBottom: `1px solid ${BORDER}`, padding: "10px 13px", cursor: "pointer", fontFamily: F_SANS, fontSize: "14px", fontWeight: "500", color: TEXT }}>
+                  {m.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Create game form ────────────────────────────────────────────────────────
+function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast, pushGame }) {
+  const [title, setTitle] = useState("");
+  const [discipline, setDiscipline] = useState("team");
+  const [homeTeam, setHomeTeam] = useState("IPBC");
+  const [awayTeam, setAwayTeam] = useState("");
+  const [venue, setVenue] = useState("home");
+  const [location, setLocation] = useState(HOME_GROUND);
+  const [numRinks, setNumRinks] = useState(4);
+  const [homePlayers, setHomePlayers] = useState([]);
+  const [awayPlayers, setAwayPlayers] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const disc = DISCIPLINES.find(d => d.id === discipline);
+  const isTeam = discipline === "team";
+
+  function pickVenue(v) {
+    setVenue(v);
+    // sensible default location for a home tie
+    if (v === "home" && (!location || location === "")) setLocation(HOME_GROUND);
+    if (v === "away" && location === HOME_GROUND) setLocation("");
+  }
+
+  async function create() {
+    if (!awayTeam.trim()) { showToast("Add the opponent's name"); return; }
+    setSaving(true);
+    const rinks = disc.format === "rinks"
+      ? Array.from({ length: numRinks }, (_, i) => ({ id: `r${i + 1}`, label: `Rink ${i + 1}`, home: 0, away: 0 }))
+      : [];
+    const away = awayPlayers.split(",").map(s => s.trim()).filter(Boolean);
+    const row = {
+      title: title.trim() || null,
+      discipline,
+      home_team: homeTeam.trim() || "IPBC",
+      away_team: awayTeam.trim(),
+      venue,
+      location: location.trim(),
+      format: disc.format,
+      status: "live",
+      rinks,
+      home_score: 0,
+      away_score: 0,
+      home_players: homePlayers,
+      away_players: away,
+      creator_cloudkey: cloudKey,
+      creator_name: myName,
+      last_updated_by: myName,
+    };
+    const { data, error } = await supabase.from("live_games").insert(row).select().single();
+    setSaving(false);
+    if (error || !data) { showToast("Couldn't create — did the DB columns get added?"); return; }
+    pushGame(data);
+    onCreated(data.id);
+  }
+
+  return (
+    <div>
+      <button onClick={onCancel} style={backBtn}><ChevronLeft size={14} strokeWidth={2} />Cancel</button>
+      <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: GREEN, marginBottom: "16px" }}>Set up a live game</div>
+
+      <Field label="Type of game">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(84px, 1fr))", gap: "8px" }}>
+          {DISCIPLINES.map(d => (
+            <button key={d.id} onClick={() => setDiscipline(d.id)} style={toggleBtn(discipline === d.id)}>{d.label}</button>
+          ))}
+        </div>
+        {isTeam && <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "6px" }}>Several rinks totalled together — e.g. an Ayrshire or Scotland tie.</div>}
+      </Field>
+
+      <Field label="Occasion / competition (optional)">
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Ayrshire Cup" style={inp} />
+      </Field>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+        <Field label="Home team"><input value={homeTeam} onChange={e => setHomeTeam(e.target.value)} style={inp} /></Field>
+        <Field label="Away team"><input value={awayTeam} onChange={e => setAwayTeam(e.target.value)} placeholder="Opponent" style={inp} /></Field>
+      </div>
+
+      <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />{isTeam ? "IPBC squad (optional)" : `IPBC players${disc.players ? ` — pick ${disc.players}` : ""}`}</span>}>
+        <MemberPicker members={members} selected={homePlayers} onChange={setHomePlayers}
+          max={isTeam ? 0 : disc.players}
+          placeholder={isTeam ? "Add a player…" : "Search members…"} />
+      </Field>
+
+      <Field label="Opponent players (optional)">
+        <input value={awayPlayers} onChange={e => setAwayPlayers(e.target.value)} placeholder="Names, separated by commas" style={inp} />
+      </Field>
+
+      <Field label="Where is it?">
+        <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+          {[["home", "Home"], ["away", "Away"]].map(([v, l]) => (
+            <button key={v} onClick={() => pickVenue(v)} style={toggleBtn(venue === v)}>{l}</button>
+          ))}
+        </div>
+        <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Green / address so supporters can find it" style={inp} />
+        <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px" }}>Shown as a tappable map link on the scoreboard.</div>
+      </Field>
+
+      {isTeam && (
+        <Field label="How many rinks?">
+          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <button onClick={() => setNumRinks(n => Math.max(1, n - 1))} style={stepBtn}><Minus size={16} strokeWidth={2.5} /></button>
+            <span style={{ fontFamily: F_SANS, fontSize: "26px", fontWeight: "700", color: TEXT, minWidth: "34px", textAlign: "center" }}>{numRinks}</span>
+            <button onClick={() => setNumRinks(n => Math.min(12, n + 1))} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }}><Plus size={16} strokeWidth={2.5} /></button>
+          </div>
+        </Field>
+      )}
+
+      <button onClick={create} disabled={saving} style={{ width: "100%", marginTop: "10px", background: saving ? TEXT3 : GOLD, border: "none", borderRadius: "10px", color: "#fff", padding: "14px", fontFamily: F_UI, fontSize: "14px", fontWeight: "700", cursor: saving ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+        <CircleCheckBig size={17} strokeWidth={2} />{saving ? "Creating…" : "Start live game"}
+      </button>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: "14px" }}>
+      <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: TEXT2, marginBottom: "6px", letterSpacing: "0.02em" }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+// ── shared styles ──
+const backBtn = { background: "none", border: "none", color: TEXT2, cursor: "pointer", fontSize: "13px", padding: "0 0 16px", fontFamily: F_UI, display: "inline-flex", alignItems: "center", gap: "4px" };
+const sectionLabel = { fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: GOLD_MUTED, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "10px" };
+const stepBtn = { width: "38px", height: "38px", borderRadius: "10px", border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT2, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
+const inp = { width: "100%", padding: "11px 13px", borderRadius: "10px", border: `1px solid ${BORDER}`, fontSize: "14px", fontFamily: F_UI, color: TEXT };
+const toggleBtn = active => ({ flex: 1, padding: "11px 8px", borderRadius: "10px", border: `1px solid ${active ? GREEN : BORDER}`, background: active ? GREEN : SURFACE, color: active ? "#fff" : TEXT2, fontFamily: F_UI, fontSize: "13px", fontWeight: active ? "700" : "500", cursor: "pointer" });
