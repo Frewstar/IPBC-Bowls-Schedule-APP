@@ -123,9 +123,8 @@ export default function BowlsTracker() {
     return () => window.removeEventListener("swUpdateWaiting", onSwUpdate);
   }, []);
   function applySwUpdate() {
-    if (!swWaiting) return;
-    swWaiting.messageSkipWaiting();
-    swWaiting.addEventListener("controlling", () => window.location.reload());
+    // main.jsx owns the skip-waiting + reload handshake.
+    swWaiting?.apply();
   }
 
   // ── Android install prompt ──
@@ -1211,6 +1210,12 @@ export default function BowlsTracker() {
     else if (!linkedMemberName) setShowLinkSheet(true);
   }
 
+  function closeLinkSheet() {
+    setShowLinkSheet(false);
+    setLinkStatus(null);
+    setLinkSearch("");
+  }
+
   // Filtered members for link search
   const linkResults = linkSearch.length >= 2
     ? members.filter(m => m.name.toUpperCase().includes(linkSearch.toUpperCase())).slice(0, 8)
@@ -1231,7 +1236,7 @@ export default function BowlsTracker() {
     await supabase.from("members").update({ linked_cloudkey: null }).eq("linked_cloudkey", cloudKey).neq("id", member.id);
     setLinkedMemberName(member.name);
     setLinkStatus("done");
-    setTimeout(() => { setShowLinkSheet(false); setLinkStatus(null); setLinkSearch(""); }, 1200);
+    setTimeout(closeLinkSheet, 1200);
   }
 
   async function submitClaimRequest(member, currentHolder) {
@@ -3770,7 +3775,7 @@ export default function BowlsTracker() {
         onSwitchAccount={() => { setShowProfileSheet(false); setSettingName(true); setNameInput(myName); setNameStep("name"); }}
       />
 
-      <BottomSheet open={showLinkSheet} onClose={() => { setShowLinkSheet(false); setLinkStatus(null); setLinkSearch(""); }} title="Link Your Name">
+      <BottomSheet open={showLinkSheet} onClose={closeLinkSheet} title="Link Your Name">
         {linkStatus === "done" ? (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
             <div style={{ fontSize: "40px", marginBottom: "12px" }}>✓</div>
@@ -3839,12 +3844,12 @@ export default function BowlsTracker() {
               )}
             </div>
             {linkedMemberName ? (
-              <button onClick={() => { setShowLinkSheet(false); setLinkSearch(""); }}
+              <button onClick={closeLinkSheet}
                 style={{ width: "100%", background: GREEN, border: "none", borderRadius: "9px", color: "#fff", padding: "13px", fontSize: "14px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>
                 Done
               </button>
             ) : (
-              <button onClick={() => { setShowLinkSheet(false); setLinkSearch(""); }}
+              <button onClick={closeLinkSheet}
                 style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "9px", color: TEXT2, padding: "12px", fontSize: "13px", fontFamily: F_UI, cursor: "pointer" }}>
                 Skip — I'll use the app manually
               </button>

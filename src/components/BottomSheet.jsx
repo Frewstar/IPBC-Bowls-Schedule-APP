@@ -1,18 +1,35 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { SURFACE, SURFACE2, BORDER, TEXT2, GREEN, F_SANS } from "../lib/theme.js";
+
+// Matches the slideDown/fadeIn-reverse exit animations in index.html.
+const EXIT_MS = 220;
 
 export default function BottomSheet({ open, onClose, title, children, titleColor = GREEN }) {
   const [visible, setVisible] = useState(false);
   const [closing, setClosing] = useState(false);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
-    if (open) { setClosing(false); setVisible(true); }
+    if (open) { wasOpen.current = true; setClosing(false); setVisible(true); return; }
+    // The parent closed us — a "Done"/"Save" button flipping its own state rather
+    // than the backdrop or the X. Without this the sheet stayed on screen forever,
+    // because `visible` was only ever cleared from inside handleClose.
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
+    setClosing(true);
+    const timer = setTimeout(() => { setVisible(false); setClosing(false); }, EXIT_MS);
+    return () => clearTimeout(timer);
   }, [open]);
 
   function handleClose() {
     setClosing(true);
-    setTimeout(() => { setVisible(false); setClosing(false); onClose(); }, 220);
+    setTimeout(() => {
+      wasOpen.current = false;
+      setVisible(false);
+      setClosing(false);
+      onClose();
+    }, EXIT_MS);
   }
 
   if (!visible) return null;

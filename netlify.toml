@@ -11,3 +11,20 @@
   for = "/*.mjs"
   [headers.values]
     Content-Type = "application/javascript"
+
+# The worker, the shell and the manifest must always be revalidated, otherwise the
+# CDN can keep handing out the previous build after a deploy.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
