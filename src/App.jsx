@@ -70,7 +70,51 @@ function MemberPill({ name, phone, color = GOLD }) {
 
 // ── MAIN APP ───────────────────────────────────────────────────────────────
 export default function BowlsTracker() {
-  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
+  // The one place the service worker is registered. `immediate: true` means it
+  // registers at module evaluation rather than waiting for the window load
+  // event, so it reliably sees a worker reach `waiting`.
+  const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW({
+    immediate: true,
+    onRegisteredSW() {
+      // An installed PWA can sit on one build for days: it only looks for a new
+      // worker when we ask it to. Ask on every foreground, and hourly for a
+      // session that's been left open.
+      //
+      // Look the registration up each time rather than holding the handle this
+      // callback was given for the life of the page.
+      const checkForUpdate = () =>
+        navigator.serviceWorker.getRegistration().then(r => r?.update()).catch(() => {});
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") checkForUpdate();
+      });
+      setInterval(checkForUpdate, 60 * 60 * 1000);
+    },
+  });
+
+  // Hand the waiting worker over. The reload that follows is the plugin's, on
+  // the one `controlling` listener it registers — we don't add a second. The
+  // banner is cleared here so it can't sit there looking unresponsive in the
+  // one case the plugin doesn't reload (a first-ever page load, where no worker
+  // was controlling at registration time).
+  function applyUpdate() {
+    setNeedRefresh(false);
+    updateServiceWorker();
+  }
+
+  // Applying an update reloads the page, so never do it under someone who is
+  // mid-score-entry: offer the banner while they're looking at the app, and
+  // apply it the moment they put it down.
+  useEffect(() => {
+    if (!needRefresh) return;
+    if (document.visibilityState === "hidden") { applyUpdate(); return; }
+    function onHide() {
+      if (document.visibilityState !== "hidden") return;
+      document.removeEventListener("visibilitychange", onHide);
+      applyUpdate();
+    }
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [needRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [members, setMembers] = useState(() =>
     DEFAULT_MEMBERS.map(m => ({ ...m, section: m.section || "gents" }))
@@ -113,18 +157,6 @@ export default function BowlsTracker() {
   function dismissIosBanner() {
     save("ipbc_ios_banner_dismissed", true);
     setShowIosBanner(false);
-  }
-
-  // ── SW update banner ──
-  const [swWaiting, setSwWaiting] = useState(null);
-  useEffect(() => {
-    function onSwUpdate(e) { setSwWaiting(e.detail); }
-    window.addEventListener("swUpdateWaiting", onSwUpdate);
-    return () => window.removeEventListener("swUpdateWaiting", onSwUpdate);
-  }, []);
-  function applySwUpdate() {
-    // main.jsx owns the skip-waiting + reload handshake.
-    swWaiting?.apply();
   }
 
   // ── Android install prompt ──
@@ -1730,21 +1762,6 @@ export default function BowlsTracker() {
         </div>
       )}
 
-      {/* ── SW UPDATE BANNER ── */}
-      {swWaiting && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 300, background: MID, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", boxShadow: "0 2px 8px rgba(74,14,31,0.2)", animation: "slideInFromTop 0.22s ease" }}>
-          <div style={{ fontFamily: F_UI, fontSize: "13px", color: "#fff" }}>Update available</div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <button onClick={applySwUpdate} style={{ background: GOLD, border: "none", borderRadius: "6px", color: "#4a0e1f", padding: "7px 14px", fontSize: "12px", fontWeight: "700", cursor: "pointer", fontFamily: F_UI, whiteSpace: "nowrap" }}>
-              Tap to refresh
-            </button>
-            <button onClick={() => setSwWaiting(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.6)", cursor: "pointer", padding: "4px" }}>
-              <X size={15} strokeWidth={2} />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ── WELCOME OVERLAY ── */}
       {showWelcome && (() => {
         const steps = [
@@ -1801,7 +1818,7 @@ export default function BowlsTracker() {
       {needRefresh && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: GREEN, color: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", fontFamily: F_UI, fontSize: "14px", gap: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.25)" }}>
           <span>A new version is available</span>
-          <button onClick={() => updateServiceWorker(true)}
+          <button onClick={applyUpdate}
             style={{ background: "#fff", color: GREEN, border: "none", borderRadius: "8px", padding: "6px 14px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer", flexShrink: 0 }}>
             Update now
           </button>

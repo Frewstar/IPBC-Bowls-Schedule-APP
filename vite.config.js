@@ -6,7 +6,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // main.jsx registers the worker itself so it can drive the update banner.
+      // useRegisterSW in App.jsx is the registrar — it owns the update banner,
+      // the update checks and the skip-waiting handshake. injectRegister stays
+      // null so the plugin doesn't also inject a registration script into
+      // index.html; the React hook is an explicit import and is unaffected by it.
       registerType: "prompt",
       injectRegister: null,
       includeAssets: ["ipbc-badge.png", "icon-192.png", "icon-512.png", "icon-512-maskable.png", "apple-touch-icon.png", "favicon-32.png"],
