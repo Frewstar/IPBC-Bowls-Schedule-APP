@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Radio, Plus, Minus, ChevronLeft, MapPin, X,
-  Share2, Trash2, Flag, CircleCheckBig, Users,
+  Share2, Trash2, Flag, CircleCheckBig, Users, Clock,
 } from "lucide-react";
 import {
   GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER,
@@ -49,6 +49,49 @@ function mapsUrl(location) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
 }
 
+const DAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "Sunday 2:30pm", or "Sun 14 Sep, 2:30pm" once it's more than a week out.
+// One club, one green, one timezone — the phone's own clock is the right one.
+function fmtStartTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const h24 = d.getHours();
+  const suffix = h24 < 12 ? "am" : "pm";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const mins = d.getMinutes();
+  const clock = `${h12}${mins ? `:${String(mins).padStart(2, "0")}` : ""}${suffix}`;
+
+  const startOfDay = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOfDay(d) - startOfDay(new Date())) / 86400000);
+  if (days === 0) return `Today ${clock}`;
+  if (days === 1) return `Tomorrow ${clock}`;
+  if (days > 1 && days < 7) return `${DAY_FULL[d.getDay()]} ${clock}`;
+  return `${DAY_FULL[d.getDay()].slice(0, 3)} ${d.getDate()} ${MONTH_ABBR[d.getMonth()]}, ${clock}`;
+}
+
+// Value for a datetime-local input, in the phone's own timezone.
+function toLocalInputValue(d) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Upcoming games are listed soonest-first. A scheduled game with no start time
+// sorts last rather than disappearing.
+function byStartsAt(a, b) {
+  const ta = a.starts_at ? new Date(a.starts_at).getTime() : Infinity;
+  const tb = b.starts_at ? new Date(b.starts_at).getTime() : Infinity;
+  if (ta !== tb) return ta - tb;
+  return new Date(a.updated_at) - new Date(b.updated_at);
+}
+
+// Live and finished games are listed by most recent activity.
+function byUpdatedDesc(a, b) {
+  return new Date(b.updated_at) - new Date(a.updated_at);
+}
+
 export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, members = [] }) {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +114,9 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
           if (payload.eventType === "DELETE") return prev.filter(g => g.id !== payload.old.id);
           const row = payload.new;
           const without = prev.filter(g => g.id !== row.id);
-          return [row, ...without].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+          // Base order only — each section below sorts itself, so upcoming
+          // games are never ordered by when they were last edited.
+          return [row, ...without].sort(byUpdatedDesc);
         });
       })
       .subscribe();
@@ -84,8 +129,13 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     return () => clearInterval(t);
   }, []);
 
-  const liveGames = useMemo(() => games.filter(g => g.status === "live"), [games]);
-  const finishedGames = useMemo(() => games.filter(g => g.status === "finished"), [games]);
+  // Soonest first — a fixture list, not an activity feed.
+  const scheduledGames = useMemo(
+    () => games.filter(g => g.status === "scheduled").sort(byStartsAt), [games]);
+  const liveGames = useMemo(
+    () => games.filter(g => g.status === "live").sort(byUpdatedDesc), [games]);
+  const finishedGames = useMemo(
+    () => games.filter(g => g.status === "finished").sort(byUpdatedDesc), [games]);
   const openGame = openId ? games.find(g => g.id === openId) : null;
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 2200); }
@@ -98,19 +148,34 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     if (error) showToast("Couldn't save — try again");
   }
 
+  // Changing the score is what starts the broadcast: the marker's first end
+  // takes a scheduled game live, so nobody has to remember to tap Go live.
+  // The clock never does this on its own — a game nobody scores stays
+  // scheduled however long ago it was due to start.
+  function patchScore(g, patch) {
+    const promote = g.status === "scheduled" ? { status: "live" } : null;
+    patchGame(g.id, { ...patch, ...promote });
+    if (promote) showToast("Game is now live");
+  }
+
   function bumpRink(g, idx, side, delta) {
     const rinks = (g.rinks || []).map((r, i) =>
       i === idx ? { ...r, [side]: Math.max(0, (Number(r[side]) || 0) + delta) } : r
     );
-    patchGame(g.id, { rinks });
+    patchScore(g, { rinks });
   }
   function bumpSingle(g, side, delta) {
     const key = side === "home" ? "home_score" : "away_score";
-    patchGame(g.id, { [key]: Math.max(0, (Number(g[key]) || 0) + delta) });
+    patchScore(g, { [key]: Math.max(0, (Number(g[key]) || 0) + delta) });
   }
   async function setFinished(g, finished) {
+    // A finished game reopens to live, never back to scheduled.
     await patchGame(g.id, { status: finished ? "finished" : "live" });
     showToast(finished ? "Marked as finished" : "Back to live");
+  }
+  async function goLive(g) {
+    await patchGame(g.id, { status: "live" });
+    showToast("Game is now live");
   }
   async function deleteGame(g) {
     if (!window.confirm(`Delete "${g.home_team} v ${g.away_team}"? This can't be undone.`)) return;
@@ -129,7 +194,10 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
       body += "\n" + g.rinks.map(r => `${r.label}: ${r.home || 0}–${r.away || 0}`).join("\n");
     }
     if (g.location) body += `\n📍 ${g.location}`;
-    body += `\n\n${g.status === "finished" ? "Full time" : "Live now"} · IPBC Bowls app`;
+    const standing = g.status === "finished" ? "Full time"
+      : g.status === "scheduled" ? (g.starts_at ? `Starts ${fmtStartTime(g.starts_at)}` : "Coming up")
+      : "Live now";
+    body += `\n\n${standing} · IPBC Bowls app`;
     if (navigator.share) navigator.share({ text: body }).catch(() => {});
     else navigator.clipboard?.writeText(body).then(() => showToast("Score copied — paste into WhatsApp"));
   }
@@ -138,7 +206,7 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
   if (view === "create") {
     return (
       <CreateGame
-        myName={myName} cloudKey={cloudKey} members={members}
+        myName={myName} cloudKey={cloudKey} members={members} isAdmin={isAdmin}
         onCancel={() => setView("list")}
         onCreated={id => { setOpenId(id); setView("detail"); }}
         showToast={showToast}
@@ -165,7 +233,7 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
         {/* Scoreboard hero */}
         <div style={{ background: GREEN, borderRadius: "14px", padding: "18px 16px", marginBottom: "14px", boxShadow: "0 4px 16px rgba(74,14,31,0.18)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            {g.status === "live" ? <LiveBadge /> : <FullTimeBadge />}
+            <StatusBadge status={g.status} />
             <button onClick={() => shareGame(g)} style={{ background: "rgba(255,255,255,0.12)", border: "none", borderRadius: "8px", padding: "6px", cursor: "pointer", color: "#fff", display: "flex" }} title="Share score">
               <Share2 size={15} strokeWidth={1.75} />
             </button>
@@ -182,6 +250,11 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
                 style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.85)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "4px" }}>
                 <MapPin size={12} strokeWidth={1.75} color={GOLD} />{g.location}
               </a>
+            )}
+            {g.status === "scheduled" && g.starts_at && (
+              <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: "#fff", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                <Clock size={13} strokeWidth={2} color={GOLD} />{fmtStartTime(g.starts_at)}
+              </div>
             )}
           </div>
 
@@ -202,6 +275,15 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
           <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, display: "flex", alignItems: "center", gap: "8px" }}>
             <Radio size={14} strokeWidth={1.75} color={GOLD_MUTED} />
             Following live — updates automatically. Only {g.creator_name || "the organiser"} & admins can edit.
+          </div>
+        )}
+
+        {g.status === "scheduled" && (
+          <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, display: "flex", alignItems: "center", gap: "8px", lineHeight: 1.5 }}>
+            <Clock size={14} strokeWidth={1.75} color={GOLD_MUTED} style={{ flexShrink: 0 }} />
+            {editable
+              ? "Not started yet. Tap Go live when play begins — or just start scoring and it goes live on its own."
+              : "Not started yet. The score will appear here once play begins."}
           </div>
         )}
 
@@ -237,7 +319,11 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
 
         {editable && (
           <div style={{ display: "flex", gap: "10px", marginTop: "16px", flexWrap: "wrap" }}>
-            {g.status === "live" ? (
+            {g.status === "scheduled" ? (
+              <button onClick={() => goLive(g)} style={{ flex: 1, minWidth: "150px", background: LIVE_RED, border: "none", borderRadius: "10px", color: "#fff", padding: "12px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
+                <Radio size={15} strokeWidth={2} />Go live
+              </button>
+            ) : g.status === "live" ? (
               <button onClick={() => setFinished(g, true)} style={{ flex: 1, minWidth: "150px", background: GOLD, border: "none", borderRadius: "10px", color: "#fff", padding: "12px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
                 <Flag size={15} strokeWidth={2} />Mark as finished
               </button>
@@ -262,7 +348,10 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
         <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: GOLD_MUTED, letterSpacing: "0.12em", textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: "7px" }}>
-          <Radio size={14} strokeWidth={2} />Live Games{liveGames.length ? ` · ${liveGames.length} on now` : ""}
+          <Radio size={14} strokeWidth={2} />Live Games{
+            liveGames.length ? ` · ${liveGames.length} on now`
+            : scheduledGames.length ? ` · ${scheduledGames.length} upcoming`
+            : ""}
         </div>
         {canCreate && (
           <button onClick={() => setView("create")} style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "8px 14px", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "5px" }}>
@@ -279,7 +368,7 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "40px", fontFamily: F_UI, fontSize: "13px", color: TEXT3 }}>Loading…</div>
-      ) : liveGames.length === 0 && finishedGames.length === 0 ? (
+      ) : scheduledGames.length === 0 && liveGames.length === 0 && finishedGames.length === 0 ? (
         <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "40px 24px", textAlign: "center", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
           <Radio size={32} strokeWidth={1} color={BORDER} style={{ marginBottom: "12px" }} />
           <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>No games yet</div>
@@ -289,10 +378,21 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
         </div>
       ) : (
         <>
-          {liveGames.map(g => <GameCard key={g.id} g={g} onOpen={() => { setOpenId(g.id); setView("detail"); }} />)}
+          {scheduledGames.length > 0 && (
+            <>
+              <div style={{ ...sectionLabel, marginTop: "4px" }}>Upcoming</div>
+              {scheduledGames.map(g => <GameCard key={g.id} g={g} onOpen={() => { setOpenId(g.id); setView("detail"); }} />)}
+            </>
+          )}
+          {liveGames.length > 0 && (
+            <>
+              {scheduledGames.length > 0 && <div style={{ ...sectionLabel, marginTop: "22px" }}>On now</div>}
+              {liveGames.map(g => <GameCard key={g.id} g={g} onOpen={() => { setOpenId(g.id); setView("detail"); }} />)}
+            </>
+          )}
           {finishedGames.length > 0 && (
             <>
-              <div style={{ ...sectionLabel, marginTop: liveGames.length ? "22px" : "4px" }}>Recent results</div>
+              <div style={{ ...sectionLabel, marginTop: (liveGames.length || scheduledGames.length) ? "22px" : "4px" }}>Recent results</div>
               {finishedGames.slice(0, 20).map(g => <GameCard key={g.id} g={g} finished onOpen={() => { setOpenId(g.id); setView("detail"); }} />)}
             </>
           )}
@@ -316,6 +416,21 @@ function LiveBadge() {
 function FullTimeBadge() {
   return <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD, letterSpacing: "0.14em", textTransform: "uppercase", border: `1px solid ${GOLD}66`, borderRadius: "20px", padding: "2px 10px" }}>Full time</span>;
 }
+// Deliberately not a red dot and not animated: a fixture that hasn't started
+// must never read as live, however long ago its start time passed.
+function UpcomingBadge() {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", border: `1px solid ${GOLD}66`, borderRadius: "20px", padding: "2px 10px 2px 8px" }}>
+      <Clock size={10} strokeWidth={2.5} color={GOLD} />
+      <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD, letterSpacing: "0.14em", textTransform: "uppercase" }}>Upcoming</span>
+    </span>
+  );
+}
+function StatusBadge({ status }) {
+  if (status === "scheduled") return <UpcomingBadge />;
+  if (status === "finished") return <FullTimeBadge />;
+  return <LiveBadge />;
+}
 
 function TeamCol({ name, score, lead, players = [] }) {
   return (
@@ -333,16 +448,20 @@ function TeamCol({ name, score, lead, players = [] }) {
 
 function GameCard({ g, finished, onOpen }) {
   const t = totalsFor(g);
-  const leadHome = t.home > t.away, leadAway = t.away > t.home;
+  const scheduled = g.status === "scheduled";
+  const leadHome = !scheduled && t.home > t.away, leadAway = !scheduled && t.away > t.home;
   const meta = [g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : null, g.location].filter(Boolean).join(" · ");
+  const stripe = scheduled ? GOLD : finished ? BORDER : LIVE_RED;
   return (
-    <button onClick={onOpen} style={{ width: "100%", textAlign: "left", background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${finished ? BORDER : LIVE_RED}`, borderRadius: "12px", padding: "13px 15px", marginBottom: "9px", cursor: "pointer", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", opacity: finished ? 0.9 : 1 }}>
+    <button onClick={onOpen} style={{ width: "100%", textAlign: "left", background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${stripe}`, borderRadius: "12px", padding: "13px 15px", marginBottom: "9px", cursor: "pointer", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", opacity: finished ? 0.9 : 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
-          {finished ? <FullTimeBadge /> : <LiveBadge />}
+          <StatusBadge status={g.status} />
           {g.title && <span style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.title}</span>}
         </div>
-        {!finished && <span style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, flexShrink: 0 }}>{timeAgo(g.updated_at)}</span>}
+        {scheduled
+          ? g.starts_at && <span style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: GOLD_MUTED, flexShrink: 0 }}>{fmtStartTime(g.starts_at)}</span>
+          : !finished && <span style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, flexShrink: 0 }}>{timeAgo(g.updated_at)}</span>}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -350,8 +469,10 @@ function GameCard({ g, finished, onOpen }) {
           <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: leadAway ? "700" : "500", color: leadAway ? GREEN : TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.away_team}</div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: leadHome ? WIN_GOLD : TEXT, lineHeight: 1.15 }}>{t.home}</div>
-          <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: leadAway ? WIN_GOLD : TEXT, lineHeight: 1.15 }}>{t.away}</div>
+          {/* A fixture that hasn't started has no score — 0–0 would read as a
+              game in progress that nobody is winning. */}
+          <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: scheduled ? TEXT3 : leadHome ? WIN_GOLD : TEXT, lineHeight: 1.15 }}>{scheduled ? "–" : t.home}</div>
+          <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: scheduled ? TEXT3 : leadAway ? WIN_GOLD : TEXT, lineHeight: 1.15 }}>{scheduled ? "–" : t.away}</div>
         </div>
       </div>
       {meta && (
@@ -430,7 +551,7 @@ function MemberPicker({ members, selected, onChange, max, placeholder }) {
 }
 
 // ── Create game form ────────────────────────────────────────────────────────
-function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast, pushGame }) {
+function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, showToast, pushGame }) {
   const [title, setTitle] = useState("");
   const [discipline, setDiscipline] = useState("team");
   const [homeTeam, setHomeTeam] = useState("IPBC");
@@ -441,9 +562,24 @@ function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast,
   const [homePlayers, setHomePlayers] = useState([]);
   const [awayPlayers, setAwayPlayers] = useState("");
   const [saving, setSaving] = useState(false);
+  // Scheduling a fixture is a statement about the club's calendar, so it's an
+  // admin action. Starting a game there and then stays open to every member.
+  const [scheduleIt, setScheduleIt] = useState(false);
+  const [startsAt, setStartsAt] = useState("");
 
   const disc = DISCIPLINES.find(d => d.id === discipline);
   const isTeam = discipline === "team";
+  const scheduling = isAdmin && scheduleIt;
+
+  function toggleSchedule(on) {
+    setScheduleIt(on);
+    if (on && !startsAt) {
+      // Default to the next half hour, which is how fixtures are actually set.
+      const d = new Date(Date.now() + 30 * 60 * 1000);
+      d.setMinutes(d.getMinutes() > 30 ? 60 : 30, 0, 0);
+      setStartsAt(toLocalInputValue(d));
+    }
+  }
 
   function pickVenue(v) {
     setVenue(v);
@@ -454,6 +590,7 @@ function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast,
 
   async function create() {
     if (!awayTeam.trim()) { showToast("Add the opponent's name"); return; }
+    if (scheduling && !startsAt) { showToast("Add a start time"); return; }
     setSaving(true);
     const rinks = disc.format === "rinks"
       ? Array.from({ length: numRinks }, (_, i) => ({ id: `r${i + 1}`, label: `Rink ${i + 1}`, home: 0, away: 0 }))
@@ -467,7 +604,8 @@ function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast,
       venue,
       location: location.trim(),
       format: disc.format,
-      status: "live",
+      status: scheduling ? "scheduled" : "live",
+      starts_at: scheduling ? new Date(startsAt).toISOString() : null,
       rinks,
       home_score: 0,
       away_score: 0,
@@ -487,7 +625,26 @@ function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast,
   return (
     <div>
       <button onClick={onCancel} style={backBtn}><ChevronLeft size={14} strokeWidth={2} />Cancel</button>
-      <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: GREEN, marginBottom: "16px" }}>Set up a live game</div>
+      <div style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "700", color: GREEN, marginBottom: "16px" }}>
+        {scheduling ? "Schedule a game" : "Set up a live game"}
+      </div>
+
+      {isAdmin && (
+        <Field label="When">
+          <div style={{ display: "flex", gap: "8px", marginBottom: scheduleIt ? "8px" : 0 }}>
+            <button onClick={() => toggleSchedule(false)} style={toggleBtn(!scheduleIt)}>Starting now</button>
+            <button onClick={() => toggleSchedule(true)} style={toggleBtn(scheduleIt)}>Schedule it</button>
+          </div>
+          {scheduleIt && (
+            <>
+              <input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)} style={inp} />
+              <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px", lineHeight: 1.5 }}>
+                Listed under Upcoming until someone takes it live. It won't show a score, and the start time passing doesn't start it.
+              </div>
+            </>
+          )}
+        </Field>
+      )}
 
       <Field label="Type of game">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(84px, 1fr))", gap: "8px" }}>
@@ -538,7 +695,7 @@ function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast,
       )}
 
       <button onClick={create} disabled={saving} style={{ width: "100%", marginTop: "10px", background: saving ? TEXT3 : GOLD, border: "none", borderRadius: "10px", color: "#fff", padding: "14px", fontFamily: F_UI, fontSize: "14px", fontWeight: "700", cursor: saving ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-        <CircleCheckBig size={17} strokeWidth={2} />{saving ? "Creating…" : "Start live game"}
+        <CircleCheckBig size={17} strokeWidth={2} />{saving ? "Creating…" : scheduling ? "Schedule game" : "Start live game"}
       </button>
     </div>
   );
