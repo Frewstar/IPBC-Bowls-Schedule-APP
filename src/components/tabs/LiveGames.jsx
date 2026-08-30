@@ -78,6 +78,27 @@ function toLocalInputValue(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// "A FREW & J MUIR", or "A FREW, J MUIR, K HOUSTON & W REID" for a rink.
+// Used to name both sides of an internal club game, where "IPBC v IPBC" tells
+// nobody anything.
+function sideName(players, fallback = "") {
+  const list = (players || []).map(n => String(n).trim()).filter(Boolean);
+  if (list.length === 0) return fallback;
+  if (list.length === 1) return list[0];
+  return `${list.slice(0, -1).join(", ")} & ${list[list.length - 1]}`;
+}
+
+// A side whose name was built from its players reads better as the lead name
+// on top with the partners underneath than as one long "A & B & C" heading.
+// An away club keeps its own name and lists its players below, as before.
+function splitSide(name, players = []) {
+  const list = (players || []).map(n => String(n).trim()).filter(Boolean);
+  if (list.length > 1 && name === sideName(list)) {
+    return { heading: list[0], rest: list.slice(1) };
+  }
+  return { heading: name, rest: list };
+}
+
 // Upcoming games are listed soonest-first. A scheduled game with no start time
 // sorts last rather than disappearing.
 function byStartsAt(a, b) {
@@ -185,6 +206,13 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     const key = side === "home" ? "home_score" : "away_score";
     patchScore(g, { [key]: Math.max(0, (Number(g[key]) || 0) + delta) });
   }
+  // Starting the ends count is starting the game, same as putting a shot on.
+  function bumpEnds(g, delta) {
+    const total = Number(g.ends_total) || 0;
+    const next = Math.min(total, Math.max(0, (Number(g.ends_played) || 0) + delta));
+    if (next === (Number(g.ends_played) || 0)) return;
+    patchScore(g, { ends_played: next });
+  }
   async function setFinished(g, finished) {
     // A finished game reopens to live, never back to scheduled.
     await patchGame(g.id, { status: finished ? "finished" : "live" });
@@ -209,6 +237,11 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     if (g.discipline && g.discipline !== "team") body += `\n${discLabel(g.discipline)}`;
     if (g.format === "rinks" && (g.rinks || []).length) {
       body += "\n" + g.rinks.map(r => `${r.label}: ${r.home || 0}–${r.away || 0}`).join("\n");
+    }
+    if (g.ends_total > 0) {
+      body += g.ends_played >= g.ends_total
+        ? `\nAll ${g.ends_total} ends played`
+        : `\nEnd ${(g.ends_played || 0) + 1} of ${g.ends_total}`;
     }
     if (g.location) body += `\n📍 ${g.location}`;
     const standing = g.status === "finished" ? "Full time"
@@ -243,6 +276,10 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     const leadHome = t.home > t.away, leadAway = t.away > t.home;
     const homePlayers = Array.isArray(g.home_players) ? g.home_players : [];
     const awayPlayers = Array.isArray(g.away_players) ? g.away_players : [];
+    // Steppers are narrow, and the full line-up is already on the scoreboard
+    // above them, so they take the lead name only.
+    const homeShort = splitSide(g.home_team, homePlayers).heading;
+    const awayShort = splitSide(g.away_team, awayPlayers).heading;
 
     return (
       <div>
@@ -307,6 +344,32 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
           </div>
         )}
 
+        {g.ends_total > 0 && (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "12px 14px", marginBottom: "10px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
+            <div style={{ ...sectionLabel, marginBottom: "8px" }}>Ends</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px" }}>
+              {editable && (
+                <button onClick={() => bumpEnds(g, -1)} style={stepBtn} aria-label="One end fewer">
+                  <Minus size={16} strokeWidth={2.5} />
+                </button>
+              )}
+              <div style={{ textAlign: "center", minWidth: "120px" }}>
+                <div style={{ fontFamily: F_SANS, fontSize: "24px", fontWeight: "700", color: TEXT, lineHeight: 1.1 }}>
+                  {g.ends_played >= g.ends_total ? "All ends played" : `End ${(g.ends_played || 0) + 1} of ${g.ends_total}`}
+                </div>
+                <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "3px" }}>
+                  {g.ends_played || 0} of {g.ends_total} complete
+                </div>
+              </div>
+              {editable && (
+                <button onClick={() => bumpEnds(g, +1)} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }} aria-label="One end more">
+                  <Plus size={16} strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {g.format === "rinks" ? (
           <div>
             <div style={sectionLabel}>Rinks</div>
@@ -316,9 +379,9 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
                 <div key={r.id || idx} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "12px 14px", marginBottom: "8px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
                   <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>{r.label || `Rink ${idx + 1}`}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                    <ScoreStepper label={g.home_team} value={rHome} editable={editable}
+                    <ScoreStepper label={homeShort} value={rHome} editable={editable}
                       onDec={() => bumpRink(g, idx, "home", -1)} onInc={() => bumpRink(g, idx, "home", +1)} lead={rHome > rAway} />
-                    <ScoreStepper label={g.away_team} value={rAway} editable={editable}
+                    <ScoreStepper label={awayShort} value={rAway} editable={editable}
                       onDec={() => bumpRink(g, idx, "away", -1)} onInc={() => bumpRink(g, idx, "away", +1)} lead={rAway > rHome} />
                   </div>
                 </div>
@@ -329,9 +392,9 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
           <div>
             <div style={sectionLabel}>Score</div>
             <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "16px 14px", marginBottom: "8px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
-              <ScoreStepper label={g.home_team} value={t.home} editable={editable}
+              <ScoreStepper label={homeShort} value={t.home} editable={editable}
                 onDec={() => bumpSingle(g, "home", -1)} onInc={() => bumpSingle(g, "home", +1)} lead={leadHome} big />
-              <ScoreStepper label={g.away_team} value={t.away} editable={editable}
+              <ScoreStepper label={awayShort} value={t.away} editable={editable}
                 onDec={() => bumpSingle(g, "away", -1)} onInc={() => bumpSingle(g, "away", +1)} lead={leadAway} big />
             </div>
           </div>
@@ -466,13 +529,14 @@ function StatusBadge({ status }) {
 }
 
 function TeamCol({ name, score, lead, players = [] }) {
+  const { heading, rest } = splitSide(name, players);
   return (
     <div style={{ textAlign: "center", minWidth: 0 }}>
-      <div style={{ fontFamily: F_SANS, fontSize: "13px", fontWeight: "600", color: "rgba(255,255,255,0.85)", marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+      <div style={{ fontFamily: F_SANS, fontSize: "13px", fontWeight: "600", color: "rgba(255,255,255,0.85)", marginBottom: "4px", overflowWrap: "anywhere", lineHeight: 1.25 }}>{heading}</div>
       <div style={{ fontFamily: F_SANS, fontSize: "44px", fontWeight: "700", color: lead ? GOLD : "#fff", lineHeight: 1 }}>{score}</div>
-      {players.length > 0 && (
-        <div style={{ fontFamily: F_UI, fontSize: "10px", color: "rgba(255,255,255,0.6)", marginTop: "6px", lineHeight: 1.35 }}>
-          {players.join(", ")}
+      {rest.length > 0 && (
+        <div style={{ fontFamily: F_UI, fontSize: "10px", color: "rgba(255,255,255,0.6)", marginTop: "6px", lineHeight: 1.4, overflowWrap: "anywhere" }}>
+          {rest.map(n => <div key={n}>{n}</div>)}
         </div>
       )}
     </div>
@@ -483,7 +547,10 @@ function GameCard({ g, finished, onOpen }) {
   const t = totalsFor(g);
   const scheduled = g.status === "scheduled";
   const leadHome = !scheduled && t.home > t.away, leadAway = !scheduled && t.away > t.home;
-  const meta = [g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : null, g.location].filter(Boolean).join(" · ");
+  const endsLabel = g.ends_total > 0
+    ? (g.ends_played >= g.ends_total ? `${g.ends_total} ends` : `End ${(g.ends_played || 0) + 1} of ${g.ends_total}`)
+    : null;
+  const meta = [g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : null, endsLabel, g.location].filter(Boolean).join(" · ");
   const stripe = scheduled ? GOLD : finished ? BORDER : LIVE_RED;
   return (
     <button onClick={onOpen} style={{ width: "100%", textAlign: "left", background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${stripe}`, borderRadius: "12px", padding: "13px 15px", marginBottom: "9px", cursor: "pointer", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", opacity: finished ? 0.9 : 1 }}>
@@ -498,8 +565,8 @@ function GameCard({ g, finished, onOpen }) {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: leadHome ? "700" : "500", color: leadHome ? GREEN : TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.home_team}</div>
-          <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: leadAway ? "700" : "500", color: leadAway ? GREEN : TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.away_team}</div>
+          <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: leadHome ? "700" : "500", color: leadHome ? GREEN : TEXT, overflowWrap: "anywhere", lineHeight: 1.3 }}>{g.home_team}</div>
+          <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: leadAway ? "700" : "500", color: leadAway ? GREEN : TEXT, overflowWrap: "anywhere", lineHeight: 1.3 }}>{g.away_team}</div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
           {/* A fixture that hasn't started has no score — 0–0 would read as a
@@ -520,7 +587,7 @@ function GameCard({ g, finished, onOpen }) {
 function ScoreStepper({ label, value, editable, onDec, onInc, lead, big }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: TEXT2, marginBottom: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+      <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: TEXT2, marginBottom: "6px", overflowWrap: "anywhere", lineHeight: 1.3 }}>{label}</div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
         {editable && <button onClick={onDec} style={stepBtn} aria-label={`${label} minus one`}><Minus size={16} strokeWidth={2.5} /></button>}
         <div style={{ fontFamily: F_SANS, fontSize: big ? "40px" : "30px", fontWeight: "700", color: lead ? WIN_GOLD : TEXT, minWidth: big ? "60px" : "44px", lineHeight: 1 }}>{value}</div>
@@ -595,6 +662,14 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
   const [homePlayers, setHomePlayers] = useState([]);
   const [awayPlayers, setAwayPlayers] = useState("");
   const [saving, setSaving] = useState(false);
+  // An internal club final: both sides are our own members, so the away side
+  // gets the same picker as the home side and neither is called "IPBC".
+  const [internal, setInternal] = useState(false);
+  const [awayMembers, setAwayMembers] = useState([]);
+  // Singles is played to 21 shots; pairs and rinks are usually a set number of
+  // ends. Null total means no ends limit.
+  const [byEnds, setByEnds] = useState(false);
+  const [numEnds, setNumEnds] = useState(15);
   // Scheduling a fixture is a statement about the club's calendar, so it's an
   // admin action. Starting a game there and then stays open to every member.
   const [scheduleIt, setScheduleIt] = useState(false);
@@ -603,6 +678,9 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
   const disc = DISCIPLINES.find(d => d.id === discipline);
   const isTeam = discipline === "team";
   const scheduling = isAdmin && scheduleIt;
+  // On an internal game the two sides are named after who is playing.
+  const homeLabel = internal ? sideName(homePlayers) : (homeTeam.trim() || "IPBC");
+  const awayLabel = internal ? sideName(awayMembers) : awayTeam.trim();
 
   function toggleSchedule(on) {
     setScheduleIt(on);
@@ -622,18 +700,26 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
   }
 
   async function create() {
-    if (!awayTeam.trim()) { showToast("Add the opponent's name"); return; }
+    if (internal) {
+      if (homePlayers.length === 0 || awayMembers.length === 0) {
+        showToast("Pick the players on both sides"); return;
+      }
+    } else if (!awayTeam.trim()) {
+      showToast("Add the opponent's name"); return;
+    }
     if (scheduling && !startsAt) { showToast("Add a start time"); return; }
     setSaving(true);
     const rinks = disc.format === "rinks"
       ? Array.from({ length: numRinks }, (_, i) => ({ id: `r${i + 1}`, label: `Rink ${i + 1}`, home: 0, away: 0 }))
       : [];
-    const away = awayPlayers.split(",").map(s => s.trim()).filter(Boolean);
+    const away = internal
+      ? awayMembers
+      : awayPlayers.split(",").map(s => s.trim()).filter(Boolean);
     const row = {
       title: title.trim() || null,
       discipline,
-      home_team: homeTeam.trim() || "IPBC",
-      away_team: awayTeam.trim(),
+      home_team: homeLabel,
+      away_team: awayLabel,
       venue,
       location: location.trim(),
       format: disc.format,
@@ -644,6 +730,8 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
       away_score: 0,
       home_players: homePlayers,
       away_players: away,
+      ends_total: byEnds ? numEnds : null,
+      ends_played: 0,
       creator_cloudkey: cloudKey,
       creator_name: myName,
       last_updated_by: myName,
@@ -692,19 +780,72 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Ayrshire Cup" style={inp} />
       </Field>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-        <Field label="Home team"><input value={homeTeam} onChange={e => setHomeTeam(e.target.value)} style={inp} /></Field>
-        <Field label="Away team"><input value={awayTeam} onChange={e => setAwayTeam(e.target.value)} placeholder="Opponent" style={inp} /></Field>
-      </div>
+      <Field label="Who's playing?">
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={() => setInternal(false)} style={toggleBtn(!internal)}>Another club</button>
+          <button onClick={() => setInternal(true)} style={toggleBtn(internal)}>Two of our own</button>
+        </div>
+        {internal && (
+          <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "6px", lineHeight: 1.5 }}>
+            A club final or an internal tie. Both sides are named after the players, so the
+            scoreboard doesn't read "IPBC v IPBC".
+          </div>
+        )}
+      </Field>
 
-      <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />{isTeam ? "IPBC squad (optional)" : `IPBC players${disc.players ? ` — pick ${disc.players}` : ""}`}</span>}>
+      {!internal && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+          <Field label="Home team"><input value={homeTeam} onChange={e => setHomeTeam(e.target.value)} style={inp} /></Field>
+          <Field label="Away team"><input value={awayTeam} onChange={e => setAwayTeam(e.target.value)} placeholder="Opponent" style={inp} /></Field>
+        </div>
+      )}
+
+      <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />{
+        internal ? `First side${disc.players ? ` — pick ${disc.players}` : ""}`
+                 : isTeam ? "IPBC squad (optional)"
+                 : `IPBC players${disc.players ? ` — pick ${disc.players}` : ""}`}</span>}>
         <MemberPicker members={members} selected={homePlayers} onChange={setHomePlayers}
           max={isTeam ? 0 : disc.players}
           placeholder={isTeam ? "Add a player…" : "Search members…"} />
+        {internal && homePlayers.length > 0 && (
+          <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, marginTop: "6px", fontWeight: "600" }}>
+            Shown as: {sideName(homePlayers)}
+          </div>
+        )}
       </Field>
 
-      <Field label="Opponent players (optional)">
-        <input value={awayPlayers} onChange={e => setAwayPlayers(e.target.value)} placeholder="Names, separated by commas" style={inp} />
+      {internal ? (
+        <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />Second side{disc.players ? ` — pick ${disc.players}` : ""}</span>}>
+          <MemberPicker members={members.filter(m => !homePlayers.includes(m.name))}
+            selected={awayMembers} onChange={setAwayMembers}
+            max={isTeam ? 0 : disc.players} placeholder="Search members…" />
+          {awayMembers.length > 0 && (
+            <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, marginTop: "6px", fontWeight: "600" }}>
+              Shown as: {sideName(awayMembers)}
+            </div>
+          )}
+        </Field>
+      ) : (
+        <Field label="Opponent players (optional)">
+          <input value={awayPlayers} onChange={e => setAwayPlayers(e.target.value)} placeholder="Names, separated by commas" style={inp} />
+        </Field>
+      )}
+
+      <Field label="How is it played?">
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={() => setByEnds(false)} style={toggleBtn(!byEnds)}>To 21 shots</button>
+          <button onClick={() => setByEnds(true)} style={toggleBtn(byEnds)}>Set number of ends</button>
+        </div>
+        {byEnds && (
+          <div style={{ display: "flex", alignItems: "center", gap: "14px", marginTop: "10px" }}>
+            <button onClick={() => setNumEnds(n => Math.max(1, n - 1))} style={stepBtn}><Minus size={16} strokeWidth={2.5} /></button>
+            <div style={{ textAlign: "center", minWidth: "84px" }}>
+              <div style={{ fontFamily: F_SANS, fontSize: "26px", fontWeight: "700", color: TEXT, lineHeight: 1 }}>{numEnds}</div>
+              <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "3px" }}>ends</div>
+            </div>
+            <button onClick={() => setNumEnds(n => Math.min(30, n + 1))} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }}><Plus size={16} strokeWidth={2.5} /></button>
+          </div>
+        )}
       </Field>
 
       <Field label="Where is it?">
