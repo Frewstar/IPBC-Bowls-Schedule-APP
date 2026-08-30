@@ -36,7 +36,7 @@ const FACILITIES = [
   "Car Park (30+ spaces)",
 ];
 
-export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, honoraryMembers = HONORARY_MEMBERS, isAdmin = false, recordWinner, addHonoraryMember, removeHonoraryMember }) {
+export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, honoraryMembers = HONORARY_MEMBERS, isAdmin = false, recordWinner, addHonoraryMember, removeHonoraryMember, showPhones = false }) {
   const [expandedComp, setExpandedComp] = useState(null);
   const [committeeOpen, setCommitteeOpen] = useState(false);
 
@@ -232,7 +232,7 @@ export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, h
                           <div key={m.id} style={{ background: SURFACE, padding: "12px 14px" }}>
                             <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700", marginBottom: "3px" }}>{m.position}</div>
                             <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT }}>{m.name}</div>
-                            {m.phone ? <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, textDecoration: "none", fontWeight: "600" }}>{m.phone}</a> : null}
+                            {showPhones && m.phone ? <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, textDecoration: "none", fontWeight: "600" }}>{m.phone}</a> : null}
                           </div>
                         ))}
                       </div>
@@ -243,7 +243,7 @@ export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, h
                           <div style={{ fontFamily: F_UI, fontSize: "10px", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: "700" }}>{m.position}</div>
                           <div style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "600", color: TEXT }}>{m.name}</div>
                         </div>
-                        {m.phone ? (
+                        {showPhones && m.phone ? (
                           <a href={`tel:${m.phone.replace(/\s/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "20px", padding: "4px 10px", color: GOLD_MUTED, textDecoration: "none", fontFamily: F_UI, fontSize: "11px", fontWeight: "600" }}>
                             <Phone size={10} strokeWidth={2} />{m.phone}
                           </a>

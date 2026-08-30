@@ -69,6 +69,22 @@ function MemberPill({ name, phone, color = GOLD }) {
 
 
 // ── MAIN APP ───────────────────────────────────────────────────────────────
+function MembersOnlySignedIn({ navigateTo }) {
+  return (
+    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "16px", padding: "36px 24px", textAlign: "center", boxShadow: "0 2px 12px rgba(74,14,31,0.08)" }}>
+      <Lock size={28} strokeWidth={1.25} color={BORDER} style={{ marginBottom: "12px" }} />
+      <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>Members only</div>
+      <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, lineHeight: 1.55, maxWidth: "22rem", margin: "0 auto 18px" }}>
+        The club directory is for members. Sign in with your name and PIN to see it.
+      </div>
+      <button onClick={() => navigateTo("myties")}
+        style={{ background: MID, border: "none", borderRadius: "9px", color: "#fff", padding: "12px 22px", fontSize: "14px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>
+        Sign in
+      </button>
+    </div>
+  );
+}
+
 // "/?game=<id>" — a link shared from a live game. Returns null when absent or
 // unreadable, so nothing downstream has to guard against a throw.
 function readGameParam() {
@@ -215,6 +231,15 @@ export default function BowlsTracker() {
   // ── My Ties state ──
   const [myName, setMyName]       = useState(() => load("bowls_myname", "") || "");
   const [myPin, setMyPin]         = useState(() => load("bowls_mypin", "") || "");
+  // Anyone who has been through sign-in. A visitor following a shared game link
+  // has no name, and must not see the roster or anyone's phone number.
+  //
+  // This is a UI gate and nothing more. Every policy on `members` is
+  // using (true) and the anon key ships in the bundle, so the table is still
+  // readable by anyone who knows how. 002b is the actual fix; this stops the
+  // roster being handed to a visitor who simply backs out of a shared game.
+  const signedIn = !!myName;
+
   const cloudKey = myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null;
   // Linked member: canonical name from members list (used for draw lookups)
   const [linkedMemberName, setLinkedMemberName] = useState(() => load("bowls_linked_member", "") || "");
@@ -807,13 +832,17 @@ export default function BowlsTracker() {
 
   // Load members from Supabase (falls back to DEFAULT_MEMBERS if offline)
   useEffect(() => {
-    supabase.from("members").select("*").order("sort_order").order("name")
+    // A signed-out visitor gets the columns the public tabs need and nothing
+    // else, so phone numbers never reach the device rather than merely being
+    // hidden on it. Signing in refetches the full row.
+    const columns = signedIn ? "*" : "id, name, section, position, sort_order";
+    supabase.from("members").select(columns).order("sort_order").order("name")
       .then(({ data, error }) => {
         if (!error && data?.length > 0) {
           setMembers(data.map(m => ({ ...m, section: m.section || "gents" })));
         }
       });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Set once the cloud copy for the current account has been read. The upload below
   // waits for it, so a slow first fetch can't push this device's empty state over
@@ -1777,7 +1806,7 @@ export default function BowlsTracker() {
     { id: "search",      label: "Find",      Icon: Binoculars },
     { id: "honours",     label: "Honours",   Icon: Award      },
     { id: "fixtures",    label: "Fixtures",  Icon: Calendar   },
-    { id: "members",     label: "Members",   Icon: Users      },
+    ...(signedIn ? [{ id: "members", label: "Members", Icon: Users }] : []),
     { id: "club",        label: "Club",      Icon: Shield     },
     ...(isAdmin || isDrawAdmin ? [{ id: "admin", label: "Admin", Icon: Lock }] : []),
   ];
@@ -3623,7 +3652,9 @@ export default function BowlsTracker() {
         {/* ══════════════════════════════════════════
             DRAWS TAB — personal competition view
         ══════════════════════════════════════════ */}
-        {activeTab === "tournaments" && (
+        {activeTab === "tournaments" && !signedIn && <MembersOnlySignedIn navigateTo={navigateTo} />}
+
+        {activeTab === "tournaments" && signedIn && (
           <DrawsTab
             myEntries={myEntries}
             activeTournament={activeTournament}
@@ -3643,7 +3674,9 @@ export default function BowlsTracker() {
                 {/* ══════════════════════════════════════════
             MEMBERS TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "members" && (
+        {activeTab === "members" && !signedIn && <MembersOnlySignedIn navigateTo={navigateTo} />}
+
+        {activeTab === "members" && signedIn && (
           <MembersTab
             filteredMembers={filteredMembers}
             groupedMembers={groupedMembers}
@@ -3733,7 +3766,7 @@ export default function BowlsTracker() {
         {/* ══════════════════════════════════════════
             CLUB TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "club" && <ClubTab members={members} rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} isAdmin={isAdmin} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
+        {activeTab === "club" && <ClubTab members={members} showPhones={signedIn} rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} isAdmin={isAdmin} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
 
         {/* ══════════════════════════════════════════
             ADMIN TAB
