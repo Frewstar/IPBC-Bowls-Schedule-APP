@@ -69,6 +69,13 @@ function MemberPill({ name, phone, color = GOLD }) {
 
 
 // ── MAIN APP ───────────────────────────────────────────────────────────────
+// "/?game=<id>" — a link shared from a live game. Returns null when absent or
+// unreadable, so nothing downstream has to guard against a throw.
+function readGameParam() {
+  try { return new URLSearchParams(window.location.search).get("game") || null; }
+  catch { return null; }
+}
+
 export default function BowlsTracker() {
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
 
@@ -76,7 +83,19 @@ export default function BowlsTracker() {
     DEFAULT_MEMBERS.map(m => ({ ...m, section: m.section || "gents" }))
   );
   const [ties, setTies]       = useState(() => load(TIES_KEY, {}));
-  const [activeTab, setActiveTab] = useState("myties");
+  // A shared game link, /?game=<id>. Read on the first render rather than in an
+  // effect, so someone following a link from WhatsApp lands on the game instead
+  // of watching My Ties flash past first.
+  const [deepLinkGameId, setDeepLinkGameId] = useState(readGameParam);
+
+  // Take the id out of the address bar once we have it, so a later reload
+  // doesn't reopen the game.
+  useEffect(() => {
+    if (!deepLinkGameId) return;
+    try { window.history.replaceState({}, "", window.location.pathname); } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [activeTab, setActiveTab] = useState(() => (readGameParam() ? "live" : "myties"));
   const [prevTab, setPrevTab] = useState("myties");
   function navigateTo(tab) { setPrevTab(t => activeTab !== tab ? activeTab : t); setActiveTab(tab); }
 
@@ -94,7 +113,10 @@ export default function BowlsTracker() {
   }
 
   // ── First-time welcome overlay ──
-  const [showWelcome, setShowWelcome] = useState(() => !load("ipbc_welcome_seen", false));
+  // Not marked as seen — a first-time visitor who arrives on a shared game link
+  // still gets the tour on a later, ordinary visit. It just isn't in the way of
+  // the thing they actually clicked.
+  const [showWelcome, setShowWelcome] = useState(() => !load("ipbc_welcome_seen", false) && !readGameParam());
   const [welcomeStep, setWelcomeStep] = useState(0);
   function dismissWelcome() {
     save("ipbc_welcome_seen", true);
@@ -177,28 +199,75 @@ export default function BowlsTracker() {
   const [nameStep, setNameStep]   = useState("name"); // "name" | "pin"
   // ── Admin role (Supabase-backed) ──
   const [adminRole, setAdminRole] = useState(null); // null | "admin" | "super_admin" | "draw_admin"
+  // Has the server confirmed this name+PIN is an admin? Nothing is granted
+  // without it — see the effect below.
+  const [adminVerified, setAdminVerified] = useState(false);
   const [adminClaimMsg, setAdminClaimMsg] = useState(null);
 
+  // Admin rights are decided by the server, not by matching strings here.
+  //
+  // This used to read the admins table and compare admins.player_name against
+  // whatever name the member signed in with — no PIN anywhere in it. Since
+  // bowls_register deliberately allows a second account under an existing name
+  // with a different PIN (that is what separates two members with the same
+  // initials), anyone could register as an admin and be handed the panel.
+  // bowls_is_admin checks the name and PIN against player_data.pin_hash and
+  // then finds the admins row by player_id, so a lookalike account fails it.
+  //
+  // This closes that one route in. It does not make admin secure: almost every
+  // admin action in this file still writes straight to a table with the anon
+  // key against a using(true) policy, so anyone with the bundle can insert
+  // themselves into the admins table without going near this check. That is
+  // 002b's job, not this change's.
   useEffect(() => {
-    if (!myName) { setAdminRole(null); return; }
+    // Fail closed. No rights before the server has confirmed them, none while
+    // the check is in flight, and none if it fails for any reason — including
+    // a flaky connection. There is deliberately no fallback to the old name
+    // match: a fallback would reinstate the bug every time the network dropped.
+    setAdminVerified(false);
+    setAdminRole(null);
+    if (!myName || !myPin) return;
+
+    let cancelled = false;
     const nameUpper = myName.toUpperCase();
-    const q1 = supabase.from("admins").select("role").eq("player_name", nameUpper);
-    const q2 = cloudKey
-      ? supabase.from("admins").select("role").eq("cloud_key", cloudKey)
-      : Promise.resolve({ data: [] });
-    Promise.all([q1, q2]).then(([r1, r2]) => {
+    const key = `${nameUpper}-${myPin}`;
+
+    (async () => {
+      const { data: ok, error } = await supabase.rpc("bowls_is_admin", {
+        p_name: nameUpper,
+        p_pin:  myPin,
+      });
+      // Anything that is not an explicit true — an error, a null, a dropped
+      // request — leaves them an ordinary member.
+      if (cancelled || error || ok !== true) return;
+
+      // Confirmed. Now read the row for the admin/super_admin/draw_admin
+      // distinction, which is display and tier only — it grants nothing on its
+      // own. If the row can't be matched the member stays out, which is the
+      // fail-closed answer; fix the admins row rather than loosening this.
+      const [r1, r2] = await Promise.all([
+        supabase.from("admins").select("role").eq("player_name", nameUpper),
+        supabase.from("admins").select("role").eq("cloud_key", key),
+      ]);
+      if (cancelled) return;
       const rows = [...(r1.data || []), ...(r2.data || [])];
       const role = rows.some(r => r.role === "super_admin") ? "super_admin"
                  : rows.some(r => r.role === "admin")       ? "admin"
                  : rows.some(r => r.role === "draw_admin")  ? "draw_admin"
                  : null;
       setAdminRole(role);
-    });
-  }, [myName, cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
+      setAdminVerified(true);
+    })();
 
-  const isAdmin = adminRole === "admin" || adminRole === "super_admin";
-  const isSuperAdmin = adminRole === "super_admin";
-  const isDrawAdmin = adminRole === "draw_admin";
+    // Credentials changed while a check was in flight — drop the stale answer.
+    return () => { cancelled = true; };
+  }, [myName, myPin]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Every admin gate in the app goes through these three, so verification only
+  // has to be applied once, here.
+  const isAdmin = adminVerified && (adminRole === "admin" || adminRole === "super_admin");
+  const isSuperAdmin = adminVerified && adminRole === "super_admin";
+  const isDrawAdmin = adminVerified && adminRole === "draw_admin";
 
   async function claimSuperAdmin() {
     if (!cloudKey || !myName) return;
@@ -1538,6 +1607,35 @@ export default function BowlsTracker() {
     // Also clear any lockout
     const namePart = playerName.split("-").slice(0, -1).join("-");
     if (namePart) { await supabase.from("login_lockouts").delete().eq("name", namePart); setLockouts(l => l.filter(x => x.name !== namePart)); }
+  }
+
+  // Reset a member's PIN. The client never builds the new key or the hash —
+  // bowls_admin_reset_pin owns both, and re-checks that the caller really is an
+  // admin using the PIN they type in, not the isAdmin flag sitting in this
+  // component. Returns the RPC's status object for the UI to report.
+  async function resetMemberPin(memberId, newPin, adminPin) {
+    const { data, error } = await supabase.rpc("bowls_admin_reset_pin", {
+      p_admin_name: myName,
+      p_admin_pin:  adminPin,
+      p_member_id:  String(memberId),
+      p_new_pin:    newPin,
+    });
+    if (error) return { status: "error", message: error.message };
+    if (data?.status !== "ok") return data || { status: "error", message: "No response from the server." };
+
+    // An admin resetting their own PIN would otherwise carry on with a cloudKey
+    // that no longer exists — the sync would then write their data to a fresh
+    // empty row. Follow the account instead.
+    if (data.account_name && myName && data.account_name.toUpperCase() === myName.toUpperCase()) {
+      setMyPin(newPin);
+    }
+
+    // The account list shows the key, which has just changed under it.
+    supabase.from("player_data").select("player_name, updated_at").order("updated_at", { ascending: false })
+      .then(({ data: rows }) => { if (rows) setRegisteredUsers(rows); });
+    setLockouts(l => l.filter(x => x.name?.toUpperCase() !== data.account_name?.toUpperCase()));
+    setMembers(p => p.map(m => String(m.id) === String(memberId) ? { ...m, linked_cloudkey: data.new_key } : m));
+    return data;
   }
 
   async function grantAdmin(member, role = "admin") {
@@ -3262,7 +3360,8 @@ export default function BowlsTracker() {
             LIVE GAMES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "live" && (
-          <LiveGamesTab myName={myName} cloudKey={cloudKey} isAdmin={isAdmin} setActiveTab={setActiveTab} members={members} />
+          <LiveGamesTab myName={myName} cloudKey={cloudKey} isAdmin={isAdmin} setActiveTab={setActiveTab} members={members}
+            deepLinkGameId={deepLinkGameId} onDeepLinkHandled={() => setDeepLinkGameId(null)} />
         )}
 
         {/* ══════════════════════════════════════════
@@ -3655,6 +3754,7 @@ export default function BowlsTracker() {
             lockAppAccount={lockAppAccount}
             unlockAppAccount={unlockAppAccount}
             deleteAppAccount={deleteAppAccount}
+            resetMemberPin={resetMemberPin}
             isDrawAdmin={isDrawAdmin}
             activeSection={activeSection}
             seasonYear={settings.seasonYear || new Date().getFullYear()}
