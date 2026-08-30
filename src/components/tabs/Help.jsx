@@ -1,5 +1,5 @@
 import { GREEN, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_SANS, F_UI } from "../../lib/theme.js";
-import { Phone } from "lucide-react";
+import { Phone, Download } from "lucide-react";
 
 const MATCH_SEC_PHONE = "+447402348205";
 
@@ -41,7 +41,67 @@ function Tip({ children }) {
   );
 }
 
-export default function HelpTab({ onBackup }) {
+// The install banners elsewhere in the app are dismissible, and the iOS one
+// remembers the dismissal for good — so once it has gone there is no way back
+// to it. This card is the permanent answer to "how do I install it?".
+function InstallCard({ canInstall, onInstall, isIos, alreadyInstalled }) {
+  if (alreadyInstalled) {
+    return (
+      <Card emoji="✅" title="You've already installed it">
+        <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6 }}>
+          You're using the installed app right now — that's why there's no address bar.
+          It updates itself, so there's nothing to reinstall.
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card emoji="📲" title="Install the app on your phone">
+      <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "12px" }}>
+        Installing puts the club crest on your home screen and opens the app full screen,
+        without the browser bar. It's the same app — nothing to download from a store,
+        and it takes no space to speak of.
+      </div>
+
+      {isIos ? (
+        <>
+          <Step num="1" text="Open this page in Safari. Add to Home Screen isn't offered in other browsers on an iPhone." />
+          <Step num="2" text="Tap the Share button — the square with an arrow coming out of the top, in the bar at the bottom." />
+          <Step num="3" text='Scroll down the list and tap "Add to Home Screen".' />
+          <Step num="4" text='Tap "Add" at the top right. The crest appears on your home screen with your other apps.' />
+        </>
+      ) : canInstall ? (
+        <>
+          <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT, lineHeight: 1.6, marginBottom: "12px" }}>
+            Your phone can do this in one tap:
+          </div>
+          <button onClick={onInstall}
+            style={{ width: "100%", background: GREEN, border: "none", borderRadius: "10px", color: "#fff", padding: "14px", fontFamily: F_UI, fontSize: "15px", fontWeight: "700", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+            <Download size={17} strokeWidth={2} />Install IPBC Bowls
+          </button>
+          <Tip>
+            If nothing happens, your phone may have installed it already — check your home
+            screen for the club crest.
+          </Tip>
+        </>
+      ) : (
+        <>
+          <Step num="1" text="Open this page in Chrome." />
+          <Step num="2" text="Tap the three dots at the top right of the browser." />
+          <Step num="3" text={`Tap "Install app", or "Add to Home screen" if you don't see it.`} />
+          <Step num="4" text="Confirm, and the crest appears on your home screen." />
+          <Tip>
+            No Install option in the menu? It usually means the app is already installed —
+            look for the club crest on your home screen.
+          </Tip>
+        </>
+      )}
+    </Card>
+  );
+}
+
+export default function HelpTab({ onBackup, canInstall, onInstall, isIos, alreadyInstalled }) {
   return (
     <div style={{ maxWidth: "520px", margin: "0 auto", paddingBottom: "32px" }}>
 
@@ -52,6 +112,8 @@ export default function HelpTab({ onBackup }) {
           Simple steps to get started. If you have a question about your draw or a tie, contact the Match Secretary.
         </div>
       </div>
+
+      <InstallCard canInstall={canInstall} onInstall={onInstall} isIos={isIos} alreadyInstalled={alreadyInstalled} />
 
       <Card emoji="🔗" title="Link your name">
         <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, lineHeight: 1.6, marginBottom: "10px" }}>

@@ -85,6 +85,10 @@ function MembersOnlySignedIn({ navigateTo }) {
   );
 }
 
+const isIosDevice  = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isInstalled  = () => navigator.standalone === true ||
+                           window.matchMedia("(display-mode: standalone)").matches;
+
 // "/?game=<id>" — a link shared from a live game. Returns null when absent or
 // unreadable, so nothing downstream has to guard against a throw.
 function readGameParam() {
@@ -142,11 +146,7 @@ export default function BowlsTracker() {
   // ── iOS install banner ──
   const [showIosBanner, setShowIosBanner] = useState(() => {
     if (load("ipbc_ios_banner_dismissed", false)) return false;
-    const ua = navigator.userAgent;
-    const isIos = /iphone|ipad|ipod/i.test(ua);
-    const isStandalone = navigator.standalone === true ||
-      window.matchMedia("(display-mode: standalone)").matches;
-    return isIos && !isStandalone;
+    return isIosDevice() && !isInstalled();
   });
   function dismissIosBanner() {
     save("ipbc_ios_banner_dismissed", true);
@@ -168,9 +168,7 @@ export default function BowlsTracker() {
   // ── Android install prompt ──
   const [installPrompt, setInstallPrompt] = useState(null);
   useEffect(() => {
-    const isStandalone = navigator.standalone === true ||
-      window.matchMedia("(display-mode: standalone)").matches;
-    if (isStandalone) return; // already installed
+    if (isInstalled()) return; // nothing to prompt
     function onInstallReady(e) { setInstallPrompt(e.detail); }
     window.addEventListener("swInstallReady", onInstallReady);
     return () => window.removeEventListener("swInstallReady", onInstallReady);
@@ -3744,7 +3742,16 @@ export default function BowlsTracker() {
                 {/* ══════════════════════════════════════════
             HELP TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "help" && <HelpTab seasonYear={settings.seasonYear || new Date().getFullYear()} onBackup={exportBackup} />}
+        {activeTab === "help" && (
+          <HelpTab
+            seasonYear={settings.seasonYear || new Date().getFullYear()}
+            onBackup={exportBackup}
+            canInstall={!!installPrompt}
+            onInstall={triggerInstall}
+            isIos={isIosDevice()}
+            alreadyInstalled={isInstalled()}
+          />
+        )}
 
         {/* ══════════════════════════════════════════
             CLUB TAB
