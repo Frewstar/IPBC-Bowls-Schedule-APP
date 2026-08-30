@@ -258,13 +258,18 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
   // ════════════════════════════════════════════════════════════════════════
   if (view === "create") {
     return (
-      <CreateGame
-        myName={myName} cloudKey={cloudKey} members={members} isAdmin={isAdmin}
-        onCancel={() => setView("list")}
-        onCreated={id => { setOpenId(id); setView("detail"); }}
-        showToast={showToast}
-        pushGame={row => setGames(prev => [row, ...prev.filter(g => g.id !== row.id)])}
-      />
+      <>
+        <CreateGame
+          myName={myName} cloudKey={cloudKey} members={members} isAdmin={isAdmin}
+          onCancel={() => setView("list")}
+          onCreated={id => { setOpenId(id); setView("detail"); }}
+          showToast={showToast}
+          pushGame={row => setGames(prev => [row, ...prev.filter(g => g.id !== row.id)])}
+        />
+        {/* Without this the form's messages went nowhere: it refused to submit
+            and said so to an empty room. */}
+        {toast && <Toast msg={toast} />}
+      </>
     );
   }
 
@@ -699,15 +704,19 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
     if (v === "away" && location === HOME_GROUND) setLocation("");
   }
 
+  // What, if anything, is stopping this game being created. Shown under the
+  // button as well as raised as a toast, so it can't be missed.
+  const blockedReason =
+    internal && (homePlayers.length === 0 || awayMembers.length === 0)
+      ? "Pick the players on both sides"
+      : !internal && !awayTeam.trim()
+      ? "Add the opponent's name"
+      : scheduling && !startsAt
+      ? "Add a start time"
+      : null;
+
   async function create() {
-    if (internal) {
-      if (homePlayers.length === 0 || awayMembers.length === 0) {
-        showToast("Pick the players on both sides"); return;
-      }
-    } else if (!awayTeam.trim()) {
-      showToast("Add the opponent's name"); return;
-    }
-    if (scheduling && !startsAt) { showToast("Add a start time"); return; }
+    if (blockedReason) { showToast(blockedReason); return; }
     setSaving(true);
     const rinks = disc.format === "rinks"
       ? Array.from({ length: numRinks }, (_, i) => ({ id: `r${i + 1}`, label: `Rink ${i + 1}`, home: 0, away: 0 }))
@@ -738,7 +747,10 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
     };
     const { data, error } = await supabase.from("live_games").insert(row).select().single();
     setSaving(false);
-    if (error || !data) { showToast("Couldn't create — did the DB columns get added?"); return; }
+    if (error || !data) {
+      showToast(error?.message ? `Couldn't create: ${error.message}` : "Couldn't create — no response from the server");
+      return;
+    }
     pushGame(data);
     onCreated(data.id);
   }
@@ -866,6 +878,12 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
             <button onClick={() => setNumRinks(n => Math.min(12, n + 1))} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }}><Plus size={16} strokeWidth={2.5} /></button>
           </div>
         </Field>
+      )}
+
+      {blockedReason && (
+        <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "9px", padding: "10px 13px", marginTop: "4px", marginBottom: "10px", fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5 }}>
+          {blockedReason} before you can start.
+        </div>
       )}
 
       <button onClick={create} disabled={saving} style={{ width: "100%", marginTop: "10px", background: saving ? TEXT3 : GOLD, border: "none", borderRadius: "10px", color: "#fff", padding: "14px", fontFamily: F_UI, fontSize: "14px", fontWeight: "700", cursor: saving ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
