@@ -1572,6 +1572,35 @@ export default function BowlsTracker() {
     if (namePart) { await supabase.from("login_lockouts").delete().eq("name", namePart); setLockouts(l => l.filter(x => x.name !== namePart)); }
   }
 
+  // Reset a member's PIN. The client never builds the new key or the hash —
+  // bowls_admin_reset_pin owns both, and re-checks that the caller really is an
+  // admin using the PIN they type in, not the isAdmin flag sitting in this
+  // component. Returns the RPC's status object for the UI to report.
+  async function resetMemberPin(memberId, newPin, adminPin) {
+    const { data, error } = await supabase.rpc("bowls_admin_reset_pin", {
+      p_admin_name: myName,
+      p_admin_pin:  adminPin,
+      p_member_id:  String(memberId),
+      p_new_pin:    newPin,
+    });
+    if (error) return { status: "error", message: error.message };
+    if (data?.status !== "ok") return data || { status: "error", message: "No response from the server." };
+
+    // An admin resetting their own PIN would otherwise carry on with a cloudKey
+    // that no longer exists — the sync would then write their data to a fresh
+    // empty row. Follow the account instead.
+    if (data.account_name && myName && data.account_name.toUpperCase() === myName.toUpperCase()) {
+      setMyPin(newPin);
+    }
+
+    // The account list shows the key, which has just changed under it.
+    supabase.from("player_data").select("player_name, updated_at").order("updated_at", { ascending: false })
+      .then(({ data: rows }) => { if (rows) setRegisteredUsers(rows); });
+    setLockouts(l => l.filter(x => x.name?.toUpperCase() !== data.account_name?.toUpperCase()));
+    setMembers(p => p.map(m => String(m.id) === String(memberId) ? { ...m, linked_cloudkey: data.new_key } : m));
+    return data;
+  }
+
   async function grantAdmin(member, role = "admin") {
     const nameUpper = member.name.toUpperCase();
     const newRow = { cloud_key: `PENDING-${nameUpper}`, player_name: nameUpper, role, display_name: member.name };
@@ -3672,6 +3701,7 @@ export default function BowlsTracker() {
             lockAppAccount={lockAppAccount}
             unlockAppAccount={unlockAppAccount}
             deleteAppAccount={deleteAppAccount}
+            resetMemberPin={resetMemberPin}
             isDrawAdmin={isDrawAdmin}
             activeSection={activeSection}
             seasonYear={settings.seasonYear || new Date().getFullYear()}

@@ -205,6 +205,8 @@ export default function AdminPanel({
   phoneRequests = [], approvePhoneRequest, declinePhoneRequest,
   // app accounts
   registeredUsers = [], lockAppAccount, unlockAppAccount, deleteAppAccount,
+  // pin reset
+  resetMemberPin,
   // draws
   seasonYear, allDraws = [], onDrawSaved, activeSection = "gents",
   // claim requests
@@ -233,7 +235,7 @@ export default function AdminPanel({
         })}
       </div>
 
-      {section === "Members"      && <AdminMembers members={members} addMember={addMember} saveEdit={saveEdit} deleteMember={deleteMember} phoneRequests={phoneRequests} approvePhoneRequest={approvePhoneRequest} declinePhoneRequest={declinePhoneRequest} registeredUsers={registeredUsers} lockouts={lockouts} lockAppAccount={lockAppAccount} unlockAppAccount={unlockAppAccount} deleteAppAccount={deleteAppAccount} isSuperAdmin={isSuperAdmin} claimRequests={claimRequests} resolveClaimRequest={resolveClaimRequest} />}
+      {section === "Members"      && <AdminMembers members={members} addMember={addMember} saveEdit={saveEdit} deleteMember={deleteMember} phoneRequests={phoneRequests} approvePhoneRequest={approvePhoneRequest} declinePhoneRequest={declinePhoneRequest} registeredUsers={registeredUsers} lockouts={lockouts} lockAppAccount={lockAppAccount} unlockAppAccount={unlockAppAccount} deleteAppAccount={deleteAppAccount} isSuperAdmin={isSuperAdmin} claimRequests={claimRequests} resolveClaimRequest={resolveClaimRequest} resetMemberPin={resetMemberPin} myName={myName} />}
       {section === "Fixtures"     && <AdminFixtures fixtures={fixtures} addFixture={addFixture} editFixture={editFixture} deleteFixture={deleteFixture} />}
       {section === "Competitions" && <AdminCompetitions tournaments={tournaments} onEditCompDates={onEditCompDates} />}
       {section === "Club"         && <AdminClub rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
@@ -309,7 +311,7 @@ function AdminCompetitions({ tournaments = [], onEditCompDates }) {
 // ─────────────────────────────────────────────
 // MEMBERS SECTION
 // ─────────────────────────────────────────────
-function AdminMembers({ members = [], addMember, saveEdit, deleteMember, phoneRequests = [], approvePhoneRequest, declinePhoneRequest, registeredUsers = [], lockouts = [], lockAppAccount, unlockAppAccount, deleteAppAccount, isSuperAdmin, claimRequests = [], resolveClaimRequest }) {
+function AdminMembers({ members = [], addMember, saveEdit, deleteMember, phoneRequests = [], approvePhoneRequest, declinePhoneRequest, registeredUsers = [], lockouts = [], lockAppAccount, unlockAppAccount, deleteAppAccount, isSuperAdmin, claimRequests = [], resolveClaimRequest, resetMemberPin, myName }) {
   const [view, setView] = useState("club");
   const [search, setSearch] = useState("");
   const [editId, setEditId] = useState(null);
@@ -330,7 +332,7 @@ function AdminMembers({ members = [], addMember, saveEdit, deleteMember, phoneRe
     <div>
       {/* View toggle */}
       <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
-        {[["club", "Club Members"], ["app", "App Accounts"]].map(([v, label]) => (
+        {[["club", "Club Members"], ["app", "App Accounts"], ["pin", "Reset PIN"]].map(([v, label]) => (
           <button key={v} onClick={() => setView(v)}
             style={{ padding: "6px 14px", borderRadius: "16px", border: `1px solid ${view === v ? MID : BORDER}`, background: view === v ? MID : SURFACE, color: view === v ? "#fff" : TEXT2, fontFamily: F_UI, fontSize: "12px", fontWeight: view === v ? "700" : "400", cursor: "pointer" }}>
             {label}{v === "app" && ` (${registeredUsers.length})`}
@@ -339,6 +341,8 @@ function AdminMembers({ members = [], addMember, saveEdit, deleteMember, phoneRe
       </div>
 
       {view === "app" && <AppAccounts registeredUsers={registeredUsers} lockouts={lockouts} lockAppAccount={lockAppAccount} unlockAppAccount={unlockAppAccount} deleteAppAccount={deleteAppAccount} isSuperAdmin={isSuperAdmin} />}
+
+      {view === "pin" && <ResetPin members={members} resetMemberPin={resetMemberPin} myName={myName} />}
 
       {view === "club" && <>
       {/* Phone change requests */}
@@ -477,6 +481,159 @@ function AdminMembers({ members = [], addMember, saveEdit, deleteMember, phoneRe
 // ─────────────────────────────────────────────
 // APP ACCOUNTS VIEW
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// RESET PIN
+// The client never builds the new key or the hash — bowls_admin_reset_pin owns
+// both. The admin re-enters their own PIN here because the RPC checks it; the
+// isAdmin flag that got them to this screen is only a client-side boolean.
+// ─────────────────────────────────────────────
+function ResetPin({ members = [], resetMemberPin, myName }) {
+  const [search, setSearch]     = useState("");
+  const [picked, setPicked]     = useState(null);
+  const [newPin, setNewPin]     = useState("");
+  const [adminPin, setAdminPin] = useState("");
+  const [busy, setBusy]         = useState(false);
+  const [result, setResult]     = useState(null);
+
+  const results = search.trim().length >= 2
+    ? members.filter(m => m.name.toUpperCase().includes(search.toUpperCase())).slice(0, 8)
+    : [];
+  const hasAccount = !!picked?.linked_cloudkey;
+  const isMe = !!(picked && myName && picked.linked_cloudkey &&
+    picked.linked_cloudkey.replace(/-[^-]*$/, "").toUpperCase() === myName.toUpperCase());
+  const ready = hasAccount && /^\d{4}$/.test(newPin) && /^\d{4}$/.test(adminPin) && !busy;
+
+  function startOver() {
+    setPicked(null); setSearch(""); setNewPin(""); setAdminPin(""); setResult(null);
+  }
+
+  async function submit() {
+    if (!ready) return;
+    setBusy(true);
+    const res = await resetMemberPin(picked.id, newPin, adminPin);
+    setBusy(false);
+    setResult(res);
+    if (res?.status === "ok") { setNewPin(""); setAdminPin(""); }
+  }
+
+  // ── done ──
+  if (result?.status === "ok") {
+    return (
+      <div style={{ background: SURFACE, border: `1px solid ${GREEN}55`, borderRadius: "12px", padding: "20px 16px", textAlign: "center" }}>
+        <div style={{ fontSize: "34px", marginBottom: "8px" }}>✓</div>
+        <div style={{ fontFamily: F_SANS, fontSize: "18px", fontWeight: "700", color: GREEN }}>PIN reset for {result.member_name}</div>
+        <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginTop: "6px", lineHeight: 1.5 }}>
+          Read this out to them. It is not shown again — if it is lost, reset it once more.
+        </div>
+        <div style={{ margin: "16px auto", maxWidth: "220px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "14px" }}>
+          <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "4px" }}>Sign in as</div>
+          <div style={{ fontFamily: F_UI, fontSize: "15px", fontWeight: "700", color: TEXT }}>{result.account_name}</div>
+          <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.12em", margin: "10px 0 4px" }}>New PIN</div>
+          <div style={{ fontFamily: F_SANS, fontSize: "34px", fontWeight: "700", color: GREEN, letterSpacing: "0.18em" }}>{result.new_pin}</div>
+        </div>
+        <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5, marginBottom: "14px" }}>
+          Their entries, results and roster link are untouched. Any lockout has been cleared.
+          {isMe && " This is your own account — this device has been switched to the new PIN already."}
+        </div>
+        <button onClick={startOver}
+          style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "11px 22px", fontSize: "13px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>
+          Reset another
+        </button>
+      </div>
+    );
+  }
+
+  const inputStyle = { width: "100%", boxSizing: "border-box", padding: "10px 12px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE };
+  const labelStyle = { fontFamily: F_UI, fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "4px" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+      <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.55 }}>
+        Sets a new PIN for a member who has forgotten theirs. Everything else about their
+        account stays as it is.
+      </div>
+
+      {/* ── pick a member ── */}
+      {!picked ? (
+        <div>
+          <div style={labelStyle}>Find the member</div>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name…" style={inputStyle} />
+          {results.length > 0 && (
+            <div style={{ border: `1px solid ${BORDER}`, borderRadius: "9px", overflow: "hidden", marginTop: "8px" }}>
+              {results.map(m => (
+                <button key={m.id} onClick={() => { setPicked(m); setResult(null); }}
+                  style={{ width: "100%", textAlign: "left", background: SURFACE, border: "none", borderBottom: `1px solid ${BORDER}`, padding: "11px 13px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontFamily: F_SANS, fontSize: "14px", fontWeight: "500", color: TEXT }}>{m.name}</span>
+                  <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: m.linked_cloudkey ? GREEN : TEXT3 }}>
+                    {m.linked_cloudkey ? "Has account" : "No account"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {search.trim().length >= 2 && results.length === 0 && (
+            <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, padding: "16px", textAlign: "center" }}>No member found for “{search}”</div>
+          )}
+        </div>
+      ) : (
+        <>
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+            <div>
+              <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em" }}>Resetting</div>
+              <div style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: GREEN, marginTop: "2px" }}>{picked.name}</div>
+            </div>
+            <button onClick={startOver}
+              style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "7px", color: TEXT2, padding: "7px 12px", fontSize: "12px", fontFamily: F_UI, cursor: "pointer" }}>
+              Change
+            </button>
+          </div>
+
+          {!hasAccount ? (
+            <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "12px 14px", fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.55 }}>
+              {picked.name} has no app account linked to their roster entry, so there is no PIN to reset.
+              They should sign up in the app first.
+            </div>
+          ) : (
+            <>
+              {isMe && (
+                <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "10px 14px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.55 }}>
+                  This is your own account. This device will switch to the new PIN automatically, but any other device you use will need it typed in again.
+                </div>
+              )}
+              <div>
+                <div style={labelStyle}>New PIN for {picked.name}</div>
+                <input value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  inputMode="numeric" maxLength={4} placeholder="4 digits"
+                  style={{ ...inputStyle, textAlign: "center", fontSize: "22px", letterSpacing: "8px" }} />
+              </div>
+              <div>
+                <div style={labelStyle}>Your own PIN, to authorise this</div>
+                <input value={adminPin} onChange={e => setAdminPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  inputMode="numeric" maxLength={4} placeholder="••••" type="password"
+                  style={{ ...inputStyle, textAlign: "center", fontSize: "22px", letterSpacing: "8px" }} />
+                <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px" }}>
+                  Checked on the server every time — being on this screen is not enough.
+                </div>
+              </div>
+
+              {result && result.status !== "ok" && (
+                <div style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "9px", padding: "10px 13px", fontFamily: F_UI, fontSize: "13px", color: LOSS_RED, lineHeight: 1.5 }}>
+                  {result.message || "That didn\u2019t work. Try again."}
+                </div>
+              )}
+
+              <button onClick={submit} disabled={!ready}
+                style={{ background: ready ? MID : BORDER, border: "none", borderRadius: "9px", color: ready ? "#fff" : TEXT3, padding: "13px", fontSize: "14px", fontFamily: F_UI, fontWeight: "700", cursor: ready ? "pointer" : "default" }}>
+                {busy ? "Resetting…" : `Reset ${picked.name}'s PIN`}
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function AppAccounts({ registeredUsers, lockouts = [], lockAppAccount, unlockAppAccount, deleteAppAccount, isSuperAdmin }) {
   const [confirmDel, setConfirmDel] = useState(null);
 
