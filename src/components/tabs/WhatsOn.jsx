@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { PartyPopper, Plus, Pencil, Clock, CalendarDays, Trash2, Ban, RotateCcw } from "lucide-react";
+import { PartyPopper, Plus, Pencil, Clock, CalendarDays, Trash2, Ban, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import BottomSheet from "../BottomSheet.jsx";
 import { supabase } from "../../lib/supabase.js";
 import { GREEN, GOLD, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
@@ -23,6 +23,27 @@ function fromISODate(iso) {
   return new Date(y, m - 1, d);
 }
 function todayISO() { return toISODate(new Date()); }
+
+function firstOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+function sameMonth(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth(); }
+
+// The cells of a month grid, Monday-first, padded with the neighbouring months'
+// days so the grid is always whole weeks. British calendars start on Monday;
+// getDay() starts on Sunday, hence the shift.
+function monthGrid(anchor) {
+  const first = firstOfMonth(anchor);
+  const lead = (first.getDay() + 6) % 7;
+  const start = new Date(first.getFullYear(), first.getMonth(), 1 - lead);
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    cells.push({ date: d, iso: toISODate(d), inMonth: d.getMonth() === first.getMonth() });
+    // stop after the last whole week that still contains this month
+    if (i >= 27 && (i + 1) % 7 === 0 && d.getMonth() !== first.getMonth()) break;
+  }
+  return cells;
+}
 
 // The dates of a weekly series, from the first matching weekday on or after
 // `fromISO` up to and including `toISO`.
@@ -52,6 +73,10 @@ function fmtTime(t) {
   return m === 0 ? `${h12}${suffix}` : `${h12}.${String(m).padStart(2, "0")}${suffix}`;
 }
 
+function fmtMonth(d) {
+  return `${["January","February","March","April","May","June","July","August","September","October","November","December"][d.getMonth()]} ${d.getFullYear()}`;
+}
+
 function fmtDateLong(iso) {
   const d = fromISODate(iso);
   return `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTH_ABBR[d.getMonth()]}`;
@@ -69,6 +94,9 @@ const BLANK = { title: "", detail: "", start_time: "20:00", event_date: "", week
 export default function WhatsOnTab({ myName, isAdmin = false }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Which month the grid is showing, and which day (if any) has been tapped.
+  const [monthAnchor, setMonthAnchor] = useState(() => firstOfMonth(new Date()));
+  const [selectedDay, setSelectedDay] = useState(null);
   const [toast, setToast] = useState(null);
   const [sheet, setSheet] = useState(null);      // null | "add" | { edit: row }
   const [mode, setMode] = useState("once");      // "once" | "weekly"
@@ -96,8 +124,11 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
   useEffect(() => {
     let alive = true;
     function refresh() {
+      // From the first of this month rather than from today, so the current
+      // month's grid is whole — a member looking at the calendar on the 20th
+      // still sees that the band played on the 7th.
       supabase.from("club_events").select("*")
-        .gte("event_date", todayISO())
+        .gte("event_date", toISODate(firstOfMonth(new Date())))
         .order("event_date", { ascending: true })
         .then(({ data, error }) => {
           if (!alive) return;
@@ -116,18 +147,48 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
 
   const sorted = useMemo(() => [...events].sort(byWhen), [events]);
   const today = todayISO();
-  const weekEnd = toISODate(new Date(Date.now() + 7 * 86400000));
 
-  const sections = useMemo(() => ([
-    { label: "Tonight",   rows: sorted.filter(e => e.event_date === today) },
-    { label: "This week", rows: sorted.filter(e => e.event_date > today && e.event_date <= weekEnd) },
-    { label: "Later on",  rows: sorted.filter(e => e.event_date > weekEnd) },
-  ].filter(s => s.rows.length > 0)), [sorted, today, weekEnd]);
+  // Everything on a given day, keyed by date, so a grid cell is a lookup
+  // rather than a scan of the whole season.
+  const byDate = useMemo(() => {
+    const m = new Map();
+    for (const e of sorted) {
+      if (!m.has(e.event_date)) m.set(e.event_date, []);
+      m.get(e.event_date).push(e);
+    }
+    return m;
+  }, [sorted]);
+
+  const cells = useMemo(() => monthGrid(monthAnchor), [monthAnchor]);
+  const monthISOStart = toISODate(firstOfMonth(monthAnchor));
+  const monthISOEnd = toISODate(new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 0));
+
+  // What the list below the grid is showing: one tapped day, or the whole
+  // month. A month is the unit a club programme is read in, and it is bounded
+  // — a year of a weekly karaoke is 52 rows in one list but only four or five
+  // in any month anyone is actually looking at.
+  const listed = useMemo(() => {
+    if (selectedDay) return sorted.filter(e => e.event_date === selectedDay);
+    return sorted.filter(e => e.event_date >= monthISOStart && e.event_date <= monthISOEnd);
+  }, [sorted, selectedDay, monthISOStart, monthISOEnd]);
+
+  // The one thing most people open this tab to find out.
+  const nextUp = useMemo(() => sorted.find(e => e.event_date >= today && !e.cancelled) || null, [sorted, today]);
+
+  const thisMonth = firstOfMonth(new Date());
+  const canGoBack = monthAnchor > thisMonth;
+
+  function stepMonth(n) {
+    setSelectedDay(null);
+    setMonthAnchor(a => addMonths(a, n));
+  }
 
   // ── Admin actions ─────────────────────────────────────────────────────────
   function openAdd() {
     setMode("once");
-    setForm({ ...BLANK, event_date: today, from_date: today });
+    // If a day is showing, that's the day they mean — they just tapped it.
+    const start = selectedDay || (monthISOStart > today ? monthISOStart : today);
+    setForm({ ...BLANK, event_date: start, from_date: start });
     setConfirmDel(null);
     setSheet("add");
   }
@@ -284,7 +345,7 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "40px", fontFamily: F_UI, fontSize: "13px", color: TEXT3 }}>Loading…</div>
-      ) : sections.length === 0 ? (
+      ) : events.length === 0 ? (
         <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "40px 24px", textAlign: "center", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
           <CalendarDays size={32} strokeWidth={1} color={BORDER} style={{ marginBottom: "12px" }} />
           <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>Nothing listed yet</div>
@@ -292,12 +353,103 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
             {isAdmin ? "Tap New to put the band, the karaoke or a one-off night in the diary." : "Social nights at the club will be listed here."}
           </div>
         </div>
-      ) : sections.map(({ label, rows }, si) => (
-        <div key={label}>
-          <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: GOLD_MUTED, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: "10px", marginTop: si === 0 ? "4px" : "22px" }}>{label}</div>
-          {rows.map(e => <EventCard key={e.id} e={e} isAdmin={isAdmin} onEdit={() => openEdit(e)} />)}
-        </div>
-      ))}
+      ) : (
+        <>
+          {/* The question most people open this tab to answer, before any grid. */}
+          {nextUp && (
+            <button onClick={() => { setMonthAnchor(firstOfMonth(fromISODate(nextUp.event_date))); setSelectedDay(nextUp.event_date); }}
+              style={{ width: "100%", textAlign: "left", background: `linear-gradient(150deg, ${GREEN} 0%, #3d0f1a 100%)`, border: "none", borderRadius: "14px", padding: "14px 16px", marginBottom: "14px", cursor: "pointer", boxShadow: "0 4px 16px rgba(74,14,31,0.18)" }}>
+              <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: "5px" }}>
+                {nextUp.event_date === today ? "Tonight" : "Next up"}
+              </div>
+              <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "700", color: "#fff", lineHeight: 1.15 }}>{nextUp.title}</div>
+              <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.8)", marginTop: "4px" }}>
+                {nextUp.event_date === today ? "" : fmtDateLong(nextUp.event_date) + " · "}{fmtTime(nextUp.start_time) || "time to be confirmed"}
+                {nextUp.detail ? ` · ${nextUp.detail}` : ""}
+              </div>
+            </button>
+          )}
+
+          {/* ── The month ── */}
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "14px", padding: "12px 10px 10px", marginBottom: "16px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", padding: "0 2px" }}>
+              <button onClick={() => stepMonth(-1)} disabled={!canGoBack} aria-label="Previous month"
+                style={{ ...monthNavBtn, opacity: canGoBack ? 1 : 0.25, cursor: canGoBack ? "pointer" : "default" }}>
+                <ChevronLeft size={18} strokeWidth={2} />
+              </button>
+              <div style={{ fontFamily: F_SANS, fontSize: "16px", fontWeight: "700", color: GREEN }}>{fmtMonth(monthAnchor)}</div>
+              <button onClick={() => stepMonth(1)} aria-label="Next month" style={monthNavBtn}>
+                <ChevronRight size={18} strokeWidth={2} />
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px", marginBottom: "4px" }}>
+              {["M","T","W","T","F","S","S"].map((d, i) => (
+                <div key={i} style={{ textAlign: "center", fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: TEXT3, letterSpacing: "0.06em" }}>{d}</div>
+              ))}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px" }}>
+              {cells.map(c => {
+                const on = byDate.get(c.iso) || [];
+                const allOff = on.length > 0 && on.every(e => e.cancelled);
+                const isToday = c.iso === today;
+                const isSel = c.iso === selectedDay;
+                const past = c.iso < today;
+                return (
+                  <button key={c.iso} onClick={() => setSelectedDay(isSel ? null : c.iso)}
+                    aria-label={`${fmtDateLong(c.iso)}${on.length ? ` — ${on.map(e => e.title).join(", ")}` : " — nothing on"}`}
+                    style={{
+                      aspectRatio: "1 / 1", minHeight: "36px", border: isToday ? `1.5px solid ${GREEN}` : "1px solid transparent",
+                      borderRadius: "9px", cursor: "pointer", padding: 0,
+                      background: isSel ? GREEN : on.length && c.inMonth ? `${GOLD}1e` : "transparent",
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "3px",
+                      // A day that's been and gone is dimmed whether or not
+                      // something was on: at full strength last Sunday's karaoke
+                      // reads exactly like next Sunday's.
+                      opacity: c.inMonth ? (past ? (on.length ? 0.5 : 0.35) : 1) : 0.25,
+                    }}>
+                    <span style={{ fontFamily: F_SANS, fontSize: "13px", lineHeight: 1,
+                      fontWeight: on.length ? "700" : "500",
+                      color: isSel ? "#fff" : isToday ? GREEN : past ? TEXT3 : TEXT }}>
+                      {c.date.getDate()}
+                    </span>
+                    {/* one dot per event, so a busy Saturday reads as busy */}
+                    <span style={{ display: "flex", gap: "2px", height: "4px", alignItems: "center" }}>
+                      {on.slice(0, 3).map(e => (
+                        <span key={e.id} style={{ width: "4px", height: "4px", borderRadius: "50%",
+                          background: isSel ? "#fff" : e.cancelled ? LOSS_RED : GOLD,
+                          opacity: e.cancelled ? 0.75 : 1 }} />
+                      ))}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── What's on, for the day tapped or the month shown ── */}
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "10px" }}>
+            <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: GOLD_MUTED, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+              {selectedDay ? fmtDateLong(selectedDay) : fmtMonth(monthAnchor)}
+            </div>
+            {selectedDay && (
+              <button onClick={() => setSelectedDay(null)}
+                style={{ background: "none", border: "none", color: GREEN, fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer", padding: "4px 0" }}>
+                Show the month
+              </button>
+            )}
+          </div>
+
+          {listed.length === 0 ? (
+            <div style={{ background: SURFACE, border: `1px dashed ${BORDER}`, borderRadius: "12px", padding: "28px 20px", textAlign: "center", fontFamily: F_UI, fontSize: "13px", color: TEXT3, lineHeight: 1.5 }}>
+              {selectedDay ? "Nothing on that day." : "Nothing on this month — try the arrow for next month."}
+            </div>
+          ) : listed.map(e => (
+            <EventCard key={e.id} e={e} isAdmin={isAdmin} past={e.event_date < today} onEdit={() => openEdit(e)} />
+          ))}
+        </>
+      )}
 
       {/* ── Add / edit ── */}
       <BottomSheet open={!!sheet} onClose={() => setSheet(null)} title={editing ? "Edit night" : "Add to What's On"}>
@@ -433,14 +585,16 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
 }
 
 // ── Sub-components ──────────────────────────────────────────────────────────
-function EventCard({ e, isAdmin, onEdit }) {
+function EventCard({ e, isAdmin, onEdit, past = false }) {
   const d = fromISODate(e.event_date);
   const off = e.cancelled;
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: "12px",
       background: SURFACE, border: `1px solid ${off ? `${LOSS_RED}44` : BORDER}`,
-      borderLeft: `4px solid ${off ? LOSS_RED : GOLD}`,
+      borderLeft: `4px solid ${off ? LOSS_RED : past ? BORDER : GOLD}`,
+      // Kept in the month, but plainly over with.
+      opacity: past ? 0.55 : 1,
       borderRadius: "12px", padding: "13px 14px", marginBottom: "8px",
       boxShadow: "0 1px 3px rgba(74,14,31,0.06)",
     }}>
@@ -495,6 +649,7 @@ function Field({ label, children }) {
   );
 }
 
+const monthNavBtn = { background: "none", border: "none", color: GREEN, cursor: "pointer", padding: "6px 10px", display: "inline-flex", alignItems: "center", borderRadius: "8px", minHeight: "34px" };
 const inp = { width: "100%", boxSizing: "border-box", padding: "11px 13px", borderRadius: "10px", border: `1px solid ${BORDER}`, fontSize: "14px", fontFamily: F_UI, color: TEXT, background: SURFACE };
 const toggleBtn = active => ({ flex: 1, padding: "11px 8px", borderRadius: "10px", border: `1px solid ${active ? GREEN : BORDER}`, background: active ? GREEN : SURFACE, color: active ? "#fff" : TEXT2, fontFamily: F_UI, fontSize: "13px", fontWeight: active ? "700" : "500", cursor: "pointer" });
 const chip = active => ({ background: active ? MID : SURFACE2, border: `1px solid ${active ? MID : BORDER}`, borderRadius: "16px", color: active ? "#fff" : TEXT2, padding: "5px 11px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: active ? "600" : "400" });
