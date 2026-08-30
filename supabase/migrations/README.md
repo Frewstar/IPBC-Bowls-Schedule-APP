@@ -16,7 +16,7 @@ These are the migrations written alongside the app code. **The earlier schema wo
 | 3 | `20260829_live_games_scheduled.sql` | Scheduled fixtures | Check — needed for the Upcoming section |
 | 4 | `20260830_admin_reset_pin.sql` | Admin PIN reset | Check — needed for the Reset PIN screen |
 | 5 | `20260830_live_games_ends.sql` | Games played over set ends | Applied — the columns and the check constraint are on `live_games` |
-| 6 | `20260830_club_events.sql` | What's On — club social events | **Not yet applied** — written today |
+| 6 | `20260830_club_events.sql` | What's On — club social events | Applied — table, columns, duplicate guard and policies all confirmed against the database |
 
 Status is my best understanding from our sessions — worth confirming against the database rather than taking on trust.
 
@@ -331,7 +331,7 @@ comment on function public.bowls_admin_reset_pin(text, text, text, text) is
 ## 5. Games played over set ends
 
 **File:** `supabase/migrations/20260830_live_games_ends.sql`  
-**Status:** **Not yet applied** — written today
+**Status:** Applied — `ends_total` and `ends_played` are on `live_games`
 
 Adds `ends_total` and `ends_played` plus a sanity check constraint. Needed for best-of-15-ends games.
 
@@ -368,7 +368,11 @@ alter table public.live_games add constraint live_games_ends_sane check (
 ## 6. What's On — club social events
 
 **File:** `supabase/migrations/20260830_club_events.sql`  
-**Status:** **Not yet applied** — written today
+**Status:** Applied — checked against the database, not assumed: the table exists with
+all ten columns, `club_events_no_dupes` is on `(club_id, event_date, lower(title))`,
+`club_id` defaults to IPBC, the `start_time` format check is in place, RLS is on with
+the four `using(true)` policies, and the table is correctly *not* in the realtime
+publication.
 
 Creates `club_events`: one row per night, for the band, the karaoke and one-off
 socials. A weekly run is generated into ordinary rows by the app when an admin
