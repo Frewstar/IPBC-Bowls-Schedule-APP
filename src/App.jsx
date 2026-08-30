@@ -1790,7 +1790,6 @@ export default function BowlsTracker() {
     { id: "fixtures",    label: "Fixtures",  Icon: Calendar   },
     ...(signedIn ? [{ id: "members", label: "Members", Icon: Users }] : []),
     { id: "club",        label: "Club",      Icon: Shield     },
-    ...(isAdmin || isDrawAdmin ? [{ id: "admin", label: "Admin", Icon: Lock }] : []),
   ];
 
   const selectedT = activeTournament ? TOURNAMENTS.find(t => t.id === activeTournament) : null;
@@ -2023,6 +2022,18 @@ export default function BowlsTracker() {
                 style={{ background: activeTab === "help" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 10px", color: activeTab === "help" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
                 <HelpCircle size={20} strokeWidth={activeTab === "help" ? 2 : 1.5} />
               </button>
+              {/* Admin sits up here with Help and Settings rather than in the tab
+                  bar. Eight tabs did not fit: on anything narrower than about
+                  383px — an iPhone SE or 8 at 375, a great many Androids at 360
+                  — the last tab was laid out past the right edge of the screen
+                  and could not be reached at all. It is also the right home for
+                  it: the bar below is the club, this row is the app. */}
+              {(isAdmin || isDrawAdmin) && (
+                <button onClick={() => navigateTo("admin")} title="Admin"
+                  style={{ background: activeTab === "admin" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 10px", color: activeTab === "admin" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
+                  <Lock size={20} strokeWidth={activeTab === "admin" ? 2 : 1.5} />
+                </button>
+              )}
               <button onClick={() => navigateTo("settings")} title="Settings"
                 style={{ background: activeTab === "settings" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 10px", color: activeTab === "settings" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
                 <Settings size={20} strokeWidth={activeTab === "settings" ? 2 : 1.5} />
