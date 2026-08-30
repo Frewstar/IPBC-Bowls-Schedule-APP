@@ -15,7 +15,8 @@ These are the migrations written alongside the app code. **The earlier schema wo
 | 2 | `20260723_live_games_players_location.sql` | Disciplines, location and players | Applied — live games are working |
 | 3 | `20260829_live_games_scheduled.sql` | Scheduled fixtures | Check — needed for the Upcoming section |
 | 4 | `20260830_admin_reset_pin.sql` | Admin PIN reset | Check — needed for the Reset PIN screen |
-| 5 | `20260830_live_games_ends.sql` | Games played over set ends | **Not yet applied** — written today |
+| 5 | `20260830_live_games_ends.sql` | Games played over set ends | Applied — the columns and the check constraint are on `live_games` |
+| 6 | `20260830_club_events.sql` | What's On — club social events | **Not yet applied** — written today |
 
 Status is my best understanding from our sessions — worth confirming against the database rather than taking on trust.
 
@@ -364,6 +365,150 @@ alter table public.live_games add constraint live_games_ends_sane check (
 
 ---
 
+## 6. What's On — club social events
+
+**File:** `supabase/migrations/20260830_club_events.sql`  
+**Status:** **Not yet applied** — written today
+
+Creates `club_events`: one row per night, for the band, the karaoke and one-off
+socials. A weekly run is generated into ordinary rows by the app when an admin
+sets it up — there is no recurrence rule in this table and nothing is expanded
+on read, which is what makes cancelling a single night an edit to one row.
+
+Three things worth knowing before you run it:
+
+- **`event_date` is a `date` and `start_time` is `text`.** Not a `timestamptz`.
+  The clocks change on the last Sunday in March, inside the season, so adding a
+  week to an instant puts every night after that Sunday an hour out. "Saturday,
+  8pm" is 8pm on the clock in November and in April alike.
+- **`cancelled` is a column, not a delete.** A cancelled night stays in the
+  table and stays on the screen with a line through it. Removing the row tells a
+  member expecting a band nothing at all.
+- **`club_events_no_dupes`** — unique on `(club_id, event_date, lower(title))`.
+  Generating a run is one tap and one tap is easy to make twice; `club_fixtures`
+  carries a duplicate row from exactly that.
+
+Applied against a scratch Postgres 16 before being handed over: the DDL runs
+clean, `club_id` defaults to IPBC without the client supplying it, a repeated
+`(date, title)` is refused case-insensitively, `'8pm'` and `'25:00'` are refused
+by the time check, and cancelling leaves the row in place.
+
+```sql
+-- ════════════════════════════════════════════════════════════════════════
+--  CLUB EVENTS  —  What's On: the band, the karaoke, and one-off nights
+--  Run this once in the Supabase SQL editor.
+--
+--  One row per night. A weekly series is generated into ordinary rows when
+--  the admin sets it up — there is no recurrence rule stored here and
+--  nothing is expanded on read. That is the point: cancelling Christmas Eve
+--  is then an edit to one row rather than a feature nobody built.
+--
+--  This is deliberately NOT club_fixtures. That table is match-shaped —
+--  Fixtures.jsx renders a Home/Away pill from `venue` and "{n} rinks" from
+--  `rinks` — so a band night listed there would carry an "Away" badge and a
+--  blank rink count.
+-- ════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.club_events (
+  id          uuid primary key default gen_random_uuid(),
+
+  -- Every table in this database carries club_id, defaulted to IPBC so the
+  -- client never has to supply it. Same shape as members, live_games and the
+  -- rest, so this table doesn't have to be retrofitted when the app goes
+  -- multi-club.
+  club_id     uuid not null references public.clubs(id)
+                default '61f82a8a-09cf-4385-874b-1741925bebe7'::uuid,
+
+  title       text not null,                    -- "Band", "Karaoke", "Christmas Party"
+  detail      text,                             -- optional line under it — who's playing, ticket price
+
+  -- A DATE and a local clock time held as TEXT ("20:00"). Deliberately not a
+  -- timestamptz.
+  --
+  -- The clocks go forward on the last Sunday in March, which is inside the
+  -- season. Generating a series by adding 7 * 86400 seconds to a timestamptz
+  -- puts every date after that Sunday an hour out — a band advertised at 9pm
+  -- because the app did the arithmetic in UTC. "Saturday, 8pm" means 8pm on
+  -- the clock on the wall, in March and in July alike, so that is what is
+  -- stored. Nothing here is ever converted between zones.
+  event_date  date not null,
+  start_time  text,
+
+  -- A cancelled night stays in the table and stays on the screen, struck
+  -- through. Deleting it tells a member expecting a band precisely nothing;
+  -- they turn up to a shut club. This is why cancellation is a column and not
+  -- a delete.
+  cancelled   boolean not null default false,
+
+  -- Ties the generated rows of one series together, so "every Saturday from
+  -- November to March" can be removed or re-priced in one go. Null on a
+  -- one-off. Not a foreign key — there is no series table, and there is not
+  -- meant to be one.
+  series_id   uuid,
+
+  created_by  text,                             -- display name of the admin who set it up
+  created_at  timestamptz not null default now()
+);
+
+-- Catch a clock time that isn't one, so a typo can't put "8" or "8pm" in a
+-- column the app parses as HH:MM. Null is allowed: an all-day or
+-- time-unannounced event is a real thing.
+alter table public.club_events drop constraint if exists club_events_start_time_format;
+alter table public.club_events add constraint club_events_start_time_format check (
+  start_time is null or start_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+);
+
+-- ── The duplicate guard ───────────────────────────────────────────────────
+-- Generating a series is one tap, and one tap is easy to make twice — a slow
+-- connection, a nervous second press, an admin who isn't sure the first one
+-- took. club_fixtures carries a duplicate row from exactly that, so this table
+-- refuses it at the database rather than trusting the app to check.
+--
+-- lower(title) so "Band" and "band" collide, which is what an admin means.
+create unique index if not exists club_events_no_dupes
+  on public.club_events (club_id, event_date, lower(title));
+
+-- What's On reads a date window for one club, and that is the only read there is.
+create index if not exists club_events_club_date_idx
+  on public.club_events (club_id, event_date);
+
+-- Editing or removing a whole series.
+create index if not exists club_events_series_idx
+  on public.club_events (series_id)
+  where series_id is not null;
+
+-- ── Access ────────────────────────────────────────────────────────────────
+-- Same as every other table in this project: the app talks to Supabase with
+-- the publishable (anon) key, which ships inside the JavaScript bundle, and
+-- these policies let that key read and write.
+--
+-- Being plain about it: "admin only" for creating events is enforced in the
+-- app's UI and nowhere else. Anyone who reads the bundle can get the key and
+-- write to this table directly. That is the same exposure every other table
+-- here already has, and it is what the 002b lockdown is for. Do not read
+-- these policies as security.
+alter table public.club_events enable row level security;
+
+drop policy if exists "club_events public read"   on public.club_events;
+drop policy if exists "club_events public insert" on public.club_events;
+drop policy if exists "club_events public update" on public.club_events;
+drop policy if exists "club_events public delete" on public.club_events;
+
+create policy "club_events public read"   on public.club_events for select using (true);
+create policy "club_events public insert" on public.club_events for insert with check (true);
+create policy "club_events public update" on public.club_events for update using (true) with check (true);
+create policy "club_events public delete" on public.club_events for delete using (true);
+
+-- ── Not added to the realtime publication, on purpose ─────────────────────
+-- live_games is in supabase_realtime because a score changes while you are
+-- watching it. A Saturday night band does not. What's On refetches whenever
+-- the app comes to the foreground, which is the moment a member actually
+-- looks — and unlike a socket, that keeps working after the phone has been in
+-- a pocket for three days.
+```
+
+---
+
 ## Verifying what has actually run
 
 Run these in the SQL editor to check the state rather than guessing:
@@ -389,4 +534,10 @@ select conname, pg_get_constraintdef(oid)
   from pg_constraint
  where conrelid = 'public.live_games'::regclass
  order by conname;
+
+-- Does club_events exist yet, and does it have the duplicate guard?
+select to_regclass('public.club_events') as club_events_table;
+select indexname, indexdef
+  from pg_indexes
+ where schemaname = 'public' and tablename = 'club_events';
 ```
