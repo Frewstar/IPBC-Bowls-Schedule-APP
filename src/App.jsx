@@ -24,7 +24,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Download, Upload,
   Clock, MapPin, Settings, HelpCircle, Share2,
   Shield, Info, RefreshCw, Target, Search,
-  Medal, Bell, Trophy, Lock, Radio,
+  Medal, Bell, Trophy, Lock, Radio, PartyPopper,
 } from "lucide-react";
 
 // ── lib imports ──────────────────────────────────────────────────────────────
@@ -46,6 +46,7 @@ import FindTab from "./components/tabs/Find.jsx";
 import DrawsTab from "./components/tabs/Draws.jsx";
 import MembersTab from "./components/tabs/Members.jsx";
 import LiveGamesTab from "./components/tabs/LiveGames.jsx";
+import WhatsOnTab from "./components/tabs/WhatsOn.jsx";
 import AdminPanel from "./components/tabs/AdminPanel.jsx";
 import DrawResultSheet from "./components/DrawResultSheet.jsx";
 
@@ -162,6 +163,18 @@ export default function BowlsTracker() {
   const [activeTab, setActiveTab] = useState(() => (readGameParam() ? "live" : "myties"));
   const [prevTab, setPrevTab] = useState("myties");
   function navigateTo(tab) { setPrevTab(t => activeTab !== tab ? activeTab : t); setActiveTab(tab); }
+
+  // Honours are a section at the foot of the Club tab, so this switches tabs and
+  // then scrolls to them: landing a member at the top of the club's own page to
+  // hunt for their honours is worse than the tab they used to have. The rAF is
+  // what makes it work — the element doesn't exist until React has rendered the
+  // club page.
+  function goToMyHonours() {
+    navigateTo("club");
+    requestAnimationFrame(() => {
+      document.getElementById("my-honours")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   // ── Settings ──
   const [settings, setSettings] = useState(() =>
@@ -1802,7 +1815,10 @@ export default function BowlsTracker() {
     { id: "myties",      label: "My Ties",   Icon: BowlsBallIcon },
     { id: "live",        label: "Live",      Icon: Radio      },
     { id: "search",      label: "Find",      Icon: Binoculars },
-    { id: "honours",     label: "Honours",   Icon: Award      },
+    // Honours moved into the Club tab, which is already the "about the club"
+    // page. The bar is for what people check weekly: the band plays every
+    // Saturday, while a roll of honour is read once and then now and again.
+    { id: "whatson",     label: "What's On", Icon: PartyPopper },
     { id: "fixtures",    label: "Fixtures",  Icon: Calendar   },
     ...(signedIn ? [{ id: "members", label: "Members", Icon: Users }] : []),
     { id: "club",        label: "Club",      Icon: Shield     },
@@ -2530,9 +2546,12 @@ export default function BowlsTracker() {
                           </button>
                         </div>
 
-                        {/* Honours teaser — tap to go to Honours tab */}
+                        {/* Honours teaser — this used to open a tab of its own. Now
+                            that honours live at the foot of the Club page, jump
+                            straight to them rather than dropping the member at the
+                            top of the club's own page to scroll for it. */}
                         {myHonours.length > 0 && (
-                          <button onClick={() => setActiveTab("honours")}
+                          <button onClick={() => goToMyHonours()}
                             style={{ width: "100%", marginTop: "16px", background: `${GOLD}08`, border: `1px solid ${GOLD}33`, borderRadius: "10px", padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: "10px", textAlign: "left" }}>
                             <Medal size={18} strokeWidth={1.5} color={GOLD_MUTED} />
                             <div style={{ flex: 1 }}>
@@ -3409,9 +3428,14 @@ export default function BowlsTracker() {
         )}
 
         {/* ══════════════════════════════════════════
-            HONOURS TAB
+            CLUB TAB — the club itself, then the member's own honours
+
+            Honours used to be a tab of its own. It gave its slot up to What's
+            On: the bar has room for what people check weekly, and a personal
+            honours list is a look-once-then-occasionally thing however good it
+            is. Nothing about it changed except where you get to it.
         ══════════════════════════════════════════ */}
-        {activeTab === "honours" && (() => {
+        {activeTab === "club" && (() => {
           const posCol  = p => p === "Winner" ? WIN_GOLD : p === "Runner-Up" ? GOLD_MUTED : p === "Semi-Final" ? TEXT2 : TEXT3;
           const posBg   = p => p === "Winner" ? `${WIN_GOLD}12` : p === "Runner-Up" ? `${GOLD_MUTED}12` : SURFACE2;
           const posBorder = p => p === "Winner" ? `${WIN_GOLD}55` : p === "Runner-Up" ? `${GOLD_MUTED}55` : BORDER;
@@ -3421,6 +3445,12 @@ export default function BowlsTracker() {
 
           return (
             <div>
+              <ClubTab members={members} showPhones={signedIn} rollOfHonour={rollOfHonour}
+                honoraryMembers={honoraryMembers} isAdmin={isAdmin} recordWinner={recordWinner}
+                addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />
+
+              {/* ── My Honours — the club's roll of honour is above, this is yours ── */}
+              <div style={{ maxWidth: "520px", margin: "0 auto", borderTop: `1px solid ${BORDER}`, paddingTop: "22px", marginTop: "8px" }} id="my-honours">
               {/* Hero header */}
               <div style={{ background: GREEN, borderRadius: "14px", padding: "20px", marginBottom: "16px", boxShadow: "0 4px 16px rgba(74,14,31,0.18)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
@@ -3643,6 +3673,7 @@ export default function BowlsTracker() {
                   </BottomSheet>
                 );
               })()}
+              </div>
             </div>
           );
         })()}
@@ -3771,9 +3802,9 @@ export default function BowlsTracker() {
         )}
 
         {/* ══════════════════════════════════════════
-            CLUB TAB
+            WHAT'S ON TAB — the band, the karaoke, one-off nights
         ══════════════════════════════════════════ */}
-        {activeTab === "club" && <ClubTab members={members} showPhones={signedIn} rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} isAdmin={isAdmin} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
+        {activeTab === "whatson" && <WhatsOnTab myName={myName} isAdmin={isAdmin} />}
 
         {/* ══════════════════════════════════════════
             ADMIN TAB
