@@ -92,12 +92,13 @@ function byUpdatedDesc(a, b) {
   return new Date(b.updated_at) - new Date(a.updated_at);
 }
 
-export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, members = [] }) {
+export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, members = [], deepLinkGameId = null, onDeepLinkHandled }) {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("list");   // "list" | "detail" | "create"
   const [openId, setOpenId] = useState(null);
   const [toast, setToast] = useState(null);
+  const [missingGame, setMissingGame] = useState(false);
   const [, forceTick] = useState(0);
 
   const canCreate = !!(myName && cloudKey);
@@ -128,6 +129,22 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     const t = setInterval(() => forceTick(n => n + 1), 30000);
     return () => clearInterval(t);
   }, []);
+
+  // Someone followed a shared link. Wait for the list before deciding — the
+  // game is only genuinely missing once we've actually looked. Finished games
+  // open too: people click these after the game is over.
+  useEffect(() => {
+    if (!deepLinkGameId || loading) return;
+    if (games.some(g => g.id === deepLinkGameId)) {
+      setOpenId(deepLinkGameId);
+      setView("detail");
+    } else {
+      // Deleted, or from another club's copy of the app. Say so and leave them
+      // on the list rather than on an empty screen.
+      setMissingGame(true);
+    }
+    onDeepLinkHandled?.();
+  }, [deepLinkGameId, loading, games]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Soonest first — a fixture list, not an activity feed.
   const scheduledGames = useMemo(
@@ -198,6 +215,9 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
       : g.status === "scheduled" ? (g.starts_at ? `Starts ${fmtStartTime(g.starts_at)}` : "Coming up")
       : "Live now";
     body += `\n\n${standing} · IPBC Bowls app`;
+    // Kept inside `text` rather than passed as navigator.share's `url`: some
+    // targets drop one or the other, and the message format is the point.
+    body += `\n${window.location.origin}/?game=${g.id}`;
     if (navigator.share) navigator.share({ text: body }).catch(() => {});
     else navigator.clipboard?.writeText(body).then(() => showToast("Score copied — paste into WhatsApp"));
   }
@@ -359,6 +379,19 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
           </button>
         )}
       </div>
+
+      {missingGame && (
+        <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "14px", display: "flex", alignItems: "flex-start", gap: "10px" }}>
+          <Clock size={15} strokeWidth={1.75} color={GOLD_MUTED} style={{ flexShrink: 0, marginTop: "1px" }} />
+          <div style={{ flex: 1, fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.55 }}>
+            That game isn't here any more — it may have been removed. Anything else that's on is below.
+          </div>
+          <button onClick={() => setMissingGame(false)} aria-label="Dismiss"
+            style={{ background: "none", border: "none", padding: "0 0 0 4px", cursor: "pointer", color: TEXT3, display: "flex", flexShrink: 0 }}>
+            <X size={14} strokeWidth={2} />
+          </button>
+        </div>
+      )}
 
       {!canCreate && (
         <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "12px 14px", marginBottom: "14px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>

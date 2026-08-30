@@ -69,6 +69,13 @@ function MemberPill({ name, phone, color = GOLD }) {
 
 
 // ── MAIN APP ───────────────────────────────────────────────────────────────
+// "/?game=<id>" — a link shared from a live game. Returns null when absent or
+// unreadable, so nothing downstream has to guard against a throw.
+function readGameParam() {
+  try { return new URLSearchParams(window.location.search).get("game") || null; }
+  catch { return null; }
+}
+
 export default function BowlsTracker() {
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
 
@@ -76,7 +83,19 @@ export default function BowlsTracker() {
     DEFAULT_MEMBERS.map(m => ({ ...m, section: m.section || "gents" }))
   );
   const [ties, setTies]       = useState(() => load(TIES_KEY, {}));
-  const [activeTab, setActiveTab] = useState("myties");
+  // A shared game link, /?game=<id>. Read on the first render rather than in an
+  // effect, so someone following a link from WhatsApp lands on the game instead
+  // of watching My Ties flash past first.
+  const [deepLinkGameId, setDeepLinkGameId] = useState(readGameParam);
+
+  // Take the id out of the address bar once we have it, so a later reload
+  // doesn't reopen the game.
+  useEffect(() => {
+    if (!deepLinkGameId) return;
+    try { window.history.replaceState({}, "", window.location.pathname); } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [activeTab, setActiveTab] = useState(() => (readGameParam() ? "live" : "myties"));
   const [prevTab, setPrevTab] = useState("myties");
   function navigateTo(tab) { setPrevTab(t => activeTab !== tab ? activeTab : t); setActiveTab(tab); }
 
@@ -94,7 +113,10 @@ export default function BowlsTracker() {
   }
 
   // ── First-time welcome overlay ──
-  const [showWelcome, setShowWelcome] = useState(() => !load("ipbc_welcome_seen", false));
+  // Not marked as seen — a first-time visitor who arrives on a shared game link
+  // still gets the tour on a later, ordinary visit. It just isn't in the way of
+  // the thing they actually clicked.
+  const [showWelcome, setShowWelcome] = useState(() => !load("ipbc_welcome_seen", false) && !readGameParam());
   const [welcomeStep, setWelcomeStep] = useState(0);
   function dismissWelcome() {
     save("ipbc_welcome_seen", true);
@@ -3338,7 +3360,8 @@ export default function BowlsTracker() {
             LIVE GAMES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "live" && (
-          <LiveGamesTab myName={myName} cloudKey={cloudKey} isAdmin={isAdmin} setActiveTab={setActiveTab} members={members} />
+          <LiveGamesTab myName={myName} cloudKey={cloudKey} isAdmin={isAdmin} setActiveTab={setActiveTab} members={members}
+            deepLinkGameId={deepLinkGameId} onDeepLinkHandled={() => setDeepLinkGameId(null)} />
         )}
 
         {/* ══════════════════════════════════════════
