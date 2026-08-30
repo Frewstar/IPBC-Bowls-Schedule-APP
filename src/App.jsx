@@ -177,28 +177,75 @@ export default function BowlsTracker() {
   const [nameStep, setNameStep]   = useState("name"); // "name" | "pin"
   // ── Admin role (Supabase-backed) ──
   const [adminRole, setAdminRole] = useState(null); // null | "admin" | "super_admin" | "draw_admin"
+  // Has the server confirmed this name+PIN is an admin? Nothing is granted
+  // without it — see the effect below.
+  const [adminVerified, setAdminVerified] = useState(false);
   const [adminClaimMsg, setAdminClaimMsg] = useState(null);
 
+  // Admin rights are decided by the server, not by matching strings here.
+  //
+  // This used to read the admins table and compare admins.player_name against
+  // whatever name the member signed in with — no PIN anywhere in it. Since
+  // bowls_register deliberately allows a second account under an existing name
+  // with a different PIN (that is what separates two members with the same
+  // initials), anyone could register as an admin and be handed the panel.
+  // bowls_is_admin checks the name and PIN against player_data.pin_hash and
+  // then finds the admins row by player_id, so a lookalike account fails it.
+  //
+  // This closes that one route in. It does not make admin secure: almost every
+  // admin action in this file still writes straight to a table with the anon
+  // key against a using(true) policy, so anyone with the bundle can insert
+  // themselves into the admins table without going near this check. That is
+  // 002b's job, not this change's.
   useEffect(() => {
-    if (!myName) { setAdminRole(null); return; }
+    // Fail closed. No rights before the server has confirmed them, none while
+    // the check is in flight, and none if it fails for any reason — including
+    // a flaky connection. There is deliberately no fallback to the old name
+    // match: a fallback would reinstate the bug every time the network dropped.
+    setAdminVerified(false);
+    setAdminRole(null);
+    if (!myName || !myPin) return;
+
+    let cancelled = false;
     const nameUpper = myName.toUpperCase();
-    const q1 = supabase.from("admins").select("role").eq("player_name", nameUpper);
-    const q2 = cloudKey
-      ? supabase.from("admins").select("role").eq("cloud_key", cloudKey)
-      : Promise.resolve({ data: [] });
-    Promise.all([q1, q2]).then(([r1, r2]) => {
+    const key = `${nameUpper}-${myPin}`;
+
+    (async () => {
+      const { data: ok, error } = await supabase.rpc("bowls_is_admin", {
+        p_name: nameUpper,
+        p_pin:  myPin,
+      });
+      // Anything that is not an explicit true — an error, a null, a dropped
+      // request — leaves them an ordinary member.
+      if (cancelled || error || ok !== true) return;
+
+      // Confirmed. Now read the row for the admin/super_admin/draw_admin
+      // distinction, which is display and tier only — it grants nothing on its
+      // own. If the row can't be matched the member stays out, which is the
+      // fail-closed answer; fix the admins row rather than loosening this.
+      const [r1, r2] = await Promise.all([
+        supabase.from("admins").select("role").eq("player_name", nameUpper),
+        supabase.from("admins").select("role").eq("cloud_key", key),
+      ]);
+      if (cancelled) return;
       const rows = [...(r1.data || []), ...(r2.data || [])];
       const role = rows.some(r => r.role === "super_admin") ? "super_admin"
                  : rows.some(r => r.role === "admin")       ? "admin"
                  : rows.some(r => r.role === "draw_admin")  ? "draw_admin"
                  : null;
       setAdminRole(role);
-    });
-  }, [myName, cloudKey]); // eslint-disable-line react-hooks/exhaustive-deps
+      setAdminVerified(true);
+    })();
 
-  const isAdmin = adminRole === "admin" || adminRole === "super_admin";
-  const isSuperAdmin = adminRole === "super_admin";
-  const isDrawAdmin = adminRole === "draw_admin";
+    // Credentials changed while a check was in flight — drop the stale answer.
+    return () => { cancelled = true; };
+  }, [myName, myPin]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Every admin gate in the app goes through these three, so verification only
+  // has to be applied once, here.
+  const isAdmin = adminVerified && (adminRole === "admin" || adminRole === "super_admin");
+  const isSuperAdmin = adminVerified && adminRole === "super_admin";
+  const isDrawAdmin = adminVerified && adminRole === "draw_admin";
 
   async function claimSuperAdmin() {
     if (!cloudKey || !myName) return;
