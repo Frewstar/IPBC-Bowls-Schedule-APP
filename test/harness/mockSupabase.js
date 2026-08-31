@@ -32,12 +32,49 @@ function table() {
   return api;
 }
 
-function channel() {
+function channel(topic) {
   let es = null, handler = null, statusCb = null, closed = false;
+  // presence
+  let presenceEs = null, presenceHandler = null, presenceState = {};
+  const ref = Math.random().toString(36).slice(2);
+
   const ch = {
-    on(_evt, _opts, cb) { handler = cb; return ch; },
+    on(evt, _opts, cb) {
+      if (evt === "presence") { presenceHandler = cb; return ch; }
+      handler = cb;
+      return ch;
+    },
+    // Opening the presence stream IS joining, matching the server.
+    track() {
+      if (closed || presenceEs) return Promise.resolve("ok");
+      presenceEs = new EventSource(`${BASE}/presence/stream?topic=${encodeURIComponent(topic)}&ref=${ref}`);
+      // In the real client presence and row changes ride ONE socket, so a
+      // socket that dies takes the channel status down with it. Without this
+      // the presence-only channel would never learn it had been cut and the
+      // "dead socket hides the count" test would pass without testing
+      // anything.
+      presenceEs.onerror = () => { statusCb && statusCb("CHANNEL_ERROR"); };
+      presenceEs.onmessage = e => {
+        const msg = JSON.parse(e.data);
+        if (msg.type !== "sync") return;
+        // Same shape supabase-js hands back: key -> array of entries.
+        presenceState = Object.fromEntries(msg.refs.map(r => [r, [{}]]));
+        presenceHandler && presenceHandler();
+      };
+      return Promise.resolve("ok");
+    },
+    untrack() { if (presenceEs) { presenceEs.close(); presenceEs = null; presenceState = {}; } return Promise.resolve("ok"); },
+    presenceState: () => presenceState,
     subscribe(cb) {
       statusCb = cb;
+      // A presence-only channel has no row handler and must not open the row
+      // stream — it still has to report SUBSCRIBED so the caller can track.
+      if (!handler) {
+        fetch(BASE + "/rows")
+          .then(() => statusCb && statusCb("SUBSCRIBED"))
+          .catch(() => statusCb && statusCb("CHANNEL_ERROR"));
+        return ch;
+      }
       const connect = () => {
         if (closed) return;
         es = new EventSource(BASE + "/stream");
@@ -56,13 +93,13 @@ function channel() {
       connect();
       return ch;
     },
-    __close() { closed = true; if (es) es.close(); },
+    __close() { closed = true; if (es) es.close(); if (presenceEs) presenceEs.close(); },
   };
   return ch;
 }
 
 export const supabase = {
   from: () => table(),
-  channel: () => channel(),
+  channel: topic => channel(topic),
   removeChannel: ch => ch && ch.__close && ch.__close(),
 };

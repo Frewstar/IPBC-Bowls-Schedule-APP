@@ -8,6 +8,19 @@ const rows = new Map();
 let streams = new Set();
 let streamAllowed = true;
 
+// topic -> Map(ref -> res). Membership IS the open connection, which is how
+// real presence behaves: close the tab and you leave, with no explicit
+// goodbye needed.
+const presence = new Map();
+
+function presenceBroadcast(topic) {
+  const members = presence.get(topic);
+  if (!members) return;
+  const refs = [...members.keys()];
+  const line = `data: ${JSON.stringify({ type: "sync", refs })}\n\n`;
+  for (const res of members.values()) { try { res.write(line); } catch {} }
+}
+
 function broadcast(event) {
   const line = `data: ${JSON.stringify(event)}\n\n`;
   for (const res of streams) { try { res.write(line); } catch {} }
@@ -20,7 +33,10 @@ const json = (res, code, data) => {
   res.end(JSON.stringify(data));
 };
 
+let seedRows = [];
+
 export function start(port, seed = []) {
+  seedRows = JSON.parse(JSON.stringify(seed));
   rows.clear();
   for (const r of seed) rows.set(r.id, r);
   streamAllowed = true;
@@ -66,10 +82,52 @@ export function start(port, seed = []) {
       streamAllowed = false;
       for (const r of streams) { try { r.end(); } catch {} }
       streams = new Set();
+      // Presence rides the same socket in the real thing, so it dies here too.
+      for (const [topic, members] of presence) {
+        for (const r of members.values()) { try { r.end(); } catch {} }
+        presence.set(topic, new Map());
+      }
       return json(res, 200, { killed: true });
     }
     if (url.pathname === "/control/revive-stream") { streamAllowed = true; return json(res, 200, { revived: true }); }
+
+    // Put the world back to the seed. Specs mutate rows and one of them
+    // deletes the game outright, so without this whichever spec runs second
+    // fails for reasons that have nothing to do with the code under test.
+    if (url.pathname === "/control/reset") {
+      rows.clear();
+      for (const r of JSON.parse(JSON.stringify(seedRows))) rows.set(r.id, r);
+      streamAllowed = true;
+      return json(res, 200, { reset: true, rows: rows.size });
+    }
     if (url.pathname === "/control/streams") return json(res, 200, { open: streams.size, allowed: streamAllowed });
+
+    // ── presence ──────────────────────────────────────────────────────────
+    // Joining is opening the stream. Leaving is closing it — including by
+    // closing the tab, which is the case that matters and the one an explicit
+    // leave endpoint would not cover.
+    if (url.pathname === "/presence/stream") {
+      if (!streamAllowed) { res.writeHead(503, { "access-control-allow-origin": "*" }); return res.end(); }
+      const topic = url.searchParams.get("topic") || "";
+      const ref = url.searchParams.get("ref") || Math.random().toString(36).slice(2);
+      res.writeHead(200, {
+        "content-type": "text/event-stream", "cache-control": "no-cache",
+        connection: "keep-alive", "access-control-allow-origin": "*",
+      });
+      if (!presence.has(topic)) presence.set(topic, new Map());
+      presence.get(topic).set(ref, res);
+      presenceBroadcast(topic);
+      req.on("close", () => {
+        const m = presence.get(topic);
+        if (m) { m.delete(ref); presenceBroadcast(topic); }
+      });
+      return;
+    }
+
+    if (url.pathname === "/presence/count") {
+      const topic = url.searchParams.get("topic") || "";
+      return json(res, 200, { count: (presence.get(topic) || new Map()).size });
+    }
 
     if (url.pathname === "/stream") {
       if (!streamAllowed) { res.writeHead(503, { "access-control-allow-origin": "*" }); return res.end(); }

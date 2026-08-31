@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Radio, Plus, Minus, ChevronLeft, MapPin, X,
-  Share2, Trash2, Flag, CircleCheckBig, Users, Clock, WifiOff,
+  Share2, Trash2, Flag, CircleCheckBig, Users, Clock, WifiOff, Eye,
 } from "lucide-react";
 import {
   GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER,
@@ -10,6 +10,7 @@ import {
 import { supabase } from "../../lib/supabase.js";
 import { useLiveGames } from "../../lib/useLiveGames.js";
 import { canScore } from "../../lib/liveGamesSync.js";
+import { useWatching } from "../../lib/useWatching.js";
 
 const LIVE_RED = "#c0392b";
 const HOME_GROUND = "Irvine Park Bowling Club";
@@ -168,6 +169,10 @@ export default function LiveGamesTab({ myName, cloudKey, myMemberId = null, isAd
   const finishedGames = useMemo(
     () => games.filter(g => g.status === "finished").sort(byUpdatedDesc), [games]);
   const openGame = openId ? games.find(g => g.id === openId) : null;
+  // Only while a game is open, so a viewer holds one presence channel at a
+  // time and none at all on the list.
+  const { count: watching, live: watchingLive } =
+    useWatching(view === "detail" && openGame ? openGame.id : null);
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 2200); }
   function canEdit(g) { return canScore(g, { memberId: myMemberId, cloudKey, isAdmin }); }
@@ -322,6 +327,23 @@ export default function LiveGamesTab({ myName, cloudKey, myMemberId = null, isAd
           {g.last_updated_by && (
             <div style={{ textAlign: "center", marginTop: "12px", fontFamily: F_UI, fontSize: "11px", color: "rgba(255,255,255,0.6)" }}>
               Updated by {g.last_updated_by} · {timeAgo(g.updated_at)}
+            </div>
+          )}
+
+          {/* Three conditions, and each one is load-bearing.
+              watchingLive — presence rides the socket, so a dead socket must
+                take the number with it rather than freeze it. Showing a stale
+                "6 watching" on a screen that has stopped updating is the same
+                lie this whole change set exists to stop telling.
+              >= 2 — at 1 it is only you, and "1 watching" reads as a room
+                with nobody in it.
+              not finished — on a result from three weeks ago the number is
+                true and means nothing. It belongs to a game in progress or
+                one about to start. */}
+          {watchingLive && watching >= 2 && g.status !== "finished" && (
+            <div style={{ textAlign: "center", marginTop: "6px", fontFamily: F_UI, fontSize: "11px", color: "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px" }}>
+              <Eye size={12} strokeWidth={1.75} color={GOLD_MUTED} />
+              {watching} watching
             </div>
           )}
         </div>
