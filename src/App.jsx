@@ -1709,12 +1709,19 @@ export default function BowlsTracker() {
     if (data.status === "granted") await refreshAdminList();
   }
 
-  async function revokeAdmin(cloudKey) {
+  // Keyed on the account id, not the cloud key. cloud_key is NAME-PIN, and
+  // sending it meant lifting another admin's sign-in credential out of the
+  // world-readable admins table and putting it in a request payload.
+  async function revokeAdmin(playerId) {
     setAccessMsg(null);
+    if (!playerId) {
+      setAccessMsg({ ok: false, text: "That row was never linked to an app account, so there's nothing to revoke. Grant that member again to replace it." });
+      return;
+    }
     const { data, error } = await supabase.rpc("bowls_revoke_admin", {
       p_admin_name: (myName || "").toUpperCase(),
       p_admin_pin:  myPin || "",
-      p_cloud_key:  cloudKey,
+      p_player_id:  playerId,
     });
     if (error || !data) {
       setAccessMsg({ ok: false, text: error?.message ? `Couldn't revoke: ${error.message}` : "Couldn't revoke — no response from the server." });

@@ -176,13 +176,30 @@ begin
     end if;
   end if;
 
-  -- 5. Resolved. Clear anything already standing for this person before
+  -- 5. The super admin's role is not changeable here. Without this the
+  --    delete-then-insert below strips their super_admin row and replaces it
+  --    with a plain admin one — silently, reporting success, and with no way
+  --    back: the claim flow only reopens on a DELETED row. bowls_revoke_admin
+  --    has always refused this; grant has to as well.
+  if exists (select 1 from public.admins
+              where player_id = v_account_id and role = 'super_admin') then
+    return jsonb_build_object(
+      'status',  'is_super_admin',
+      'message', v_member.name || ' is the super admin. Their role can''t be changed here.');
+  end if;
+
+  -- 6. Resolved. Clear anything already standing for this person before
   --    writing, so a re-grant can't leave a second row behind: the inert
   --    'PENDING-' row from the old code, and any earlier row of their own.
   --    cloud_key is the table's primary key, so two rows for one person is
   --    otherwise perfectly possible — and one of them would outlive a revoke.
+  -- v_account_name is the cloud_key about to be inserted, and admins_pkey is
+  -- on cloud_key: a legacy row already holding that key with a null player_id
+  -- would survive a delete keyed only on player_id, and the insert would then
+  -- violate the primary key — an unhandled error instead of a message.
   delete from public.admins
    where player_id = v_account_id
+      or cloud_key = v_account_name
       or cloud_key = 'PENDING-' || upper(v_member.name)
       or cloud_key = 'APPROVED-' || upper(v_member.name);
 
@@ -207,10 +224,22 @@ end $$;
 -- could hold both a 'PENDING-' row and a real one, and revoking the row you
 -- could see left the other in place, still granting rights. This clears every
 -- row that resolves to the same account.
+--
+-- Keyed on player_id and not on cloud_key. cloud_key is NAME-PIN: passing it
+-- meant the client had to read another admin's sign-in credential out of the
+-- world-readable admins table and put it into a request payload — the exact
+-- pattern being removed everywhere else in this migration.
+-- admins_player_id_uniq (below) makes player_id a unique lookup, so nothing is
+-- lost by keying on it.
+--
+-- A legacy row with a null player_id cannot be revoked through this, having no
+-- id to key on. Such a row grants nothing anyway, and granting that member
+-- again clears it — which is what the admin panel tells you to do.
+drop function if exists public.bowls_revoke_admin(text, text, text);
 create or replace function public.bowls_revoke_admin(
   p_admin_name text,
   p_admin_pin  text,
-  p_cloud_key  text
+  p_player_id  uuid
 )
 returns jsonb
 language plpgsql
@@ -230,7 +259,7 @@ begin
   select a.cloud_key, a.player_id, a.role, coalesce(a.display_name, a.player_name) as who
     into v_target
     from public.admins a
-   where a.cloud_key = p_cloud_key;
+   where a.player_id = p_player_id;
 
   if not found then
     return jsonb_build_object(
@@ -246,8 +275,8 @@ begin
   end if;
 
   delete from public.admins
-   where cloud_key = p_cloud_key
-      or (v_target.player_id is not null and player_id = v_target.player_id);
+   where player_id = p_player_id
+      or cloud_key = v_target.cloud_key;
   get diagnostics v_removed = row_count;
 
   return jsonb_build_object(
@@ -255,6 +284,42 @@ begin
     'message', v_target.who || ' no longer has admin rights.',
     'removed', v_removed);
 end $$;
+
+
+-- ── bowls_is_super_admin is not callable with the anon key ────────────────
+-- A new function is EXECUTE-able by PUBLIC by default, which would put this
+-- one behind the publishable key in the bundle: a name and four digits in, a
+-- boolean out, with no lockout, no failure counting and no delay, against the
+-- single account that can hand out admin rights. admins is world-readable, so
+-- the name to try is public too. That is a PIN oracle.
+--
+-- grant, revoke and approve are SECURITY DEFINER and call it internally as
+-- their owner, so revoking it from the API roles breaks nothing legitimate —
+-- the client has never called it directly and does not need to.
+-- Written as a loop over the roles that actually exist. A plain
+-- "revoke ... from anon, authenticated" raises if any one of them is missing,
+-- and because this statement sits in the middle of the file that would abort
+-- the migration here and leave it HALF APPLIED — the functions above created,
+-- the admin_requests changes and the approve function below never run. Losing
+-- the revoke would be bad; silently applying two thirds of a migration is
+-- worse.
+do $$
+declare r text;
+begin
+  execute 'revoke execute on function public.bowls_is_super_admin(text, text) from public';
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke execute on function public.bowls_is_super_admin(text, text) from %I', r);
+    end if;
+  end loop;
+end $$;
+
+-- bowls_is_admin deliberately KEEPS its grant to anon. The client calls it on
+-- every sign-in to decide whether to show the admin panel at all, so revoking
+-- it would lock every admin out of their own panel. It is also the one with a
+-- mitigation: a failed call writes to login_lockouts and counts attempts.
+-- That asymmetry — the exposed one counting failures, the silent one not — is
+-- why the new function is closed rather than the old one left to match it.
 
 
 -- ── One account, one admin row ────────────────────────────────────────────
@@ -364,6 +429,7 @@ declare
   v_account_name    text;
   v_account_display text;
   v_member_name     text;
+  v_role            text;
 begin
   if not public.bowls_is_super_admin(p_admin_name, p_admin_pin) then
     return jsonb_build_object(
@@ -417,21 +483,43 @@ begin
                  || 'so there is no way to say who they are. Link it on the roster first.');
   end if;
 
+  -- Same guard as the grant: approving must not be able to demote the super
+  -- admin by replacing their row with a plain one.
+  if exists (select 1 from public.admins
+              where player_id = v_req.player_id and role = 'super_admin') then
+    return jsonb_build_object(
+      'status',  'is_super_admin',
+      'message', v_member_name || ' is the super admin. Their role can''t be changed here.');
+  end if;
+
+  -- The role they actually asked for. Selecting requested_role and then
+  -- hardcoding 'admin' handed full Admin to someone who asked for Draw Admin,
+  -- without telling the approver. Validated the same way the grant validates
+  -- its argument; anything else, including null, means plain admin.
+  if coalesce(v_req.requested_role, '') not in ('admin', 'draw_admin') then
+    v_role := 'admin';
+  else
+    v_role := v_req.requested_role;
+  end if;
+
   delete from public.admins
    where player_id = v_req.player_id
+      or cloud_key = v_account_name
       or cloud_key = 'PENDING-' || upper(v_member_name)
       or cloud_key = 'APPROVED-' || upper(v_member_name);
 
   insert into public.admins (cloud_key, player_name, display_name, role, player_id)
   values (v_account_name, upper(v_member_name),
-          coalesce(v_account_display, v_member_name), 'admin', v_req.player_id);
+          coalesce(v_account_display, v_member_name), v_role, v_req.player_id);
 
   delete from public.admin_requests where id = v_req.id;
 
   return jsonb_build_object(
     'status',      'granted',
-    'message',     v_member_name || ' can now use the admin panel.',
+    'message',     v_member_name || ' can now use the admin panel'
+                   || case when v_role = 'draw_admin' then ' as Draw Admin.' else '.' end,
     'member_name', v_member_name,
+    'role',        v_role,
     'cloud_key',   v_account_name);
 end $$;
 

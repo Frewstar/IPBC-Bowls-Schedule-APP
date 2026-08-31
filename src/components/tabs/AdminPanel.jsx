@@ -924,12 +924,12 @@ function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRe
                   admin who then finds they have no admin panel. */}
               {!a.player_id && (
                 <div style={{ fontFamily: F_UI, fontSize: "11px", color: LOSS_RED, marginTop: "2px", lineHeight: 1.45 }}>
-                  Not active — never linked to an app account. Revoke this and grant it again.
+                  Not active — never linked to an app account. Grant that member again below and this row is replaced.
                 </div>
               )}
             </div>
-            {a.role !== "super_admin" && (
-              <button onClick={() => revokeAdmin(a.cloud_key)} style={{ background: SURFACE, border: `1px solid ${LOSS_RED}44`, borderRadius: "6px", color: LOSS_RED, padding: "5px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI }}>Revoke</button>
+            {a.role !== "super_admin" && a.player_id && (
+              <button onClick={() => revokeAdmin(a.player_id)} style={{ background: SURFACE, border: `1px solid ${LOSS_RED}44`, borderRadius: "6px", color: LOSS_RED, padding: "5px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI }}>Revoke</button>
             )}
           </div>
         ))}
