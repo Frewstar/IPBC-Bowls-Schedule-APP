@@ -201,6 +201,7 @@ export default function AdminPanel({
   lockouts = [], clearLockout,
   // admin management
   adminList = [], pendingAdminRequests = [], approveAdminRequest, revokeAdmin, grantAdmin,
+  accessMsg = null, clearAccessMsg,
   // phone requests
   phoneRequests = [], approvePhoneRequest, declinePhoneRequest,
   // app accounts
@@ -239,7 +240,7 @@ export default function AdminPanel({
       {section === "Fixtures"     && <AdminFixtures fixtures={fixtures} addFixture={addFixture} editFixture={editFixture} deleteFixture={deleteFixture} />}
       {section === "Competitions" && <AdminCompetitions tournaments={tournaments} onEditCompDates={onEditCompDates} />}
       {section === "Club"         && <AdminClub rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
-      {section === "Access" && isSuperAdmin && <AdminAccess adminList={adminList} pendingAdminRequests={pendingAdminRequests} approveAdminRequest={approveAdminRequest} revokeAdmin={revokeAdmin} grantAdmin={grantAdmin} members={members} myName={myName} />}
+      {section === "Access" && isSuperAdmin && <AdminAccess adminList={adminList} pendingAdminRequests={pendingAdminRequests} approveAdminRequest={approveAdminRequest} revokeAdmin={revokeAdmin} grantAdmin={grantAdmin} members={members} myName={myName} accessMsg={accessMsg} clearAccessMsg={clearAccessMsg} />}
       {section === "Lockouts"     && <AdminLockouts lockouts={lockouts} clearLockout={clearLockout} />}
       {section === "Draw" && (
         <div>
@@ -867,7 +868,7 @@ function AdminClub({ rollOfHonour, honoraryMembers, recordWinner, addHonoraryMem
 // ─────────────────────────────────────────────
 const ROLE_LABELS = { admin: "Admin", draw_admin: "Draw Admin", super_admin: "Super Admin" };
 
-function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRequest, revokeAdmin, grantAdmin, members = [], myName }) {
+function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRequest, revokeAdmin, grantAdmin, members = [], myName, accessMsg = null, clearAccessMsg }) {
   const [grantSearch, setGrantSearch] = useState("");
   const [grantRole, setGrantRole]     = useState("admin");
   const filtered = members.filter(m => m.name.toUpperCase().includes(grantSearch.toUpperCase()) && m.name.toUpperCase() !== (myName || "").toUpperCase());
@@ -880,7 +881,30 @@ function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRe
           <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>Pending Admin Requests ({pendingAdminRequests.length})</div>
           {pendingAdminRequests.map(req => (
             <div key={req.id} style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "8px", marginBottom: "8px", borderBottom: `1px solid ${BORDER}` }}>
-              <div style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{req.player_name}</div>
+              {/* req.player_name arrives on an unauthenticated insert, so it is
+                  a claim, not a fact. Show who the roster says owns the
+                  account the request actually names; fall back to the claim,
+                  marked, when nothing can be resolved. The approval itself
+                  resolves the same way, so what is shown here is what will
+                  happen. */}
+              {(() => {
+                const owner = members.find(m => m.linked_player_id && m.linked_player_id === req.player_id);
+                return (
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>
+                      {owner ? owner.name : req.player_name}
+                    </div>
+                    {req.requested_role && (
+                      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "1px" }}>asks to help with: {req.requested_role}</div>
+                    )}
+                    {!owner && (
+                      <div style={{ fontFamily: F_UI, fontSize: "11px", color: LOSS_RED, marginTop: "2px", lineHeight: 1.45 }}>
+                        Unverified — this name is what the request claims, and it isn't linked to anyone on the roster.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               <button onClick={() => approveAdminRequest(req)} style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 12px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Approve</button>
             </div>
           ))}
@@ -895,13 +919,39 @@ function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRe
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{a.display_name || a.player_name}</div>
               <div style={{ fontFamily: F_UI, fontSize: "11px", color: a.role === "super_admin" ? GOLD_MUTED : a.role === "draw_admin" ? MID : TEXT3 }}>{ROLE_LABELS[a.role] || a.role}</div>
+              {/* A row with no player_id is not attached to anybody's account,
+                  so it grants nothing. Say that, rather than listing them as an
+                  admin who then finds they have no admin panel. */}
+              {!a.player_id && (
+                <div style={{ fontFamily: F_UI, fontSize: "11px", color: LOSS_RED, marginTop: "2px", lineHeight: 1.45 }}>
+                  Not active — never linked to an app account. Grant that member again below and this row is replaced.
+                </div>
+              )}
             </div>
-            {a.role !== "super_admin" && (
-              <button onClick={() => revokeAdmin(a.cloud_key)} style={{ background: SURFACE, border: `1px solid ${LOSS_RED}44`, borderRadius: "6px", color: LOSS_RED, padding: "5px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI }}>Revoke</button>
+            {a.role !== "super_admin" && a.player_id && (
+              <button onClick={() => revokeAdmin(a.player_id)} style={{ background: SURFACE, border: `1px solid ${LOSS_RED}44`, borderRadius: "6px", color: LOSS_RED, padding: "5px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI }}>Revoke</button>
             )}
           </div>
         ))}
       </div>
+
+      {/* What the server actually did. A grant that can't be resolved is
+          refused, and the refusal says what to do about it — the old code
+          wrote a placeholder row and showed nothing at all. */}
+      {accessMsg && (
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: "10px",
+          background: accessMsg.ok ? `${GREEN}0d` : `${GOLD}12`,
+          border: `1px solid ${accessMsg.ok ? GREEN + "44" : GOLD + "66"}`,
+          borderRadius: "10px", padding: "11px 13px", marginBottom: "14px",
+        }}>
+          <div style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", color: TEXT, lineHeight: 1.5 }}>{accessMsg.text}</div>
+          <button onClick={clearAccessMsg} aria-label="Dismiss"
+            style={{ background: "none", border: "none", padding: "0 0 0 4px", cursor: "pointer", color: TEXT3, display: "flex", flexShrink: 0 }}>
+            <X size={14} strokeWidth={2} />
+          </button>
+        </div>
+      )}
 
       {/* Grant admin */}
       <div style={{ fontFamily: F_UI, fontSize: "12px", fontWeight: "700", color: TEXT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Grant Access</div>
@@ -915,7 +965,11 @@ function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRe
         </select>
       </div>
       {grantSearch.length >= 2 && filtered.slice(0, 6).map(m => {
-        const alreadyAdmin = adminList.some(a => a.player_name === m.name.toUpperCase() || a.display_name === m.name);
+        // Someone counts as already an admin only if their row actually grants
+        // anything — that is, it resolves to their account. A leftover row with
+        // no player_id grants nothing, and treating it as "already admin" hid
+        // the Grant button from the one person who could put it right.
+        const alreadyAdmin = !!m.linked_player_id && adminList.some(a => a.player_id === m.linked_player_id);
         return (
           <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", marginBottom: "6px" }}>
             <div style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{m.name}</div>
