@@ -41,7 +41,10 @@ await check("one viewer alone is NOT told '1 watching'", async () => {
 
 const b = await openGame(ctxB, "WATCHER");
 
-await check("a second viewer makes both say '2 watching'", async () => {
+// Names what it pins: with two connections open the count reads 2 and not 1,
+// i.e. each viewer is counted in the number they are shown. If the count is
+// ever changed to exclude self, this is the test that says so.
+await check("the count includes you — two connections read as 2, not 1", async () => {
   await a.waitForSelector("text=2 watching", { timeout: 10000 });
   await b.waitForSelector("text=2 watching", { timeout: 10000 });
 });

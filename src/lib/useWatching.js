@@ -28,6 +28,27 @@ import { supabase } from "./supabase.js";
 //  interesting numbers are 3 and 8 rather than 300, that distortion is a
 //  real share of the count, which is why the label reads "watching" and not
 //  "people watching".
+//
+//  THE COUNT INCLUDES YOU. track() puts this client into the same presence
+//  state the count is read from, so "2 watching" is you and one other, not
+//  you and two others. Decided rather than inherited:
+//
+//    * It is what every presence UI does — a shared document showing three
+//      faces is showing yours among them — so it is the reading people
+//      arrive with.
+//    * Excluding self is worse where it matters most. Two people on a game
+//      would BOTH read "1 watching", which sounds like one person in total
+//      rather than two, and there is no wording that fixes that.
+//    * The case it reads oddly in is the marker's: "2 watching" is one
+//      person watching them, plus themselves. That is mild, and the >= 2
+//      gate already spares them the worst of it — a marker alone with the
+//      game open is never told "1 watching".
+//
+//  If it should ever exclude self, it is one line — subtract one before
+//  returning — but then the gate has to move to >= 1 and the label has to
+//  become "1 other watching" to stay true. The test named
+//  "the count includes you" in test/watching.e2e.mjs pins the current
+//  choice, so flipping it fails loudly rather than drifting.
 // ════════════════════════════════════════════════════════════════════════
 
 // Presence state arrives as { <presence key>: [ {…}, … ] }. One key is one
