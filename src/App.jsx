@@ -255,6 +255,12 @@ export default function BowlsTracker() {
   const cloudKey = myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null;
   // Linked member: canonical name from members list (used for draw lookups)
   const [linkedMemberName, setLinkedMemberName] = useState(() => load("bowls_linked_member", "") || "");
+  // The roster id of the signed-in member, resolved once and held here. It is
+  // what live_games now records as the creator instead of the sign-in
+  // credential — see 20260903_live_games_creator_member_id.sql. Null for the
+  // 149 of 216 members who have not linked a roster entry; everything that
+  // reads it has to cope with that.
+  const [linkedMemberId, setLinkedMemberId] = useState(() => load("bowls_linked_member_id", "") || null);
   const [profile, setProfile] = useState(() => load("bowls_profile", { displayName: "", avatar: null, avatarPublic: true }));
   const [showProfileSheet, setShowProfileSheet] = useState(false);
   const [memberProfiles, setMemberProfiles] = useState({});
@@ -851,6 +857,7 @@ export default function BowlsTracker() {
   useEffect(() => { save("bowls_myname", myName); }, [myName]);
   useEffect(() => { save("bowls_mypin", myPin); }, [myPin]);
   useEffect(() => { save("bowls_linked_member", linkedMemberName); }, [linkedMemberName]);
+  useEffect(() => { save("bowls_linked_member_id", linkedMemberId || ""); }, [linkedMemberId]);
   useEffect(() => { save("bowls_profile", profile); }, [profile]);
   useEffect(() => { save("bowls_entries_v1", entries); }, [entries]);
 
@@ -924,12 +931,20 @@ export default function BowlsTracker() {
   // Restore the member link from the cloud so a device that lost its local storage
   // isn't asked to link a name that is already linked to this account.
   useEffect(() => {
-    if (!cloudKey || linkedMemberName) return;
+    if (!cloudKey || (linkedMemberName && linkedMemberId)) return;
     let cancelled = false;
-    supabase.from("members").select("name").eq("linked_cloudkey", cloudKey).maybeSingle()
-      .then(({ data }) => { if (!cancelled && data?.name) setLinkedMemberName(data.name); });
+    // Selects id as well as name: this is the once-at-sign-in resolution the
+    // live-games creator key needs, and it is the same round trip that was
+    // already being made. After 002b, bowls_sign_in returns both and this
+    // query goes away entirely.
+    supabase.from("members").select("id, name").eq("linked_cloudkey", cloudKey).maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        if (data.name) setLinkedMemberName(data.name);
+        if (data.id) setLinkedMemberId(data.id);
+      });
     return () => { cancelled = true; };
-  }, [cloudKey, linkedMemberName]);
+  }, [cloudKey, linkedMemberName, linkedMemberId]);
 
   // Ask the browser to keep our storage. Without this iOS evicts localStorage after
   // about a week of not opening the app, which signs the member out again.
@@ -1392,6 +1407,11 @@ export default function BowlsTracker() {
     // Remove any previous link this account held on another member
     await supabase.from("members").update({ linked_cloudkey: null }).eq("linked_cloudkey", cloudKey).neq("id", member.id);
     setLinkedMemberName(member.name);
+    // Same moment, same fact: linking is the point at which this account
+    // acquires a roster id, and live_games needs it to record who set a game
+    // up. Without this line a member who links and then immediately creates a
+    // game would still have their sign-in credential written to the row.
+    setLinkedMemberId(member.id);
     setLinkStatus("done");
     setTimeout(closeLinkSheet, 1200);
   }
@@ -1423,6 +1443,10 @@ export default function BowlsTracker() {
     if (!cloudKey || !linkedMemberName) return;
     supabase.from("members").update({ linked_cloudkey: null }).eq("linked_cloudkey", cloudKey);
     setLinkedMemberName("");
+    // Both halves of the link go together. Leaving the id behind would let an
+    // unlinked account keep scoring games it "created" under a roster entry it
+    // no longer holds.
+    setLinkedMemberId(null);
   }
   function saveExistingPin() {
     if (!/^\d{4}$/.test(pinInput)) return;
@@ -3514,7 +3538,7 @@ export default function BowlsTracker() {
             LIVE GAMES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "live" && (
-          <LiveGamesTab myName={myName} cloudKey={cloudKey} isAdmin={isAdmin} setActiveTab={setActiveTab} members={members}
+          <LiveGamesTab myName={myName} cloudKey={cloudKey} myMemberId={linkedMemberId} isAdmin={isAdmin} setActiveTab={setActiveTab} members={members}
             deepLinkGameId={deepLinkGameId} onDeepLinkHandled={() => setDeepLinkGameId(null)} />
         )}
 

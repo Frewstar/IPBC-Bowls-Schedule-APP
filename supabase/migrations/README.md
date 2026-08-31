@@ -43,6 +43,7 @@ Run them in filename order. Every one is idempotent.
 | 11 | `20260831_grant_admin.sql` | Granting **and approving** admin actually work; `admins_player_id_uniq`; `admin_requests` stops carrying a PIN | Applied — verified live: five functions, the oracle closed to `anon`, `admin_requests` reshaped, both indexes, demotion guard refusing |
 | 12 | `20260901_admin_role_layers.sql` | Admin role layers — `bowls_admin_role`, a CHECK on `admins.role`, `events_admin` | Applied 31 Aug, 17:04 UTC as `admin_role_layers` — verified live: the four roles in the CHECK, `anon` can execute `bowls_admin_role` and still cannot execute `bowls_is_super_admin`, lockout counting increments and clears |
 | 13 | `20260902_event_posters.sql` | Posters on What's On — `club_events.poster_path`, the `event-posters` bucket, ticketed writes, the Open Graph share link | Applied 31 Aug, 20:20 UTC as `event_posters`, plus `20260831205042 event_posters_revoke_ticket_grants` at 20:50 — verified live: the column, the bucket with its limits, an upload round-trip, and an upload without a ticket refused |
+| 14 | `20260903_live_games_creator_member_id.sql` | The sign-in PIN comes out of `live_games` — `creator_member_id`, backfilled, and `creator_cloudkey` cleared on finished games | Applied 31 Aug, 21:59 UTC as `live_games_creator_member_id` — ledger 43 rows before, 44 after |
 
 Status is no longer "my best understanding from our sessions". Every row above was
 checked against `information_schema`, `pg_constraint`, `pg_indexes`, `pg_policies`,
@@ -2324,6 +2325,122 @@ end $$;
 --   * Anyone who is an admin can upload anything the MIME limits allow. This
 --     grants the social convenor a real capability; it does not police it.
 ```
+
+## 11. Live scores that update, and the PIN out of `live_games`
+
+**File:** `supabase/migrations/20260903_live_games_creator_member_id.sql`
+**Status:** Applied 31 August, 21:59 UTC as `live_games_creator_member_id` —
+before the client that depends on it, and with the ledger read either side:
+43 rows before, 44 after, tail `20260831215913`.
+
+### The column is TEXT, not `uuid`
+
+This was specified as `creator_member_id uuid references members(id)` and it
+cannot be that. `members.id` is:
+
+```
+id  text  primary key  default (gen_random_uuid())::text
+```
+
+Postgres will not put a foreign key from a `uuid` column onto a `text` one, so
+the migration as specified would have failed outright rather than applied
+wrongly. The values are uuid-shaped; the column they point at is typed text and
+matching it is what makes the reference legal. `draw_pairings`,
+`member_claim_requests` and `phone_change_requests` all reference members by
+text too — worth knowing before the same assumption is made again.
+
+### What was actually wrong with the live scores
+
+The brief said the client never subscribes. It does, and it has since the
+feature shipped in `c9a3c51` — an unfiltered `postgres_changes` subscription on
+`live_games`, correct in shape, cleaned up on unmount. The server has been
+broadcasting the whole time: `live_games` is in `supabase_realtime` with
+`pubinsert`, `pubupdate` and `pubdelete` all true.
+
+So the score reaching 9 while a phone showed 6 was not a missing subscription.
+It was a subscription with nothing underneath it:
+
+* `subscribe()` was called with **no status callback**, so a channel that
+  failed to join failed silently and the tab went on showing what it had.
+* A phone locks, or the browser backgrounds the tab, and the socket is closed
+  under it. Nothing noticed, and nothing re-read on the way back.
+* There was no second source of truth, so a dead socket took the screen with
+  it — which is exactly the reported symptom, including "only caught up on a
+  manual pull-to-refresh".
+* The screen said "updates automatically" whether or not it was.
+
+The fix is therefore not a subscription. It is one that is watched
+(`subscribe()` now reports SUBSCRIBED / CHANNEL_ERROR / TIMED_OUT / CLOSED), a
+30-second poll underneath that does not care whether the socket works, a
+re-read on `visibilitychange`, `focus` and `online`, a channel rebuilt if we
+wake up not live, and a re-read the moment the channel *does* join — which
+closes the gap between the first fetch and the socket being ready that the old
+code never closed.
+
+### One channel, unfiltered — a deviation, deliberately
+
+The brief asked for a per-game channel filtered on `id=eq.<gameId>`. There is
+one unfiltered channel for the whole tab instead. The tab holds every game in
+one array and the detail view is a lookup into it, so an unfiltered channel
+already feeds both; a filtered one on top would deliver the same row twice and
+add a join and a leave on every open and close of a game — more socket churn on
+a phone, not less. One channel per tab is strictly fewer than one per
+navigation, which is what the requirement was guarding against, and the table
+holds single figures of rows so there is no bandwidth case either. Easy to
+reverse.
+
+### `updated_at` decides, and that is the whole reconciliation
+
+The client writes `updated_at` on every patch and the server stores exactly
+what it is sent, so the row held locally and the row that comes back are
+directly comparable. One rule — strictly older loses, equal wins — covers four
+things that would otherwise each need a special case: the marker's own `+1`
+shown instantly and not snapped back by a poll that was already in flight;
+realtime events arriving out of order after a socket reopens; the echo of our
+own write; and two phones scoring at once, where last write wins as it always
+did.
+
+`REPLICA IDENTITY` is left at DEFAULT, so a DELETE payload carries the primary
+key and nothing else. The code reads only `old.id`, and the test harness sends
+exactly that shape so a regression breaks in CI rather than in front of the
+club.
+
+### Being honest about the permission check
+
+`creator_member_id === myMemberId || isAdmin` is **advisory**, and so was the
+check it replaces. `live_games` carries `using (true)` on select, insert,
+update and delete, so anyone with the publishable key out of the JavaScript
+bundle can update any game whatever the client believes. This change loses no
+security that existed. What it does is take a **sign-in credential** out of a
+world-readable table that has a share button on it.
+
+The real fix is an RPC — `bowls_update_live_game(name, pin, game_id, patch)` —
+verifying the PIN against `player_data.pin_hash` and the caller against
+creator, assigned scorers and admins, with the table's write policies then
+closed to `anon`. That belongs with the assigned-scorers work and is
+deliberately not built here.
+
+**One gap worth naming.** Only 67 of 216 members have linked a roster entry, so
+149 signed-in members have no `members.id`. A game created by one of them still
+writes `creator_cloudkey`, because the alternative is a game its own marker
+cannot score. The credential is gone for linked creators and still written for
+unlinked ones. Every signed-in account *does* have a `player_data.id` — keying
+on that instead would close the gap completely, and is worth deciding before
+`creator_cloudkey` is dropped.
+
+### What the migration did to the three live rows
+
+| Game | Before | After |
+|---|---|---|
+| `scheduled` / PAMELA | cloudkey | member id **and** cloudkey — in flight, so the old key stays until the fallback goes |
+| `finished` / STUART WILLIAMSON | cloudkey | member id, cloudkey **cleared** |
+| `finished` / W BROWN | neither | neither — was never linked |
+
+Credentials in the table: 2 before, 1 after, and the one left is deliberate.
+`creator_cloudkey` is **not** dropped — it goes when no bundle in the field
+reads it, the same client-first ordering as everything else in this folder.
+
+---
 
 ## Verifying what has actually run
 
