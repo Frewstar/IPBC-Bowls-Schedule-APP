@@ -1790,7 +1790,6 @@ export default function BowlsTracker() {
     { id: "fixtures",    label: "Fixtures",  Icon: Calendar   },
     ...(signedIn ? [{ id: "members", label: "Members", Icon: Users }] : []),
     { id: "club",        label: "Club",      Icon: Shield     },
-    ...(isAdmin || isDrawAdmin ? [{ id: "admin", label: "Admin", Icon: Lock }] : []),
   ];
 
   const selectedT = activeTournament ? TOURNAMENTS.find(t => t.id === activeTournament) : null;
@@ -1949,15 +1948,10 @@ export default function BowlsTracker() {
         </div>
       )}
 
-      {/* ── FLOATING HELP BUTTON ── */}
-      {!showWelcome && (
-        <button
-          onClick={() => setActiveTab("help")}
-          aria-label="Help"
-          style={{ position: "fixed", bottom: "80px", right: "16px", zIndex: 100, width: "46px", height: "46px", borderRadius: "50%", background: GREEN, border: `2px solid ${GOLD}`, boxShadow: "0 4px 16px rgba(74,14,31,0.3)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-          <HelpCircle size={22} strokeWidth={1.75} color={GOLD} />
-        </button>
-      )}
+      {/* The floating help button used to live here: a second HelpCircle, in a
+          burgundy circle above the tab bar, opening the same Help tab as the "?"
+          in the top row. Two identical icons on one screen, and this one sat on
+          top of the content and the last tab. The top row keeps the one. */}
 
       {/* ── HEADER ── */}
       <div style={{ background: SURFACE, borderBottom: `3px solid ${GREEN}`, boxShadow: "0 1px 4px rgba(74,14,31,0.08)" }}>
@@ -2016,15 +2010,27 @@ export default function BowlsTracker() {
                   }} />
               )}
               <button onClick={shareApp} title="Share app"
-                style={{ background: "none", border: "none", cursor: "pointer", padding: "7px 10px", color: TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
+                style={{ background: "none", border: "none", cursor: "pointer", padding: "7px 6px", color: TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
                 <Share2 size={20} strokeWidth={1.5} />
               </button>
               <button onClick={() => navigateTo("help")} title="Help"
-                style={{ background: activeTab === "help" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 10px", color: activeTab === "help" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
+                style={{ background: activeTab === "help" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 6px", color: activeTab === "help" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
                 <HelpCircle size={20} strokeWidth={activeTab === "help" ? 2 : 1.5} />
               </button>
+              {/* Admin sits up here with Help and Settings rather than in the tab
+                  bar. Eight tabs did not fit: on anything narrower than about
+                  383px — an iPhone SE or 8 at 375, a great many Androids at 360
+                  — the last tab was laid out past the right edge of the screen
+                  and could not be reached at all. It is also the right home for
+                  it: the bar below is the club, this row is the app. */}
+              {(isAdmin || isDrawAdmin) && (
+                <button onClick={() => navigateTo("admin")} title="Admin"
+                  style={{ background: activeTab === "admin" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 6px", color: activeTab === "admin" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
+                  <Lock size={20} strokeWidth={activeTab === "admin" ? 2 : 1.5} />
+                </button>
+              )}
               <button onClick={() => navigateTo("settings")} title="Settings"
-                style={{ background: activeTab === "settings" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 10px", color: activeTab === "settings" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
+                style={{ background: activeTab === "settings" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 6px", color: activeTab === "settings" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
                 <Settings size={20} strokeWidth={activeTab === "settings" ? 2 : 1.5} />
               </button>
             </div>
@@ -4045,7 +4051,12 @@ export default function BowlsTracker() {
                 flex: 1, background: "transparent", border: "none",
                 borderTop: isActive ? `3px solid ${GREEN}` : "3px solid transparent",
                 color: isActive ? GREEN : TEXT3,
-                padding: "8px 4px 6px", cursor: "pointer",
+                // 2px of side padding and tighter tracking, not 4px/0.05em: the
+                // seven labels have to share the narrowest phone still in use.
+                // Together they take the bar's minimum from 335px to 295px, so
+                // it fits a 320px screen with room to spare rather than laying
+                // the last tab out past the edge. See the letterSpacing below.
+                padding: "8px 2px 6px", cursor: "pointer",
                 fontFamily: F_UI, fontWeight: "600",
                 display: "flex", flexDirection: "column",
                 alignItems: "center", justifyContent: "center", gap: "3px",
@@ -4054,7 +4065,7 @@ export default function BowlsTracker() {
                 WebkitTapHighlightColor: "transparent",
               }}>
                 <Icon size={22} strokeWidth={isActive ? 2.2 : 1.5} />
-                <span style={{ fontSize: "10px", letterSpacing: "0.05em", textTransform: "uppercase", lineHeight: 1 }}>{label}</span>
+                <span style={{ fontSize: "10px", letterSpacing: "0.02em", textTransform: "uppercase", lineHeight: 1 }}>{label}</span>
                 <div style={{ width: "4px", height: "4px", borderRadius: "50%", background: isActive ? GREEN : "transparent", transition: "background 0.15s" }} />
               </button>
             );
