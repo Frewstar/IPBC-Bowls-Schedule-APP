@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import { PartyPopper, Plus, Pencil, Clock, CalendarDays, Trash2, Ban, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { PartyPopper, Plus, Pencil, Clock, CalendarDays, Trash2, Ban, RotateCcw, ChevronLeft, ChevronRight, ImagePlus, Share2, X } from "lucide-react";
 import BottomSheet from "../BottomSheet.jsx";
 import { supabase } from "../../lib/supabase.js";
 import { GREEN, GOLD, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { DAY_NAMES, MONTH_ABBR } from "../../lib/utils.js";
+import { posterUrl, posterThumbUrl, uploadPoster, removePoster, shareUrl } from "../../lib/poster.js";
 
 const FULL_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -104,7 +105,7 @@ function byWhen(a, b) {
 
 const BLANK = { title: "", detail: "", start_time: "20:00", end_time: "", event_date: "", weekday: 6, from_date: "", to_date: "" };
 
-export default function WhatsOnTab({ myName, isAdmin = false }) {
+export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId = null, onOpenedEvent }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   // Which month the grid is showing, and which day (if any) has been tapped.
@@ -116,6 +117,12 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null); // null | "one" | "series"
+  // Which night's detail is open, and whether its poster is full-screen.
+  const [detailId, setDetailId] = useState(null);
+  const [lightbox, setLightbox] = useState(null);     // null | { src, alt }
+  const [posterBusy, setPosterBusy] = useState(false);
+  const [confirmPosterDel, setConfirmPosterDel] = useState(false);
+  const fileRef = useRef(null);
 
   // Cancel the outgoing message's timer as well as showing the new one.
   // Without this, two toasts close together share the first one's clock and
@@ -161,6 +168,25 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
   const sorted = useMemo(() => [...events].sort(byWhen), [events]);
   const today = todayISO();
 
+  // A shared link opened the app on a particular night. Wait for the rows —
+  // the id is known before the fetch finishes — then show it and move the
+  // month to it, so closing the sheet leaves them somewhere that makes sense
+  // rather than back on today.
+  useEffect(() => {
+    if (!openEventId || loading) return;
+    const hit = events.find(e => e.id === openEventId);
+    if (hit) {
+      setMonthAnchor(firstOfMonth(fromISODate(hit.event_date)));
+      setSelectedDay(hit.event_date);
+      setDetailId(hit.id);
+    } else {
+      // Shared, then removed — or a night before this month, which the query
+      // window doesn't cover. Say so rather than opening nothing.
+      showToast("That night isn't in the diary any more");
+    }
+    onOpenedEvent?.();
+  }, [openEventId, loading, events]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Everything on a given day, keyed by date, so a grid cell is a lookup
   // rather than a scan of the whole season.
   const byDate = useMemo(() => {
@@ -188,6 +214,10 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
   // The one thing most people open this tab to find out.
   const nextUp = useMemo(() => sorted.find(e => e.event_date >= today && !e.cancelled) || null, [sorted, today]);
 
+  // Read out of `events` rather than held as a row, so cancelling or adding a
+  // poster from inside the sheet updates what the sheet is showing.
+  const detail = useMemo(() => events.find(e => e.id === detailId) || null, [events, detailId]);
+
   const thisMonth = firstOfMonth(new Date());
   const canGoBack = monthAnchor > thisMonth;
 
@@ -206,12 +236,21 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
     setSheet("add");
   }
   function openEdit(row) {
+    setDetailId(null);
+    setConfirmPosterDel(false);
     setForm({ ...BLANK, title: row.title, detail: row.detail || "", start_time: row.start_time || "", end_time: row.end_time || "", event_date: row.event_date });
     setConfirmDel(null);
     setSheet({ edit: row });
   }
 
-  const editing = sheet && sheet.edit ? sheet.edit : null;
+  // Looked up in `events` on every render rather than kept as the row that was
+  // tapped. Adding a poster from inside this sheet changes the row; a snapshot
+  // would leave the sheet still offering "Add the poster" over one that is
+  // already there.
+  const editingId = sheet && sheet.edit ? sheet.edit.id : null;
+  const editing = useMemo(
+    () => (editingId ? events.find(e => e.id === editingId) || null : null),
+    [events, editingId]);
   const dates = mode === "weekly" ? seriesDates(form.from_date, form.to_date, form.weekday) : [];
 
   const blockedReason =
@@ -342,6 +381,74 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
     showToast("Series removed");
   }
 
+  // ── Poster ────────────────────────────────────────────────────────────────
+  // Three steps and the order matters. Upload first, point the row at the new
+  // object second, take the old one down last: at no point is there an event
+  // pointing at a file that isn't there.
+  async function attachPoster(file, row) {
+    if (!file || !row) return;
+    setPosterBusy(true);
+    try {
+      const previous = row.poster_path || null;
+      const { path } = await uploadPoster({ eventId: row.id, name: myName, pin: myPin, file });
+
+      const { error } = await supabase.from("club_events").update({ poster_path: path }).eq("id", row.id);
+      if (error) throw new Error(`Poster uploaded but the night didn't save: ${error.message}`);
+      setEvents(prev => prev.map(e => (e.id === row.id ? { ...e, poster_path: path } : e)));
+
+      // Replacing: the old object is nobody's poster now, so it goes. If this
+      // fails the member still sees the right poster — it leaves a file behind,
+      // which is a tidying problem, not a wrong-image problem.
+      if (previous) {
+        try { await removePoster({ path: previous, name: myName, pin: myPin }); }
+        catch (err) { console.warn("Old poster left behind:", previous, err); }
+      }
+      showToast(previous ? "Poster replaced" : "Poster added");
+    } catch (err) {
+      showToast(err.message || "Couldn't add the poster");
+    } finally {
+      setPosterBusy(false);
+    }
+  }
+
+  // The object goes before the column does. The other order would clear the
+  // pointer and leave the picture itself on a public URL — and the reason this
+  // button exists is the day the wrong file gets picked.
+  async function dropPoster(row) {
+    if (!row?.poster_path) return;
+    setPosterBusy(true);
+    try {
+      await removePoster({ path: row.poster_path, name: myName, pin: myPin });
+      const { error } = await supabase.from("club_events").update({ poster_path: null }).eq("id", row.id);
+      if (error) throw new Error(`Poster deleted but the night didn't save: ${error.message}`);
+      setEvents(prev => prev.map(e => (e.id === row.id ? { ...e, poster_path: null } : e)));
+      setConfirmPosterDel(false);
+      showToast("Poster removed");
+    } catch (err) {
+      showToast(err.message || "Couldn't remove the poster");
+    } finally {
+      setPosterBusy(false);
+    }
+  }
+
+  // What the whole feature is for. navigator.share gets the club's own
+  // Facebook app on a phone; the clipboard is the desktop fallback.
+  async function shareEvent(row) {
+    const url = shareUrl(row.id);
+    const when = fmtWhen(row.start_time, row.end_time);
+    const text = `${row.title} — ${fmtDateLong(row.event_date)}${when ? `, ${when}` : ""}, Irvine Park Bowling Club`;
+    if (navigator.share) {
+      try { await navigator.share({ title: row.title, text, url }); return; }
+      catch (err) { if (err?.name === "AbortError") return; }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Link copied — paste it into Facebook");
+    } catch {
+      showToast(url);
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ maxWidth: "520px", margin: "0 auto", paddingBottom: "32px" }}>
@@ -460,7 +567,8 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
               {selectedDay ? "Nothing on that day." : "Nothing on this month — try the arrow for next month."}
             </div>
           ) : listed.map(e => (
-            <EventCard key={e.id} e={e} isAdmin={isAdmin} past={e.event_date < today} onEdit={() => openEdit(e)} />
+            <EventCard key={e.id} e={e} isAdmin={isAdmin} past={e.event_date < today}
+              onEdit={() => openEdit(e)} onOpen={() => setDetailId(e.id)} />
           ))}
         </>
       )}
@@ -543,6 +651,56 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
             </>
           )}
 
+          {editing && (
+            <Field label="Poster (optional)">
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp"
+                style={{ display: "none" }}
+                onChange={ev => {
+                  const f = ev.target.files?.[0];
+                  // Clear the input first: picking the same file twice in a row
+                  // fires no change event otherwise, which reads as the button
+                  // being broken.
+                  ev.target.value = "";
+                  attachPoster(f, editing);
+                }} />
+
+              {editing.poster_path ? (
+                <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                  <img src={posterThumbUrl(editing.poster_path, 240)} alt={editing.title}
+                    onError={ev => { ev.currentTarget.src = posterUrl(editing.poster_path); }}
+                    style={{ width: "76px", height: "101px", objectFit: "cover", borderRadius: "9px", border: `1px solid ${BORDER}`, background: SURFACE2, flexShrink: 0 }} />
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px", minWidth: 0 }}>
+                    <button onClick={() => fileRef.current?.click()} disabled={posterBusy} style={secondaryBtn}>
+                      <ImagePlus size={15} strokeWidth={1.75} />{posterBusy ? "Working…" : "Replace it"}
+                    </button>
+                    {confirmPosterDel ? (
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button onClick={() => dropPoster(editing)} disabled={posterBusy} style={{ ...dangerBtn, flex: 1 }}>
+                          {posterBusy ? "Removing…" : "Yes, take it down"}
+                        </button>
+                        <button onClick={() => setConfirmPosterDel(false)} style={secondaryBtn}>Keep it</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmPosterDel(true)} disabled={posterBusy} style={dangerBtn}>
+                        <Trash2 size={15} strokeWidth={1.75} />Remove the poster
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => fileRef.current?.click()} disabled={posterBusy} style={{ ...secondaryBtn, width: "100%" }}>
+                  <ImagePlus size={15} strokeWidth={1.75} />{posterBusy ? "Working…" : "Add the poster"}
+                </button>
+              )}
+
+              <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "8px", lineHeight: 1.5 }}>
+                The promoter's picture — the one that goes on Facebook. It's shrunk
+                on your phone before it uploads, so a photo straight from the camera
+                is fine. Removing it deletes it, it doesn't just hide it.
+              </div>
+            </Field>
+          )}
+
           {blockedReason && !editing && (
             <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "9px", padding: "10px 13px", fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5 }}>
               {blockedReason} first.
@@ -595,6 +753,57 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
         </div>
       </BottomSheet>
 
+      {/* ── One night, tapped from the list ── */}
+      <BottomSheet open={!!detail} onClose={() => setDetailId(null)} title={detail?.title || ""}>
+        {detail && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {detail.poster_path && (
+              <button
+                onClick={() => setLightbox({ src: posterUrl(detail.poster_path), alt: detail.title })}
+                aria-label={`See the poster for ${detail.title} full screen`}
+                style={{ padding: 0, border: "none", background: "none", cursor: "zoom-in", width: "100%", lineHeight: 0 }}>
+                <img src={posterUrl(detail.poster_path)} alt={detail.title}
+                  style={{ width: "100%", height: "auto", borderRadius: "12px", border: `1px solid ${BORDER}`, background: SURFACE2 }} />
+              </button>
+            )}
+
+            <div>
+              <div style={{ fontFamily: F_SANS, fontSize: "18px", fontWeight: "700", color: detail.cancelled ? TEXT3 : TEXT, textDecoration: detail.cancelled ? "line-through" : "none" }}>
+                {fmtDateLong(detail.event_date)}
+              </div>
+              <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginTop: "4px" }}>
+                {fmtWhen(detail.start_time, detail.end_time) || "Time to be confirmed"}
+              </div>
+              {detail.detail && (
+                <div style={{ fontFamily: F_UI, fontSize: "14px", color: TEXT2, marginTop: "10px", lineHeight: 1.55 }}>{detail.detail}</div>
+              )}
+              {detail.cancelled && (
+                <div style={{ marginTop: "10px", display: "inline-block", fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: LOSS_RED, background: `${LOSS_RED}12`, border: `1px solid ${LOSS_RED}44`, borderRadius: "20px", padding: "4px 11px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  Cancelled
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => shareEvent(detail)} style={{ ...secondaryBtn, width: "100%" }}>
+              <Share2 size={15} strokeWidth={1.75} />Share this night
+            </button>
+            <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "-6px", lineHeight: 1.5 }}>
+              {detail.poster_path
+                ? "Pasted into Facebook, the link shows the poster."
+                : "Pasted into Facebook, the link shows the night and the club badge."}
+            </div>
+
+            {isAdmin && (
+              <button onClick={() => openEdit(detail)} style={{ ...secondaryBtn, width: "100%" }}>
+                <Pencil size={14} strokeWidth={1.75} />Edit this night
+              </button>
+            )}
+          </div>
+        )}
+      </BottomSheet>
+
+      {lightbox && <PosterLightbox {...lightbox} onClose={() => setLightbox(null)} />}
+
       {toast && (
         <div style={{ position: "fixed", bottom: "80px", left: "50%", transform: "translateX(-50%)", zIndex: 200, background: GREEN, color: "#fff", borderRadius: "10px", padding: "10px 18px", fontSize: "13px", fontFamily: F_UI, fontWeight: "600", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", maxWidth: "90vw", textAlign: "center" }}>
           {toast}
@@ -605,7 +814,12 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
 }
 
 // ── Sub-components ──────────────────────────────────────────────────────────
-function EventCard({ e, isAdmin, onEdit, past = false }) {
+// The card most nights get. Almost everything the club puts on — the quiz, the
+// domino drive, the Sunday roll-up — will never have a poster, so this is the
+// design and the thumbnail is fitted into it: no reserved box, no placeholder,
+// no skeleton that never resolves. A card without a poster is byte for byte
+// the card that was here before posters existed.
+function EventCard({ e, isAdmin, onEdit, onOpen, past = false }) {
   const d = fromISODate(e.event_date);
   const off = e.cancelled;
   return (
@@ -618,37 +832,64 @@ function EventCard({ e, isAdmin, onEdit, past = false }) {
       borderRadius: "12px", padding: "13px 14px", marginBottom: "8px",
       boxShadow: "0 1px 3px rgba(74,14,31,0.06)",
     }}>
-      <div style={{ minWidth: "38px", flexShrink: 0, textAlign: "center" }}>
-        <div style={{ fontFamily: F_SANS, fontSize: "21px", fontWeight: "700", color: off ? TEXT3 : GREEN, lineHeight: 1 }}>{d.getDate()}</div>
-        <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, textTransform: "uppercase", fontWeight: "600", marginTop: "2px" }}>{DAY_NAMES[d.getDay()]}</div>
-      </div>
+      {/* The whole card opens the night. The pencil is a separate button beside
+          it rather than inside it — nesting one would be invalid, and tapping
+          "edit" would also fire "open". */}
+      <button onClick={onOpen} aria-label={`${e.title}, ${fmtDateLong(e.event_date)}`}
+        style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px",
+                 background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", font: "inherit" }}>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontFamily: F_SANS, fontSize: "17px", fontWeight: "700", lineHeight: 1.25,
-          color: off ? TEXT3 : TEXT,
-          textDecoration: off ? "line-through" : "none",
-        }}>
-          {e.title}
+        <div style={{ minWidth: "38px", flexShrink: 0, textAlign: "center" }}>
+          <div style={{ fontFamily: F_SANS, fontSize: "21px", fontWeight: "700", color: off ? TEXT3 : GREEN, lineHeight: 1 }}>{d.getDate()}</div>
+          <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, textTransform: "uppercase", fontWeight: "600", marginTop: "2px" }}>{DAY_NAMES[d.getDay()]}</div>
         </div>
-        {e.detail && (
-          <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginTop: "3px", lineHeight: 1.45, textDecoration: off ? "line-through" : "none" }}>
-            {e.detail}
-          </div>
+
+        {/* alt="" on purpose: the title is the next thing in the reading order,
+            and a screen reader announcing it twice is worse than not at all.
+            The poster carries its own alt where it is the content — full width
+            in the detail sheet, and full screen. */}
+        {e.poster_path && (
+          <img src={posterThumbUrl(e.poster_path, 128)} alt="" aria-hidden="true" loading="lazy"
+            onError={ev => {
+              // The render endpoint is a paid add-on. If it is off, or ever
+              // goes off, fall back to the object itself rather than showing a
+              // broken image on the club's diary.
+              const full = posterUrl(e.poster_path);
+              if (ev.currentTarget.src !== full) ev.currentTarget.src = full;
+              else ev.currentTarget.style.display = "none";
+            }}
+            style={{ width: "64px", height: "64px", objectFit: "cover", borderRadius: "10px",
+                     flexShrink: 0, border: `1px solid ${BORDER}`, background: SURFACE2,
+                     filter: off ? "grayscale(1)" : "none", opacity: off ? 0.65 : 1 }} />
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "5px", flexWrap: "wrap" }}>
-          {(e.start_time || e.end_time) && (
-            <span style={{ fontFamily: F_UI, fontSize: "12px", color: off ? TEXT3 : TEXT2, display: "inline-flex", alignItems: "center", gap: "4px" }}>
-              <Clock size={11} strokeWidth={1.75} />{fmtWhen(e.start_time, e.end_time)}
-            </span>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: F_SANS, fontSize: "17px", fontWeight: "700", lineHeight: 1.25,
+            color: off ? TEXT3 : TEXT,
+            textDecoration: off ? "line-through" : "none",
+          }}>
+            {e.title}
+          </div>
+          {e.detail && (
+            <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginTop: "3px", lineHeight: 1.45, textDecoration: off ? "line-through" : "none" }}>
+              {e.detail}
+            </div>
           )}
-          {off && (
-            <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: LOSS_RED, background: `${LOSS_RED}12`, border: `1px solid ${LOSS_RED}44`, borderRadius: "20px", padding: "2px 9px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Cancelled
-            </span>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "5px", flexWrap: "wrap" }}>
+            {(e.start_time || e.end_time) && (
+              <span style={{ fontFamily: F_UI, fontSize: "12px", color: off ? TEXT3 : TEXT2, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                <Clock size={11} strokeWidth={1.75} />{fmtWhen(e.start_time, e.end_time)}
+              </span>
+            )}
+            {off && (
+              <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: LOSS_RED, background: `${LOSS_RED}12`, border: `1px solid ${LOSS_RED}44`, borderRadius: "20px", padding: "2px 9px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                Cancelled
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      </button>
 
       {isAdmin && (
         <button onClick={onEdit} aria-label={`Edit ${e.title}`}
@@ -656,6 +897,181 @@ function EventCard({ e, isAdmin, onEdit, past = false }) {
           <Pencil size={13} strokeWidth={1.75} />
         </button>
       )}
+    </div>
+  );
+}
+
+// ── The poster, full screen ─────────────────────────────────────────────────
+// A promoter's flyer is small print — the door time, the ticket price, who's
+// playing. Fitted to a phone it is unreadable, so this is a real zoom: two
+// fingers to pinch, one to drag once zoomed, double-tap for people who don't
+// think to pinch. Swipe it away or use the X.
+//
+// touch-action: none on the surface, because otherwise the browser takes the
+// second finger for its own page zoom and the gesture never reaches here.
+const MAX_ZOOM = 5;
+const DISMISS_PX = 90;
+
+function PosterLightbox({ src, alt, onClose }) {
+  const [scale, setScale] = useState(1);
+  const [tx, setTx] = useState(0);
+  const [ty, setTy] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  const pointers = useRef(new Map());
+  const gesture = useRef(null);
+  const lastTap = useRef(0);
+  // The zoom, mirrored outside React state. pointerup lands within a few
+  // milliseconds of pointerdown — before React has re-rendered — so a handler
+  // reading `scale` from the closure still sees the value from before the
+  // double tap and undoes the zoom it just applied. The ref is what the
+  // gesture logic reads; the state is only what draws.
+  const scaleRef = useRef(1);
+  const imgRef = useRef(null);
+
+  const zoom = useCallback(v => { scaleRef.current = v; setScale(v); }, []);
+  const reset = useCallback(() => { scaleRef.current = 1; setScale(1); setTx(0); setTy(0); }, []);
+
+  // Escape closes it, and the page behind stops scrolling under it.
+  useEffect(() => {
+    const onKey = ev => { if (ev.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+
+  // Whether a tap landed on the picture or beside it, decided on geometry
+  // rather than on ev.target. setPointerCapture below retargets every later
+  // pointer event to the backdrop, so the target of a pointerup is the backdrop
+  // even for a tap in the middle of the poster — checking it would make every
+  // tap look like a tap outside, and close the poster on the first half of
+  // every double tap.
+  function onPicture(x, y) {
+    const r = imgRef.current?.getBoundingClientRect();
+    return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
+  function mid() {
+    const pts = [...pointers.current.values()];
+    const n = pts.length || 1;
+    return {
+      x: pts.reduce((a, p) => a + p.x, 0) / n,
+      y: pts.reduce((a, p) => a + p.y, 0) / n,
+      d: pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0,
+    };
+  }
+
+  function down(ev) {
+    // The close button owns its own taps. Capturing the pointer here would
+    // retarget the pointerup to this backdrop, so the click would be dispatched
+    // to the backdrop instead of the button and the X would stop working —
+    // silently, and only once zoomed, because at 1x the tap-to-dismiss below
+    // happened to close it anyway.
+    if (ev.target?.closest?.("button")) return;
+    ev.currentTarget.setPointerCapture?.(ev.pointerId);
+    pointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    const m = mid();
+    gesture.current = { m, scale: scaleRef.current, tx, ty, moved: 0 };
+    setDragging(true);
+
+    // Double tap: zoom in on the second tap, back out on the one after.
+    if (pointers.current.size === 1) {
+      const now = Date.now();
+      if (now - lastTap.current < 300) {
+        if (scaleRef.current > 1) reset(); else zoom(2.5);
+        lastTap.current = 0;
+      } else {
+        lastTap.current = now;
+      }
+    }
+  }
+
+  function move(ev) {
+    if (!pointers.current.has(ev.pointerId) || !gesture.current) return;
+    pointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    const g = gesture.current;
+    const m = mid();
+
+
+    if (pointers.current.size >= 2 && g.m.d > 0) {
+      zoom(Math.min(MAX_ZOOM, Math.max(1, g.scale * (m.d / g.m.d))));
+      setTx(g.tx + (m.x - g.m.x));
+      setTy(g.ty + (m.y - g.m.y));
+      return;
+    }
+
+    const dx = m.x - g.m.x, dy = m.y - g.m.y;
+    g.moved = Math.max(g.moved, Math.hypot(dx, dy));
+    if (scaleRef.current > 1) { setTx(g.tx + dx); setTy(g.ty + dy); }
+    else { setTy(dy); }          // at 1x a drag is the dismiss gesture
+  }
+
+  function up(ev) {
+    // Only finish a press that started here. The tap that opens this overlay
+    // puts its pointerdown on the poster in the sheet below and its pointerup
+    // on the overlay, which has just mounted under the finger — without this
+    // guard that stray pointerup reads as a tap on the backdrop and closes the
+    // poster in the same gesture that opened it.
+    if (!pointers.current.has(ev.pointerId)) return;
+    pointers.current.delete(ev.pointerId);
+    if (pointers.current.size > 0) { gesture.current = { m: mid(), scale: scaleRef.current, tx, ty, moved: 0 }; return; }
+    setDragging(false);
+    const moved = gesture.current?.moved || 0;
+    gesture.current = null;
+
+    if (scaleRef.current <= 1) {
+      if (Math.abs(ty) > DISMISS_PX) { onClose(); return; }
+      // A tap that went nowhere, beside the picture rather than on it, closes
+      // it the way a tap outside a sheet does. On it, a tap is the first half
+      // of a possible double tap and must be left alone.
+      if (moved < 8 && !onPicture(ev.clientX, ev.clientY)) { onClose(); return; }
+      reset();
+    } else if (scaleRef.current < 1.05) {
+      reset();
+    }
+  }
+
+  const fade = scale <= 1 ? Math.max(0.35, 1 - Math.abs(ty) / 400) : 1;
+
+  return (
+    <div
+      data-backdrop="1"
+      onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+      style={{
+        position: "fixed", inset: 0, zIndex: 400, background: `rgba(10,4,6,${0.94 * fade})`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        touchAction: "none", overflow: "hidden", animation: "fadeIn 0.18s ease",
+      }}>
+      <img ref={imgRef} src={src} alt={alt} draggable="false"
+        style={{
+          maxWidth: "100%", maxHeight: "100%", objectFit: "contain",
+          transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
+          transition: dragging ? "none" : "transform 0.22s cubic-bezier(0.32,0.72,0,1)",
+          userSelect: "none", WebkitUserSelect: "none",
+          // Inert: every gesture is handled on the backdrop, which owns the
+          // pointer capture. Whether a tap was on the poster is answered by
+          // onPicture() above, from the rect.
+          pointerEvents: "none",
+        }} />
+
+      <button onClick={onClose} aria-label="Close the poster"
+        style={{
+          position: "fixed", top: "calc(12px + env(safe-area-inset-top))", right: "12px",
+          width: "44px", height: "44px", borderRadius: "50%", border: "none",
+          background: "rgba(255,255,255,0.16)", color: "#fff", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 401,
+        }}>
+        <X size={20} strokeWidth={2} />
+      </button>
+
+      <div style={{
+        position: "fixed", bottom: "calc(16px + env(safe-area-inset-bottom))", left: 0, right: 0,
+        textAlign: "center", fontFamily: F_UI, fontSize: "11px", color: "rgba(255,255,255,0.5)",
+        pointerEvents: "none", opacity: scale > 1 ? 0 : 1, transition: "opacity 0.2s",
+      }}>
+        Pinch to zoom · swipe down to close
+      </div>
     </div>
   );
 }

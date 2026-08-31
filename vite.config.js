@@ -48,6 +48,17 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         navigateFallback: "index.html",
+        // /api/* is answered by a serverless function, never by the app
+        // shell. Without this the installed PWA would hand its cached
+        // index.html to the Open Graph share route and the crawler would
+        // never reach it.
+        //
+        // /e/<id> is deliberately NOT in the denylist: it is a navigation a
+        // member should be able to follow with the app installed and no
+        // signal. The shell answers it and App.jsx reads the id straight off
+        // the path, so the link works whether it is served by Vercel or by
+        // the worker.
+        navigateFallbackDenylist: [/^\/api\//],
         // There used to be a catch-all `/^https:\/\//` NetworkFirst rule here with a
         // 7-day expiry. It cached the navigation request (so a stale index.html could
         // point at assets that had already been cleaned up) and every Supabase read
