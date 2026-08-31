@@ -1724,12 +1724,26 @@ export default function BowlsTracker() {
     await refreshAdminList();
   }
 
+  // Approving had the same defect granting did — an 'APPROVED-<name>' row
+  // with no player_id, which granted nothing and said nothing. Same treatment:
+  // the server resolves the account, checks the caller, and reports in words.
+  // No optimistic removal from the queue either; a refused request has to stay
+  // in it, because a refusal is something the super admin needs to act on.
   async function approveAdminRequest(req) {
-    setPendingAdminRequests(p => p.filter(r => r.id !== req.id));
-    const newRow = { cloud_key: `APPROVED-${req.player_name}`, player_name: req.player_name, role: "admin", display_name: req.player_name };
-    await supabase.from("admins").upsert(newRow, { onConflict: "cloud_key" });
-    await supabase.from("admin_requests").delete().eq("id", req.id);
-    supabase.from("admins").select("*").then(({ data }) => { if (data) setAdminListState(data); });
+    setAccessMsg(null);
+    const { data, error } = await supabase.rpc("bowls_approve_admin_request", {
+      p_admin_name: (myName || "").toUpperCase(),
+      p_admin_pin:  myPin || "",
+      p_request_id: String(req.id),
+    });
+    if (error || !data) {
+      setAccessMsg({ ok: false, text: error?.message ? `Couldn't approve: ${error.message}` : "Couldn't approve — no response from the server." });
+      return;
+    }
+    setAccessMsg({ ok: data.status === "granted", text: data.message });
+    const { data: queue } = await supabase.from("admin_requests").select("*").order("requested_at");
+    if (queue) setPendingAdminRequests(queue);
+    if (data.status === "granted") await refreshAdminList();
   }
 
   async function approveJoinRequest(req) {

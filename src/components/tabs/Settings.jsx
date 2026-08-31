@@ -14,8 +14,24 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
   async function submitAdminRequest() {
     const name = myName?.toUpperCase().trim();
     if (!name || !requestRoleInput.trim()) return;
+
+    // Send the account's id, not its cloud key. cloud_key is NAME-PIN — the
+    // sign-in credential — and this queue is readable by anyone with the
+    // publishable key out of the bundle. The id identifies the account
+    // without being usable to sign in as it.
+    //
+    // Looked up by cloud key rather than by name: an exact key on the row
+    // that is already this member's, no name matching anywhere.
+    const { data: account } = await supabase.from("player_data")
+      .select("id").eq("player_name", cloudKey).maybeSingle();
+    if (!account?.id) {
+      setRequestMsg("Couldn't find your account — sign out and back in, then try again.");
+      setTimeout(() => setRequestMsg(null), 5000);
+      return;
+    }
+
     const { error } = await supabase.from("admin_requests")
-      .upsert({ player_name: name, role_title: requestRoleInput.trim(), requested_at: new Date().toISOString() }, { onConflict: "player_name" });
+      .upsert({ player_name: name, player_id: account.id, role_title: requestRoleInput.trim(), requested_at: new Date().toISOString() }, { onConflict: "player_name" });
     if (!error) {
       setRequestMsg("Request sent — the super admin will review it shortly.");
       setRequestRoleInput("");

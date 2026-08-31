@@ -17,7 +17,7 @@ These are the migrations written alongside the app code. **The earlier schema wo
 | 4 | `20260830_admin_reset_pin.sql` | Admin PIN reset | Applied — and the live function is AHEAD of this file; see the warning in section 4 before re-running it |
 | 5 | `20260830_live_games_ends.sql` | Games played over set ends | Applied — the columns and the check constraint are on `live_games` |
 | 6 | `20260830_club_events.sql` | What's On — club social events | Applied — table, columns, duplicate guard and policies all confirmed against the database |
-| 8 | `20260831_grant_admin.sql` | Granting admin actually works, + `admins_player_id_uniq` | **Not yet applied** — written today |
+| 8 | `20260831_grant_admin.sql` | Granting **and approving** admin actually work; `admins_player_id_uniq`; `admin_requests` stops carrying a PIN | **Not yet applied** — written today |
 
 Status is my best understanding from our sessions — worth confirming against the database rather than taking on trust.
 
@@ -581,6 +581,51 @@ The ambiguity branch is covered only by a synthetic pair sharing a `name_key`.
 so the branch is correct and currently unreachable with real data — the fixture
 is the only thing that exercises it, and is kept for that reason.
 
+### The admin request queue, in the same migration
+
+`approveAdminRequest` had the identical defect — `cloud_key = 'APPROVED-<name>'`
+with no `player_id`, so approving a request produced the same inert row.
+**`bowls_approve_admin_request`** resolves the account, checks the caller, and
+refuses in words: `no_request`, `no_account`, `not_linked`, `not_super_admin`.
+
+The table's shape changes too, while it holds **zero rows** — the cheapest
+moment there will ever be:
+
+- **`player_id uuid references player_data(id)`** added, and written at request time.
+- **`cloud_key` dropped.** It held the requester's `NAME-PIN` — their sign-in
+  credential — in a table that is world-readable *and* world-writable.
+- **`role_title text`** added, and **`admin_requests_player_name_uniq`**.
+  The Settings screen has always written `role_title` and upserted on
+  `player_name`; neither the column nor the index existed, so **every request
+  insert has failed** and the queue has never held a row. That is why it is
+  empty, and why nobody has ever noticed the approval bug.
+
+There is deliberately **no `ambiguous` branch** on approval, unlike the grant. It
+cannot arise: the request names an account by primary key, and
+`members_linked_player_id_uniq` (already on the table) allows at most one roster
+member per account. Unreachable by construction, not merely absent from today's
+data — so there is nothing to cover, and a branch that can never run would be
+worse than none.
+
+The names the approver is shown come from the account and the roster, never from
+`admin_requests.player_name` — that column arrives on an unauthenticated insert
+and must not be able to put one member's name against another's account.
+
+### Two things left for 002b
+
+1. **`admin_requests` still has an `open` policy** — `ALL`, `public`,
+   `using(true) with check(true)`. Anyone with the publishable key can read the
+   queue, add to it, or empty it. **Not tightened here on purpose:** the deployed
+   client still writes to this table directly, so closing it needs the same
+   client-first ordering as the rest of 002b — ship a client that goes through an
+   RPC, wait for the phones to pick it up, then close the policy. Closing it
+   first breaks the request button for everyone still on the old bundle.
+
+2. **Filing a request is an unauthenticated public insert.** Nothing proves the
+   person filing it is who the row says they are. It belongs with the RPC work,
+   not with a check in the client — a client-side check is not a control while
+   the key ships in the bundle.
+
 **This does not make the `admins` table safe.** Its policies are still
 `using (true)`, so anyone with the publishable key from the bundle can write to
 it directly and go round these functions. Necessary, not sufficient — the
@@ -875,6 +920,157 @@ create unique index if not exists admins_player_id_uniq
 -- directly and bypass these functions entirely. Routing the app through them
 -- is necessary and not sufficient; the policies are 002b's job. Do not read
 -- this migration as making the admins table safe.
+
+
+-- ════════════════════════════════════════════════════════════════════════
+--  THE ADMIN REQUEST QUEUE
+--
+--  Approving a request had the same defect as granting: it wrote
+--    cloud_key = 'APPROVED-' || <name>,  player_id = null
+--  and produced the same inert row.
+--
+--  The table also carried the requester's cloud_key, which is their
+--  NAME-PIN — their sign-in credential — in a table that is world-readable
+--  AND world-writable. It holds zero rows, so this is the cheapest moment
+--  there will ever be to change its shape: no backfill, nothing to
+--  preserve, no migration risk.
+-- ════════════════════════════════════════════════════════════════════════
+
+-- The account being asked about, by id. Replaces cloud_key entirely.
+alter table public.admin_requests add column if not exists player_id uuid
+  references public.player_data(id) on delete cascade;
+
+-- The role the member says they want. The Settings screen has always
+-- collected this and always written it, and the column has never existed —
+-- so every request insert has failed and the queue has never held a row.
+alter table public.admin_requests add column if not exists role_title text;
+
+-- The client upserts on player_name and there was no unique index for it to
+-- conflict against, which is the second reason no request ever landed. One
+-- pending request per person is also the behaviour you want.
+create unique index if not exists admin_requests_player_name_uniq
+  on public.admin_requests (player_name);
+
+-- And the credential goes. Nothing reads it after this migration.
+alter table public.admin_requests drop column if exists cloud_key;
+
+
+-- ── Approve a request ─────────────────────────────────────────────────────
+-- Parity with bowls_grant_admin: resolves to a real account, refuses in
+-- words, writes nothing when it refuses, and checks the caller here.
+--
+-- There is deliberately no 'ambiguous' branch, unlike the grant. It cannot
+-- arise: the request names an account by primary key, and
+-- members_linked_player_id_uniq (already on the table) allows at most one
+-- roster member per account. Two candidates is unreachable by construction
+-- rather than merely absent from today's data — so there is nothing here to
+-- cover, and a branch that can never run would be worse than none.
+--
+-- The names shown to the approver are read from the account and the roster,
+-- never from admin_requests.player_name. That column is written by an
+-- unauthenticated insert (see the note at the foot) and must not be able to
+-- put one member's name against another member's account.
+create or replace function public.bowls_approve_admin_request(
+  p_admin_name text,
+  p_admin_pin  text,
+  p_request_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_req             record;
+  v_account_name    text;
+  v_account_display text;
+  v_member_name     text;
+begin
+  if not public.bowls_is_super_admin(p_admin_name, p_admin_pin) then
+    return jsonb_build_object(
+      'status',  'not_super_admin',
+      'message', 'Only a super admin can approve an admin request.');
+  end if;
+
+  select r.id, r.player_name, r.player_id, r.role_title
+    into v_req
+    from public.admin_requests r
+   where r.id::text = p_request_id;
+
+  if not found then
+    return jsonb_build_object(
+      'status',  'no_request',
+      'message', 'That request is no longer in the queue.');
+  end if;
+
+  if v_req.player_id is null then
+    -- A request filed before this migration, by a client that had no
+    -- player_id to give. Nothing to resolve; clear it and ask again.
+    delete from public.admin_requests where id = v_req.id;
+    return jsonb_build_object(
+      'status',  'no_account',
+      'message', coalesce(v_req.player_name, 'That request')
+                 || ' was sent by an older version of the app and can''t be matched to an account. '
+                 || 'It has been cleared — ask them to send it again.');
+  end if;
+
+  select d.player_name, d.display_name
+    into v_account_name, v_account_display
+    from public.player_data d
+   where d.id = v_req.player_id;
+
+  if v_account_name is null then
+    delete from public.admin_requests where id = v_req.id;
+    return jsonb_build_object(
+      'status',  'no_account',
+      'message', 'The account that sent that request no longer exists. The request has been cleared.');
+  end if;
+
+  select m.name into v_member_name
+    from public.members m
+   where m.linked_player_id = v_req.player_id;
+
+  if v_member_name is null then
+    return jsonb_build_object(
+      'status',  'not_linked',
+      'message', coalesce(v_account_display, v_account_name)
+                 || ' has an app account but it isn''t linked to anyone on the roster, '
+                 || 'so there is no way to say who they are. Link it on the roster first.');
+  end if;
+
+  delete from public.admins
+   where player_id = v_req.player_id
+      or cloud_key = 'PENDING-' || upper(v_member_name)
+      or cloud_key = 'APPROVED-' || upper(v_member_name);
+
+  insert into public.admins (cloud_key, player_name, display_name, role, player_id)
+  values (v_account_name, upper(v_member_name),
+          coalesce(v_account_display, v_member_name), 'admin', v_req.player_id);
+
+  delete from public.admin_requests where id = v_req.id;
+
+  return jsonb_build_object(
+    'status',      'granted',
+    'message',     v_member_name || ' can now use the admin panel.',
+    'member_name', v_member_name,
+    'cloud_key',   v_account_name);
+end $$;
+
+
+-- ── Still to do, and not in this migration ────────────────────────────────
+-- admin_requests carries an `open` policy: ALL, public, using(true) with
+-- check(true). Anyone with the publishable key can read the queue, add to it
+-- or empty it, and the insert is entirely unauthenticated — nothing proves
+-- the person filing a request is who the row says they are. That is why the
+-- function above takes its names from the account and the roster and never
+-- from admin_requests.player_name.
+--
+-- Tightening that policy is NOT done here on purpose. The deployed client
+-- still writes to this table directly, so locking it needs the same
+-- client-first ordering as the rest of 002b: ship a client that goes through
+-- an RPC, wait for the phones to pick it up, then close the policy. Closing
+-- it first would break the request button for everyone still on the old
+-- bundle. It belongs with the RPC work, not with a check in the client.
 ```
 
 ---
