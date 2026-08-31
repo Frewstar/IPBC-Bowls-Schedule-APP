@@ -37,7 +37,8 @@
 -- review caught on bowls_is_super_admin. This one is called by the client
 -- on every sign-in so it cannot be closed off in the same way; counting
 -- failures into login_lockouts is the mitigation, exactly as bowls_is_admin
--- does it.
+-- does it. See part 4: its EXECUTE grant to anon is required, not an
+-- oversight.
 create or replace function public.bowls_admin_role(p_name text, p_pin text)
 returns text
 language plpgsql
@@ -221,6 +222,54 @@ begin
     'role',      p_role);
 end $$;
 
+
+-- ── 4. bowls_admin_role STAYS EXECUTABLE BY anon — DO NOT CLOSE IT ─────────
+-- READ THIS BEFORE TIDYING UP.
+--
+-- The previous migration revoked EXECUTE on bowls_is_super_admin from
+-- public/anon/authenticated. Do NOT give this function the same treatment.
+-- They look alike — both take a name and a PIN, both are SECURITY DEFINER,
+-- both answer a question about privilege — and they are opposites on the two
+-- things that decide it:
+--
+--   bowls_is_super_admin        bowls_admin_role
+--   ------------------------    ----------------------------------------
+--   nothing in the client       the client calls it on EVERY sign-in, with
+--   calls it; only other        the publishable key. Close it and every
+--   SECURITY DEFINER            admin panel in the club goes dark at once,
+--   functions do, internally,   silently, for everyone, with no error the
+--   which needs no grant.       user can report beyond "my admin is gone".
+--
+--   no failure counting, so     counts failures into login_lockouts on the
+--   an open grant was an        way out and clears them on success (see
+--   unthrottled PIN oracle.     part 1) — the same throttle bowls_is_admin
+--                               has always had.
+--
+-- So the reason bowls_is_super_admin was closed does not apply here, and the
+-- cost of closing this one is total. The grant below is written out
+-- explicitly rather than left to the PUBLIC default so that a later
+-- "revoke execute ... from public" sweep does not take it away as a side
+-- effect, and so that anyone reading the schema sees the intent.
+do $$
+declare r text;
+begin
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('grant execute on function public.bowls_admin_role(text, text) to %I', r);
+    end if;
+  end loop;
+end $$;
+
+-- And fail the migration loudly rather than leave a club that cannot
+-- administer itself. If anon exists it must be able to execute this.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon')
+     and not has_function_privilege('anon', 'public.bowls_admin_role(text, text)', 'execute') then
+    raise exception
+      'bowls_admin_role is not executable by anon; the client cannot read its own role. Do not ship this.';
+  end if;
+end $$;
 
 -- ── What this is and is not ───────────────────────────────────────────────
 -- The role itself is now decided on the server, against player_data.pin_hash,
