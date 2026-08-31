@@ -14,9 +14,10 @@ These are the migrations written alongside the app code. **The earlier schema wo
 | 1 | `20260722_live_games.sql` | Live games | Applied — live games are working |
 | 2 | `20260723_live_games_players_location.sql` | Disciplines, location and players | Applied — live games are working |
 | 3 | `20260829_live_games_scheduled.sql` | Scheduled fixtures | Check — needed for the Upcoming section |
-| 4 | `20260830_admin_reset_pin.sql` | Admin PIN reset | Check — needed for the Reset PIN screen |
+| 4 | `20260830_admin_reset_pin.sql` | Admin PIN reset | Applied — and the live function is AHEAD of this file; see the warning in section 4 before re-running it |
 | 5 | `20260830_live_games_ends.sql` | Games played over set ends | Applied — the columns and the check constraint are on `live_games` |
 | 6 | `20260830_club_events.sql` | What's On — club social events | Applied — table, columns, duplicate guard and policies all confirmed against the database |
+| 8 | `20260831_grant_admin.sql` | Granting admin actually works, + `admins_player_id_uniq` | **Not yet applied** — written today |
 
 Status is my best understanding from our sessions — worth confirming against the database rather than taking on trust.
 
@@ -157,7 +158,21 @@ create index if not exists live_games_starts_at_idx
 ## 4. Admin PIN reset
 
 **File:** `supabase/migrations/20260830_admin_reset_pin.sql`  
-**Status:** Check — needed for the Reset PIN screen
+**Status:** Applied — but this file no longer matches the live function
+
+> **⚠ This file is STALE. Do not re-run it.** The live
+> `bowls_admin_reset_pin` is ahead of this copy by one statement:
+>
+> ```
+> update public.admins set cloud_key = v_new_key where player_id = v_account.id;
+> ```
+>
+> `admins_pkey` is on `cloud_key`, so resetting an admin's PIN changes their
+> primary key. Without that line the admins row is left on the old key and they
+> silently lose admin. Running this file as written would overwrite the live
+> function and reintroduce that. If the function ever needs replacing, take the
+> definition out of the database with `pg_get_functiondef`, not from here.
+
 
 Adds `bowls_admin_reset_pin`, a SECURITY DEFINER function that moves `player_data.player_name` and `player_data.pin_hash` together, repoints `members.linked_cloudkey` and clears any lockout.
 
@@ -522,33 +537,54 @@ The app granted admin by writing `cloud_key = 'PENDING-<name>'` with
 `player_id = null`, and nothing ever filled `player_id` in. `bowls_is_admin()`
 finds the row **by `player_id`**, so every grant made that way was inert — the
 person appeared in the admin list with no rights at all, and nothing said so.
-Two live rows are in that state right now.
 
-Adds three functions and changes neither `bowls_is_admin` nor the `admins` table:
+The rows that were in that state have since been repaired by hand, so this
+migration has nothing to clean up; it stops the next one being created. The
+`PENDING-`/`APPROVED-` clean-up inside the grant is defensive and a no-op when
+there is nothing to clear.
+
+Adds three functions and one index. It changes neither `bowls_is_admin` nor the
+`admins` table's columns, and it does **not** touch `bowls_admin_reset_pin` —
+see the warning on section 4.
 
 - **`bowls_is_super_admin(name, pin)`** — handing out rights is a super admin's
   job, and `bowls_is_admin` returns true for plain admins too.
 - **`bowls_grant_admin(admin_name, admin_pin, member_id, role)`** — resolves the
   member through `members.linked_player_id` **only**, never by matching names,
-  and writes the real `player_id` and `cloud_key`. Refuses with a plain-English
-  reason otherwise: `no_account`, `not_linked`, `ambiguous`, `bad_role`,
-  `not_super_admin`, `no_member`. A refusal writes nothing.
+  and writes the real `player_id` and `cloud_key`. Otherwise refuses with a
+  plain-English reason — `no_account`, `not_linked`, `ambiguous`, `bad_role`,
+  `not_super_admin`, `no_member` — and writes nothing.
 - **`bowls_revoke_admin(admin_name, admin_pin, cloud_key)`** — deletes every row
-  that resolves to the same account, not just the one key. Deleting by
-  `cloud_key` alone was the other half of the problem: one person could hold both
-  a `PENDING-` row and a real one, and revoking the visible one left the other
-  granting rights. Refuses to revoke a super admin.
+  resolving to the same account, not just the one key. Deleting by `cloud_key`
+  alone was the other half of the problem: one person could hold two rows, and
+  revoking the visible one left the other granting rights. Won't revoke a super
+  admin.
+- **`admins_player_id_uniq`** — one account, one admin row, as a rule of the
+  table rather than a habit of one function. This is the prerequisite for
+  eventually dropping `admins.cloud_key`, which can't go while it is the primary
+  key. Partial on `player_id is not null`, so legacy unlinked rows are outside
+  the rule. **The primary key is deliberately not moved here** — that is 002b's
+  final step and needs its own migration.
 
-Exercised against a scratch Postgres 16 seeded with a copy of the live data:
-each refusal returns its status and writes nothing, a resolved grant clears the
-stale `PENDING-` row and leaves exactly one row, re-granting changes the role
-without duplicating, a plain admin can neither grant nor revoke, and a
-two-row-one-person case is fully cleared by a single revoke.
+Verified against a scratch Postgres 16 with **synthetic** fixtures — not a copy
+of the live club, which no longer has any unlinked admin rows, so a
+production-shaped fixture would assert a state that no longer exists and would
+pass locally then fail after deploy. Every refusal returns its status and writes
+nothing; a grant resolves the linked account and not a same-named stray; the
+legacy unlinked row is cleared; re-granting changes the role without
+duplicating; a second row for one account is refused by the new index while
+null-`player_id` rows still coexist; a plain admin can neither grant nor revoke;
+and one revoke clears a two-rows-one-person case.
 
-**This does not make the `admins` table safe.** The policies on it are still
+The ambiguity branch is covered only by a synthetic pair sharing a `name_key`.
+`player_data_name_key_idx` is non-unique and there are no duplicates live today,
+so the branch is correct and currently unreachable with real data — the fixture
+is the only thing that exercises it, and is kept for that reason.
+
+**This does not make the `admins` table safe.** Its policies are still
 `using (true)`, so anyone with the publishable key from the bundle can write to
-it directly and go round these functions entirely. Routing the app through them
-is necessary, not sufficient — the policies are 002b's job.
+it directly and go round these functions. Necessary, not sufficient — the
+policies are 002b's job.
 
 ```sql
 -- ════════════════════════════════════════════════════════════════════════
@@ -561,6 +597,12 @@ is necessary, not sufficient — the policies are 002b's job.
 --  row BY player_id, so every grant made this way was inert — the person
 --  appeared in the admin list and had no rights whatsoever, with nothing
 --  shown to anyone to say so. A silent no-op that looks like it worked.
+--
+--  The rows that were in that state have since been repaired by hand, so
+--  this migration has nothing to clean up. It stops the next one being
+--  created. The 'PENDING-'/'APPROVED-' clean-up in the grant below is
+--  defensive: it clears such a row if one is ever made again, and is a
+--  no-op when there is none.
 --
 --  Two things change here, and neither of them touches bowls_is_admin or
 --  the admins table's shape:
@@ -583,6 +625,20 @@ is necessary, not sufficient — the policies are 002b's job.
 --  different PINs — that is how two members with the same initials are told
 --  apart. Names are used below only to explain a refusal, never to pick.
 -- ════════════════════════════════════════════════════════════════════════
+
+-- ── NOT touched here: bowls_admin_reset_pin ───────────────────────────────
+-- The live bowls_admin_reset_pin is AHEAD of this repo's copy of it
+-- (20260830_admin_reset_pin.sql) by one statement:
+--
+--     update public.admins set cloud_key = v_new_key where player_id = ...;
+--
+-- admins_pkey is on cloud_key, so resetting an admin's PIN changes their
+-- primary key. Without that line the admins row is left pointing at the old
+-- key and they silently lose admin — the same class of failure this file
+-- exists to fix. Nothing here creates or replaces that function. If it ever
+-- does need replacing, take the definition from the database
+-- (pg_get_functiondef) and not from the repo file, which is stale.
+
 
 -- ── Who is asking ─────────────────────────────────────────────────────────
 -- Deliberately NOT bowls_is_admin: that returns true for 'admin' as well as
@@ -788,6 +844,27 @@ begin
     'message', v_target.who || ' no longer has admin rights.',
     'removed', v_removed);
 end $$;
+
+
+-- ── One account, one admin row ────────────────────────────────────────────
+-- The grant above deletes before it inserts so a person cannot end up with
+-- two rows. This makes that a rule of the table rather than a habit of one
+-- function, and it is the prerequisite for eventually dropping
+-- admins.cloud_key: that column is currently the primary key, so it cannot
+-- go until something else identifies a row uniquely. player_id is that
+-- something.
+--
+-- Partial, on `player_id is not null`: a unique index would otherwise treat
+-- the legacy unlinked rows as distinct anyway (nulls never collide in
+-- Postgres), so the predicate is about saying plainly that those rows are
+-- outside this rule, not about changing behaviour.
+--
+-- The primary key is deliberately NOT moved here. Repointing a primary key
+-- that other rows and code refer to by cloud_key is 002b's final step, and
+-- it needs its own migration and its own testing.
+create unique index if not exists admins_player_id_uniq
+  on public.admins (player_id)
+  where player_id is not null;
 
 
 -- ── What this does and does not close ─────────────────────────────────────

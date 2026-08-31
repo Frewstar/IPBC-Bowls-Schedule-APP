@@ -9,6 +9,12 @@
 --  appeared in the admin list and had no rights whatsoever, with nothing
 --  shown to anyone to say so. A silent no-op that looks like it worked.
 --
+--  The rows that were in that state have since been repaired by hand, so
+--  this migration has nothing to clean up. It stops the next one being
+--  created. The 'PENDING-'/'APPROVED-' clean-up in the grant below is
+--  defensive: it clears such a row if one is ever made again, and is a
+--  no-op when there is none.
+--
 --  Two things change here, and neither of them touches bowls_is_admin or
 --  the admins table's shape:
 --
@@ -30,6 +36,20 @@
 --  different PINs — that is how two members with the same initials are told
 --  apart. Names are used below only to explain a refusal, never to pick.
 -- ════════════════════════════════════════════════════════════════════════
+
+-- ── NOT touched here: bowls_admin_reset_pin ───────────────────────────────
+-- The live bowls_admin_reset_pin is AHEAD of this repo's copy of it
+-- (20260830_admin_reset_pin.sql) by one statement:
+--
+--     update public.admins set cloud_key = v_new_key where player_id = ...;
+--
+-- admins_pkey is on cloud_key, so resetting an admin's PIN changes their
+-- primary key. Without that line the admins row is left pointing at the old
+-- key and they silently lose admin — the same class of failure this file
+-- exists to fix. Nothing here creates or replaces that function. If it ever
+-- does need replacing, take the definition from the database
+-- (pg_get_functiondef) and not from the repo file, which is stale.
+
 
 -- ── Who is asking ─────────────────────────────────────────────────────────
 -- Deliberately NOT bowls_is_admin: that returns true for 'admin' as well as
@@ -235,6 +255,27 @@ begin
     'message', v_target.who || ' no longer has admin rights.',
     'removed', v_removed);
 end $$;
+
+
+-- ── One account, one admin row ────────────────────────────────────────────
+-- The grant above deletes before it inserts so a person cannot end up with
+-- two rows. This makes that a rule of the table rather than a habit of one
+-- function, and it is the prerequisite for eventually dropping
+-- admins.cloud_key: that column is currently the primary key, so it cannot
+-- go until something else identifies a row uniquely. player_id is that
+-- something.
+--
+-- Partial, on `player_id is not null`: a unique index would otherwise treat
+-- the legacy unlinked rows as distinct anyway (nulls never collide in
+-- Postgres), so the predicate is about saying plainly that those rows are
+-- outside this rule, not about changing behaviour.
+--
+-- The primary key is deliberately NOT moved here. Repointing a primary key
+-- that other rows and code refer to by cloud_key is 002b's final step, and
+-- it needs its own migration and its own testing.
+create unique index if not exists admins_player_id_uniq
+  on public.admins (player_id)
+  where player_id is not null;
 
 
 -- ── What this does and does not close ─────────────────────────────────────
