@@ -65,12 +65,25 @@ function seriesDates(fromISO, toISO, weekday) {
 }
 
 // "20:00" → "8pm", "20:30" → "8.30pm". Null time reads as no time at all.
-function fmtTime(t) {
+function fmtTime(t, withSuffix = true) {
   if (!t) return "";
   const [h, m] = t.split(":").map(Number);
-  const suffix = h < 12 ? "am" : "pm";
+  if (h === 0 && m === 0) return "midnight";
+  const suffix = withSuffix ? (h < 12 ? "am" : "pm") : "";
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return m === 0 ? `${h12}${suffix}` : `${h12}.${String(m).padStart(2, "0")}${suffix}`;
+}
+
+// How the club's own flyers put it: "4-9", "4-8PM". So "16:00"+"21:00" reads
+// "4–9pm", not "4pm – 9pm" — the first suffix is dropped when both ends share
+// it, which is how anyone would say it out loud. Different halves of the day
+// keep both: "11am–1pm".
+function fmtWhen(start, end) {
+  if (!start) return end ? `until ${fmtTime(end)}` : "";
+  if (!end) return fmtTime(start);
+  const sh = Number(start.split(":")[0]), eh = Number(end.split(":")[0]);
+  const sameHalf = (sh < 12) === (eh < 12) && !(eh === 0 && sh !== 0);
+  return `${fmtTime(start, !sameHalf)}–${fmtTime(end)}`;
 }
 
 function fmtMonth(d) {
@@ -89,7 +102,7 @@ function byWhen(a, b) {
   return (a.start_time || "").localeCompare(b.start_time || "");
 }
 
-const BLANK = { title: "", detail: "", start_time: "20:00", event_date: "", weekday: 6, from_date: "", to_date: "" };
+const BLANK = { title: "", detail: "", start_time: "20:00", end_time: "", event_date: "", weekday: 6, from_date: "", to_date: "" };
 
 export default function WhatsOnTab({ myName, isAdmin = false }) {
   const [events, setEvents] = useState([]);
@@ -193,7 +206,7 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
     setSheet("add");
   }
   function openEdit(row) {
-    setForm({ ...BLANK, title: row.title, detail: row.detail || "", start_time: row.start_time || "", event_date: row.event_date });
+    setForm({ ...BLANK, title: row.title, detail: row.detail || "", start_time: row.start_time || "", end_time: row.end_time || "", event_date: row.event_date });
     setConfirmDel(null);
     setSheet({ edit: row });
   }
@@ -215,6 +228,7 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
       detail: form.detail.trim() || null,
       event_date: dateISO,
       start_time: form.start_time.trim() || null,
+      end_time: form.end_time.trim() || null,
       created_by: myName || null,
       // club_id is left out on purpose — the column defaults to IPBC, the same
       // way every other insert in this app leaves it out.
@@ -226,7 +240,7 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
     setSaving(true);
     try {
       if (editing) {
-        const patch = { title: form.title.trim(), detail: form.detail.trim() || null, start_time: form.start_time.trim() || null };
+        const patch = { title: form.title.trim(), detail: form.detail.trim() || null, start_time: form.start_time.trim() || null, end_time: form.end_time.trim() || null };
         const { error } = await supabase.from("club_events").update(patch).eq("id", editing.id);
         if (error) { showToast(`Couldn't save: ${error.message}`); return; }
         setEvents(prev => prev.map(e => (e.id === editing.id ? { ...e, ...patch } : e)));
@@ -364,7 +378,7 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
               </div>
               <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "700", color: "#fff", lineHeight: 1.15 }}>{nextUp.title}</div>
               <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.8)", marginTop: "4px" }}>
-                {nextUp.event_date === today ? "" : fmtDateLong(nextUp.event_date) + " · "}{fmtTime(nextUp.start_time) || "time to be confirmed"}
+                {nextUp.event_date === today ? "" : fmtDateLong(nextUp.event_date) + " · "}{fmtWhen(nextUp.start_time, nextUp.end_time) || "time to be confirmed"}
                 {nextUp.detail ? ` · ${nextUp.detail}` : ""}
               </div>
             </button>
@@ -479,12 +493,18 @@ export default function WhatsOnTab({ myName, isAdmin = false }) {
               placeholder="Who's playing, tickets, members and guests…" style={inp} />
           </Field>
 
-          <Field label="Start time">
-            <input type="time" value={form.start_time} onChange={ev => setForm(f => ({ ...f, start_time: ev.target.value }))} style={inp} />
-            <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px", lineHeight: 1.5 }}>
-              The time on the clock. 8pm stays 8pm when the clocks change.
-            </div>
-          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <Field label="Starts">
+              <input type="time" value={form.start_time} onChange={ev => setForm(f => ({ ...f, start_time: ev.target.value }))} style={inp} />
+            </Field>
+            <Field label="Finishes (optional)">
+              <input type="time" value={form.end_time} onChange={ev => setForm(f => ({ ...f, end_time: ev.target.value }))} style={inp} />
+            </Field>
+          </div>
+          <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "-6px", lineHeight: 1.5 }}>
+            Times on the clock — 8pm stays 8pm when the clocks change. Add a finish
+            and it reads like the flyer does: 4–9pm.
+          </div>
 
           {editing ? (
             <Field label="Date">
@@ -617,9 +637,9 @@ function EventCard({ e, isAdmin, onEdit, past = false }) {
           </div>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "5px", flexWrap: "wrap" }}>
-          {e.start_time && (
+          {(e.start_time || e.end_time) && (
             <span style={{ fontFamily: F_UI, fontSize: "12px", color: off ? TEXT3 : TEXT2, display: "inline-flex", alignItems: "center", gap: "4px" }}>
-              <Clock size={11} strokeWidth={1.75} />{fmtTime(e.start_time)}
+              <Clock size={11} strokeWidth={1.75} />{fmtWhen(e.start_time, e.end_time)}
             </span>
           )}
           {off && (
