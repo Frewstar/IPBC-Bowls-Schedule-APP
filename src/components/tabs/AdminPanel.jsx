@@ -881,7 +881,30 @@ function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRe
           <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>Pending Admin Requests ({pendingAdminRequests.length})</div>
           {pendingAdminRequests.map(req => (
             <div key={req.id} style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "8px", marginBottom: "8px", borderBottom: `1px solid ${BORDER}` }}>
-              <div style={{ flex: 1, fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{req.player_name}</div>
+              {/* req.player_name arrives on an unauthenticated insert, so it is
+                  a claim, not a fact. Show who the roster says owns the
+                  account the request actually names; fall back to the claim,
+                  marked, when nothing can be resolved. The approval itself
+                  resolves the same way, so what is shown here is what will
+                  happen. */}
+              {(() => {
+                const owner = members.find(m => m.linked_player_id && m.linked_player_id === req.player_id);
+                return (
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>
+                      {owner ? owner.name : req.player_name}
+                    </div>
+                    {req.requested_role && (
+                      <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "1px" }}>asks to help with: {req.requested_role}</div>
+                    )}
+                    {!owner && (
+                      <div style={{ fontFamily: F_UI, fontSize: "11px", color: LOSS_RED, marginTop: "2px", lineHeight: 1.45 }}>
+                        Unverified — this name is what the request claims, and it isn't linked to anyone on the roster.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               <button onClick={() => approveAdminRequest(req)} style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 12px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Approve</button>
             </div>
           ))}

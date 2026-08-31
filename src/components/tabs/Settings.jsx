@@ -31,7 +31,7 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
     }
 
     const { error } = await supabase.from("admin_requests")
-      .upsert({ player_name: name, player_id: account.id, role_title: requestRoleInput.trim(), requested_at: new Date().toISOString() }, { onConflict: "player_name" });
+      .upsert({ player_name: name, player_id: account.id, requested_role: requestRoleInput.trim(), requested_at: new Date().toISOString() }, { onConflict: "player_id" });
     if (!error) {
       setRequestMsg("Request sent — the super admin will review it shortly.");
       setRequestRoleInput("");

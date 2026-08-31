@@ -306,16 +306,29 @@ create unique index if not exists admins_player_id_uniq
 alter table public.admin_requests add column if not exists player_id uuid
   references public.player_data(id) on delete cascade;
 
--- The role the member says they want. The Settings screen has always
--- collected this and always written it, and the column has never existed —
--- so every request insert has failed and the queue has never held a row.
-alter table public.admin_requests add column if not exists role_title text;
+-- What the member is ASKING for, in their words. Named requested_role and not
+-- role_title on purpose: members.position is the club's record of who holds
+-- which committee post, and is what the Club tab reads. This column is a line
+-- in a request, nothing more. Approving a request does NOT write to
+-- members.position — a committee title is set on the roster, by hand, and
+-- there is exactly one place it lives.
+--
+-- The Settings screen has always collected and written this field, under the
+-- name role_title, and no column of either name has ever existed — so every
+-- request insert has failed and the queue has never held a row.
+alter table public.admin_requests add column if not exists requested_role text;
 
--- The client upserts on player_name and there was no unique index for it to
--- conflict against, which is the second reason no request ever landed. One
--- pending request per person is also the behaviour you want.
-create unique index if not exists admin_requests_player_name_uniq
-  on public.admin_requests (player_name);
+-- The client upserts, and there was no unique index for it to conflict
+-- against — the second reason no request ever landed. One pending request per
+-- person is also the behaviour you want.
+--
+-- Keyed on player_id and NOT on player_name. player_name arrives on an
+-- unauthenticated insert, so conflicting on it would let anyone replace
+-- anyone else's pending request by sending the same name: a denial of service
+-- on the approval queue. player_id is the identity that matters, and the only
+-- one a member can clobber for themselves.
+create unique index if not exists admin_requests_player_id_uniq
+  on public.admin_requests (player_id);
 
 -- And the credential goes. Nothing reads it after this migration.
 alter table public.admin_requests drop column if exists cloud_key;
@@ -358,7 +371,7 @@ begin
       'message', 'Only a super admin can approve an admin request.');
   end if;
 
-  select r.id, r.player_name, r.player_id, r.role_title
+  select r.id, r.player_name, r.player_id, r.requested_role
     into v_req
     from public.admin_requests r
    where r.id::text = p_request_id;

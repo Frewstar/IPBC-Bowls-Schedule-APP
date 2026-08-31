@@ -594,11 +594,35 @@ moment there will ever be:
 - **`player_id uuid references player_data(id)`** added, and written at request time.
 - **`cloud_key` dropped.** It held the requester's `NAME-PIN` — their sign-in
   credential — in a table that is world-readable *and* world-writable.
-- **`role_title text`** added, and **`admin_requests_player_name_uniq`**.
-  The Settings screen has always written `role_title` and upserted on
-  `player_name`; neither the column nor the index existed, so **every request
-  insert has failed** and the queue has never held a row. That is why it is
-  empty, and why nobody has ever noticed the approval bug.
+- **`requested_role text`** added, and **`admin_requests_player_id_uniq`**.
+  The Settings screen has always written this field and always upserted;
+  neither a column of that name nor any unique index existed, so **every
+  request insert has failed** and the queue has never held a row. That is why
+  it is empty, and why nobody ever noticed the approval bug.
+
+  The conflict key is **`player_id`, not `player_name`**. `player_name` arrives
+  on an unauthenticated insert, so keying the upsert on it would let anyone
+  replace anyone else's pending request by sending the same name — a denial of
+  service on the approval queue. `player_id` is the identity that matters and
+  the only one a member can clobber for themselves.
+
+#### Who owns a committee title
+
+**`members.position` is the source of truth.** It is what the Club tab reads and
+what the committee list is built from, it is set on the roster by an admin, and
+it is the only place a person's title lives.
+
+**`admin_requests.requested_role` is not a title.** It is the line a member typed
+when asking for access — "the role this person is asking for", nothing more. It
+is named `requested_role` rather than `role_title` precisely so the two cannot be
+mistaken for each other, and the admin panel renders it as *"asks to help
+with: …"* rather than as a badge.
+
+**Approving a request writes nothing to `members.position`.** A committee title
+is set on the roster, by hand, deliberately. If approval also stamped a title,
+the two would drift the first time somebody was made an admin for a role they
+don't formally hold — and a member whose badge says one thing in the Club tab and
+another in the admin panel is a support call nobody wants.
 
 There is deliberately **no `ambiguous` branch** on approval, unlike the grant. It
 cannot arise: the request names an account by primary key, and
@@ -609,7 +633,25 @@ worse than none.
 
 The names the approver is shown come from the account and the roster, never from
 `admin_requests.player_name` — that column arrives on an unauthenticated insert
-and must not be able to put one member's name against another's account.
+and must not be able to put one member's name against another's account. That
+holds in **both** places it matters: the pending queue resolves each row to the
+roster member who owns the account named by `player_id`, and marks a row
+*Unverified* when nothing can be resolved; and the approval message names the
+account holder. What the approver reads before clicking is what approving will
+actually do.
+
+#### Why SQL-then-merge is safe here
+
+Run the migration first, then merge. Dropping `admin_requests.cloud_key` would
+normally break the deployed client in the window between the two steps — the
+old bundle would still be inserting that column. It doesn't, and the reason is
+worth writing down rather than rediscovering: **that insert already fails**, on
+the missing `role_title`/`requested_role` column and the missing unique index for
+its upsert. There is no working request path to break. Nothing regresses in the
+window because nothing in it works today.
+
+That is specific to this table. It is not a general licence to drop columns the
+deployed client still writes.
 
 ### Two things left for 002b
 
@@ -940,16 +982,29 @@ create unique index if not exists admins_player_id_uniq
 alter table public.admin_requests add column if not exists player_id uuid
   references public.player_data(id) on delete cascade;
 
--- The role the member says they want. The Settings screen has always
--- collected this and always written it, and the column has never existed —
--- so every request insert has failed and the queue has never held a row.
-alter table public.admin_requests add column if not exists role_title text;
+-- What the member is ASKING for, in their words. Named requested_role and not
+-- role_title on purpose: members.position is the club's record of who holds
+-- which committee post, and is what the Club tab reads. This column is a line
+-- in a request, nothing more. Approving a request does NOT write to
+-- members.position — a committee title is set on the roster, by hand, and
+-- there is exactly one place it lives.
+--
+-- The Settings screen has always collected and written this field, under the
+-- name role_title, and no column of either name has ever existed — so every
+-- request insert has failed and the queue has never held a row.
+alter table public.admin_requests add column if not exists requested_role text;
 
--- The client upserts on player_name and there was no unique index for it to
--- conflict against, which is the second reason no request ever landed. One
--- pending request per person is also the behaviour you want.
-create unique index if not exists admin_requests_player_name_uniq
-  on public.admin_requests (player_name);
+-- The client upserts, and there was no unique index for it to conflict
+-- against — the second reason no request ever landed. One pending request per
+-- person is also the behaviour you want.
+--
+-- Keyed on player_id and NOT on player_name. player_name arrives on an
+-- unauthenticated insert, so conflicting on it would let anyone replace
+-- anyone else's pending request by sending the same name: a denial of service
+-- on the approval queue. player_id is the identity that matters, and the only
+-- one a member can clobber for themselves.
+create unique index if not exists admin_requests_player_id_uniq
+  on public.admin_requests (player_id);
 
 -- And the credential goes. Nothing reads it after this migration.
 alter table public.admin_requests drop column if exists cloud_key;
@@ -992,7 +1047,7 @@ begin
       'message', 'Only a super admin can approve an admin request.');
   end if;
 
-  select r.id, r.player_name, r.player_id, r.role_title
+  select r.id, r.player_name, r.player_id, r.requested_role
     into v_req
     from public.admin_requests r
    where r.id::text = p_request_id;
