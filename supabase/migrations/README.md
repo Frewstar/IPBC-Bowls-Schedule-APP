@@ -513,6 +513,295 @@ create policy "club_events public delete" on public.club_events for delete using
 
 ---
 
+## 8. Granting admin actually works
+
+**File:** `supabase/migrations/20260831_grant_admin.sql`  
+**Status:** **Not yet applied** — written today
+
+The app granted admin by writing `cloud_key = 'PENDING-<name>'` with
+`player_id = null`, and nothing ever filled `player_id` in. `bowls_is_admin()`
+finds the row **by `player_id`**, so every grant made that way was inert — the
+person appeared in the admin list with no rights at all, and nothing said so.
+Two live rows are in that state right now.
+
+Adds three functions and changes neither `bowls_is_admin` nor the `admins` table:
+
+- **`bowls_is_super_admin(name, pin)`** — handing out rights is a super admin's
+  job, and `bowls_is_admin` returns true for plain admins too.
+- **`bowls_grant_admin(admin_name, admin_pin, member_id, role)`** — resolves the
+  member through `members.linked_player_id` **only**, never by matching names,
+  and writes the real `player_id` and `cloud_key`. Refuses with a plain-English
+  reason otherwise: `no_account`, `not_linked`, `ambiguous`, `bad_role`,
+  `not_super_admin`, `no_member`. A refusal writes nothing.
+- **`bowls_revoke_admin(admin_name, admin_pin, cloud_key)`** — deletes every row
+  that resolves to the same account, not just the one key. Deleting by
+  `cloud_key` alone was the other half of the problem: one person could hold both
+  a `PENDING-` row and a real one, and revoking the visible one left the other
+  granting rights. Refuses to revoke a super admin.
+
+Exercised against a scratch Postgres 16 seeded with a copy of the live data:
+each refusal returns its status and writes nothing, a resolved grant clears the
+stale `PENDING-` row and leaves exactly one row, re-granting changes the role
+without duplicating, a plain admin can neither grant nor revoke, and a
+two-row-one-person case is fully cleared by a single revoke.
+
+**This does not make the `admins` table safe.** The policies on it are still
+`using (true)`, so anyone with the publishable key from the bundle can write to
+it directly and go round these functions entirely. Routing the app through them
+is necessary, not sufficient — the policies are 002b's job.
+
+```sql
+-- ════════════════════════════════════════════════════════════════════════
+--  GRANTING AND REVOKING ADMIN
+--  Run this once in the Supabase SQL editor (after 001 and the admins table).
+--
+--  The bug this fixes: the app granted admin by writing a row with
+--    cloud_key = 'PENDING-' || <member name>,  player_id = null
+--  and nothing ever filled player_id in. bowls_is_admin() finds the admins
+--  row BY player_id, so every grant made this way was inert — the person
+--  appeared in the admin list and had no rights whatsoever, with nothing
+--  shown to anyone to say so. A silent no-op that looks like it worked.
+--
+--  Two things change here, and neither of them touches bowls_is_admin or
+--  the admins table's shape:
+--
+--  1. The member is resolved to a real account AT GRANT TIME, through the
+--     roster link (members.linked_player_id), and the row is written with
+--     the real player_id and cloud_key. If they can't be resolved, the
+--     grant is REFUSED and says why. Nothing is written.
+--
+--  2. Both operations are SECURITY DEFINER and check the caller is a
+--     super_admin here, on the server. The app's publishable key ships
+--     inside the JavaScript bundle, so a check in the client is not a
+--     control — anyone with the bundle could write to admins directly.
+--     These functions are the control; see the note at the foot about
+--     what still needs doing to make that stick.
+--
+--  Resolution goes through the roster link and NOT through matching names.
+--  Name matching is what produced this class of bug in the first place, and
+--  bowls_register deliberately allows two accounts under one name with
+--  different PINs — that is how two members with the same initials are told
+--  apart. Names are used below only to explain a refusal, never to pick.
+-- ════════════════════════════════════════════════════════════════════════
+
+-- ── Who is asking ─────────────────────────────────────────────────────────
+-- Deliberately NOT bowls_is_admin: that returns true for 'admin' as well as
+-- 'super_admin', and handing out admin rights is a super_admin's job. Left
+-- bowls_is_admin alone rather than adding a role argument to it, so nothing
+-- that already depends on it changes behaviour.
+create or replace function public.bowls_is_super_admin(p_name text, p_pin text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_key text;
+  v_id  uuid;
+begin
+  v_key := public.bowls_name_key(p_name);
+  if v_key = '' or coalesce(p_pin, '') !~ '^[0-9]{4}$' then
+    return false;
+  end if;
+
+  select d.id into v_id
+    from public.player_data d
+   where d.name_key = v_key
+     and d.pin_hash = extensions.crypt(p_pin, d.pin_hash)
+   limit 1;
+
+  if v_id is null then
+    return false;
+  end if;
+
+  return exists (
+    select 1 from public.admins a
+     where a.player_id = v_id and a.role = 'super_admin'
+  );
+end $$;
+
+
+-- ── Grant ─────────────────────────────────────────────────────────────────
+create or replace function public.bowls_grant_admin(
+  p_admin_name text,
+  p_admin_pin  text,
+  p_member_id  text,
+  p_role       text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_member     record;
+  -- Plain variables, not a record: when the member has no roster link the
+  -- select below never runs, and touching a field of a never-assigned record
+  -- raises rather than returning null. That would have crashed on exactly the
+  -- three refusal paths this function exists to report.
+  v_account_id      uuid;
+  v_account_name    text;
+  v_account_display text;
+  v_candidates int;
+  v_names      text;
+begin
+  -- 1. the role has to be one we hand out. super_admin is deliberately not
+  --    grantable here — there is a separate claim flow for that, and a
+  --    super_admin who can mint super_admins is a one-way door.
+  if coalesce(p_role, '') not in ('admin', 'draw_admin') then
+    return jsonb_build_object(
+      'status',  'bad_role',
+      'message', 'Admin rights can only be granted as Admin or Draw Admin.');
+  end if;
+
+  -- 2. the caller proves who they are, here, on every grant
+  if not public.bowls_is_super_admin(p_admin_name, p_admin_pin) then
+    return jsonb_build_object(
+      'status',  'not_super_admin',
+      'message', 'Only a super admin can grant admin rights.');
+  end if;
+
+  -- 3. find the member on the roster
+  select m.id, m.name, m.section, m.linked_player_id
+    into v_member
+    from public.members m
+   where m.id::text = p_member_id;
+
+  if not found then
+    return jsonb_build_object(
+      'status',  'no_member',
+      'message', 'That member is not on the roster.');
+  end if;
+
+  -- 4. resolve them to an account, through the roster link only
+  if v_member.linked_player_id is not null then
+    select d.id, d.player_name, d.display_name
+      into v_account_id, v_account_name, v_account_display
+      from public.player_data d
+     where d.id = v_member.linked_player_id;
+  end if;
+
+  if v_account_id is null then
+    -- Not resolved. Everything from here is about explaining why, so the
+    -- person granting knows what to do next. Names are used to count and
+    -- describe the candidates; they are never used to pick one.
+    select count(*), string_agg(d.player_name, ', ' order by d.player_name)
+      into v_candidates, v_names
+      from public.player_data d
+     where d.name_key = public.bowls_name_key(v_member.name);
+
+    if v_candidates = 0 then
+      return jsonb_build_object(
+        'status',  'no_account',
+        'message', v_member.name || ' hasn''t signed in to the app yet. Ask them to register, then grant admin.');
+    elsif v_candidates = 1 then
+      return jsonb_build_object(
+        'status',  'not_linked',
+        'message', v_member.name || ' has an app account but it isn''t linked to their name on the roster. '
+                   || 'Ask them to link it when they next open the app, then grant admin.',
+        'candidates', v_names);
+    else
+      return jsonb_build_object(
+        'status',  'ambiguous',
+        'message', v_candidates || ' accounts could be ' || v_member.name || ': ' || v_names || '. '
+                   || 'Link the right one to them on the roster first, then grant admin.',
+        'candidates', v_names);
+    end if;
+  end if;
+
+  -- 5. Resolved. Clear anything already standing for this person before
+  --    writing, so a re-grant can't leave a second row behind: the inert
+  --    'PENDING-' row from the old code, and any earlier row of their own.
+  --    cloud_key is the table's primary key, so two rows for one person is
+  --    otherwise perfectly possible — and one of them would outlive a revoke.
+  delete from public.admins
+   where player_id = v_account_id
+      or cloud_key = 'PENDING-' || upper(v_member.name)
+      or cloud_key = 'APPROVED-' || upper(v_member.name);
+
+  insert into public.admins (cloud_key, player_name, display_name, role, player_id)
+  values (v_account_name,
+          upper(v_member.name),
+          coalesce(v_account_display, v_member.name),
+          p_role,
+          v_account_id);
+
+  return jsonb_build_object(
+    'status',    'granted',
+    'message',   v_member.name || ' can now use the admin panel.',
+    'cloud_key', v_account_name,
+    'player_id', v_account_id,
+    'role',      p_role);
+end $$;
+
+
+-- ── Revoke ────────────────────────────────────────────────────────────────
+-- Deleting by cloud_key alone was the other half of the problem: a person
+-- could hold both a 'PENDING-' row and a real one, and revoking the row you
+-- could see left the other in place, still granting rights. This clears every
+-- row that resolves to the same account.
+create or replace function public.bowls_revoke_admin(
+  p_admin_name text,
+  p_admin_pin  text,
+  p_cloud_key  text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_target  record;
+  v_removed int;
+begin
+  if not public.bowls_is_super_admin(p_admin_name, p_admin_pin) then
+    return jsonb_build_object(
+      'status',  'not_super_admin',
+      'message', 'Only a super admin can revoke admin rights.');
+  end if;
+
+  select a.cloud_key, a.player_id, a.role, coalesce(a.display_name, a.player_name) as who
+    into v_target
+    from public.admins a
+   where a.cloud_key = p_cloud_key;
+
+  if not found then
+    return jsonb_build_object(
+      'status',  'not_found',
+      'message', 'That admin is no longer listed.');
+  end if;
+
+  -- The club must not be able to lock itself out of its own admin panel.
+  if v_target.role = 'super_admin' then
+    return jsonb_build_object(
+      'status',  'is_super_admin',
+      'message', 'A super admin can''t be revoked here.');
+  end if;
+
+  delete from public.admins
+   where cloud_key = p_cloud_key
+      or (v_target.player_id is not null and player_id = v_target.player_id);
+  get diagnostics v_removed = row_count;
+
+  return jsonb_build_object(
+    'status',  'revoked',
+    'message', v_target.who || ' no longer has admin rights.',
+    'removed', v_removed);
+end $$;
+
+
+-- ── What this does and does not close ─────────────────────────────────────
+-- These functions are a real server-side check: the caller's PIN is verified
+-- against player_data.pin_hash here, and the client cannot talk its way past
+-- it. But the admins table itself still carries using(true) policies, so
+-- someone with the publishable key out of the bundle can still write to it
+-- directly and bypass these functions entirely. Routing the app through them
+-- is necessary and not sufficient; the policies are 002b's job. Do not read
+-- this migration as making the admins table safe.
+```
+
+---
+
 ## Verifying what has actually run
 
 Run these in the SQL editor to check the state rather than guessing:

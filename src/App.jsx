@@ -1678,17 +1678,50 @@ export default function BowlsTracker() {
     return data;
   }
 
+  // Granting used to write { cloud_key: "PENDING-<name>", player_id: null }
+  // straight into admins and hope. Nothing ever filled player_id in, and
+  // bowls_is_admin finds the row BY player_id — so the grant was inert and
+  // said nothing to anybody. Both of these now go through a SECURITY DEFINER
+  // function that resolves the member to a real account through the roster
+  // link, checks the caller is a super admin on the server, and reports back
+  // in words. No optimistic local update: the list is re-read from what the
+  // server actually did, because "it looked like it worked" is the bug.
+  const [accessMsg, setAccessMsg] = useState(null);
+
+  async function refreshAdminList() {
+    const { data } = await supabase.from("admins").select("*");
+    if (data) setAdminListState(data);
+  }
+
   async function grantAdmin(member, role = "admin") {
-    const nameUpper = member.name.toUpperCase();
-    const newRow = { cloud_key: `PENDING-${nameUpper}`, player_name: nameUpper, role, display_name: member.name };
-    setAdminListState(l => [...l, newRow]);
-    await supabase.from("admins").upsert(newRow, { onConflict: "cloud_key" });
-    supabase.from("admins").select("*").then(({ data }) => { if (data) setAdminListState(data); });
+    setAccessMsg(null);
+    const { data, error } = await supabase.rpc("bowls_grant_admin", {
+      p_admin_name: (myName || "").toUpperCase(),
+      p_admin_pin:  myPin || "",
+      p_member_id:  String(member.id),
+      p_role:       role,
+    });
+    if (error || !data) {
+      setAccessMsg({ ok: false, text: error?.message ? `Couldn't grant: ${error.message}` : "Couldn't grant — no response from the server." });
+      return;
+    }
+    setAccessMsg({ ok: data.status === "granted", text: data.message });
+    if (data.status === "granted") await refreshAdminList();
   }
 
   async function revokeAdmin(cloudKey) {
-    setAdminListState(l => l.filter(a => a.cloud_key !== cloudKey));
-    await supabase.from("admins").delete().eq("cloud_key", cloudKey);
+    setAccessMsg(null);
+    const { data, error } = await supabase.rpc("bowls_revoke_admin", {
+      p_admin_name: (myName || "").toUpperCase(),
+      p_admin_pin:  myPin || "",
+      p_cloud_key:  cloudKey,
+    });
+    if (error || !data) {
+      setAccessMsg({ ok: false, text: error?.message ? `Couldn't revoke: ${error.message}` : "Couldn't revoke — no response from the server." });
+      return;
+    }
+    setAccessMsg({ ok: data.status === "revoked", text: data.message });
+    await refreshAdminList();
   }
 
   async function approveAdminRequest(req) {
@@ -3824,6 +3857,8 @@ export default function BowlsTracker() {
             approveAdminRequest={approveAdminRequest}
             revokeAdmin={revokeAdmin}
             grantAdmin={grantAdmin}
+            accessMsg={accessMsg}
+            clearAccessMsg={() => setAccessMsg(null)}
             phoneRequests={phoneRequests}
             approvePhoneRequest={approvePhoneRequest}
             declinePhoneRequest={declinePhoneRequest}
