@@ -129,6 +129,17 @@ begin
   end if;
 
   -- 3. find the member on the roster
+  --
+  -- TODO(multi-club): single-club by assumption. The member is found on id
+  -- alone, with no club_id predicate, so once a second club exists a super
+  -- admin at one club could grant admin over another club's member by passing
+  -- their id. The inserted row would also take club_id from the column
+  -- default, which is hardcoded to Irvine Park, so it would land under the
+  -- wrong club silently rather than erroring.
+  -- Fix when club two is onboarded: resolve the caller's club from their own
+  -- admins row, require members.club_id to match, and set club_id explicitly
+  -- on the insert instead of relying on the default. Same change needed in
+  -- bowls_approve_admin_request.
   select m.id, m.name, m.section, m.linked_player_id
     into v_member
     from public.members m
@@ -262,9 +273,24 @@ begin
    where a.player_id = p_player_id;
 
   if not found then
+    -- Two different things reach here and this function cannot tell them
+    -- apart, so the wording covers both rather than asserting the wrong one.
+    --
+    -- Distinguishing them was considered and rejected. The target's name is
+    -- not among this function's arguments — p_admin_name is the CALLER — and
+    -- the legacy rows are keyed 'PENDING-<NAME>', so finding one would mean
+    -- matching on a name, which is the practice this whole migration exists
+    -- to remove. Checking cloud_key against the account's own player_name
+    -- would avoid that but catches only one of the two legacy shapes, which
+    -- is worse than a message that is honest about the uncertainty.
+    --
+    -- It is also not reachable from the panel: the Revoke button is not
+    -- rendered for a row with no player_id, and the client refuses before
+    -- calling. This wording is for someone calling the function directly.
     return jsonb_build_object(
       'status',  'not_found',
-      'message', 'That admin is no longer listed.');
+      'message', 'That admin entry could not be found, or is an old-style entry '
+                 || 'with no account attached. Granting them admin again will clear it.');
   end if;
 
   -- The club must not be able to lock itself out of its own admin panel.
@@ -471,6 +497,8 @@ begin
       'message', 'The account that sent that request no longer exists. The request has been cleared.');
   end if;
 
+  -- TODO(multi-club): no club_id predicate here either — see the note on the
+  -- member lookup in bowls_grant_admin above.
   select m.name into v_member_name
     from public.members m
    where m.linked_player_id = v_req.player_id;
@@ -525,6 +553,12 @@ end $$;
 
 
 -- ── Still to do, and not in this migration ────────────────────────────────
+-- TODO(multi-club): bowls_grant_admin and bowls_approve_admin_request both
+-- find a member without a club_id predicate, and both let the inserted admins
+-- row take club_id from the column default, which is hardcoded to Irvine Park.
+-- Dormant while one club exists; wrong the day a second one does. The full
+-- note is on the member lookup in bowls_grant_admin.
+--
 -- admin_requests carries an `open` policy: ALL, public, using(true) with
 -- check(true). Anyone with the publishable key can read the queue, add to it
 -- or empty it, and the insert is entirely unauthenticated — nothing proves
