@@ -260,7 +260,7 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     return (
       <>
         <CreateGame
-          myName={myName} cloudKey={cloudKey} members={members} isAdmin={isAdmin}
+          myName={myName} cloudKey={cloudKey} members={members}
           onCancel={() => setView("list")}
           onCreated={id => { setOpenId(id); setView("detail"); }}
           showToast={showToast}
@@ -656,7 +656,7 @@ function MemberPicker({ members, selected, onChange, max, placeholder }) {
 }
 
 // ── Create game form ────────────────────────────────────────────────────────
-function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, showToast, pushGame }) {
+function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast, pushGame }) {
   const [title, setTitle] = useState("");
   const [discipline, setDiscipline] = useState("team");
   const [homeTeam, setHomeTeam] = useState("IPBC");
@@ -675,14 +675,19 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
   // ends. Null total means no ends limit.
   const [byEnds, setByEnds] = useState(false);
   const [numEnds, setNumEnds] = useState(15);
-  // Scheduling a fixture is a statement about the club's calendar, so it's an
-  // admin action. Starting a game there and then stays open to every member.
+  // Setting a game up — now or for later — is open to any member who has put
+  // their name in. It used to be that scheduling was admin-only, on the
+  // reasoning that a fixture is a statement about the club's calendar. In
+  // practice that meant the person who actually knows the tie is on couldn't
+  // put it up, and the section secretaries were reduced to starting games that
+  // had already begun. The people who set up games are the people who play in
+  // them.
   const [scheduleIt, setScheduleIt] = useState(false);
   const [startsAt, setStartsAt] = useState("");
 
   const disc = DISCIPLINES.find(d => d.id === discipline);
   const isTeam = discipline === "team";
-  const scheduling = isAdmin && scheduleIt;
+  const scheduling = scheduleIt;
   // On an internal game the two sides are named after who is playing.
   const homeLabel = internal ? sideName(homePlayers) : (homeTeam.trim() || "IPBC");
   const awayLabel = internal ? sideName(awayMembers) : awayTeam.trim();
@@ -762,22 +767,20 @@ function CreateGame({ myName, cloudKey, members, isAdmin, onCancel, onCreated, s
         {scheduling ? "Schedule a game" : "Set up a live game"}
       </div>
 
-      {isAdmin && (
-        <Field label="When">
-          <div style={{ display: "flex", gap: "8px", marginBottom: scheduleIt ? "8px" : 0 }}>
-            <button onClick={() => toggleSchedule(false)} style={toggleBtn(!scheduleIt)}>Starting now</button>
-            <button onClick={() => toggleSchedule(true)} style={toggleBtn(scheduleIt)}>Schedule it</button>
-          </div>
-          {scheduleIt && (
-            <>
-              <input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)} style={inp} />
-              <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px", lineHeight: 1.5 }}>
-                Listed under Upcoming until someone takes it live. It won't show a score, and the start time passing doesn't start it.
-              </div>
-            </>
-          )}
-        </Field>
-      )}
+      <Field label="When">
+        <div style={{ display: "flex", gap: "8px", marginBottom: scheduleIt ? "8px" : 0 }}>
+          <button onClick={() => toggleSchedule(false)} style={toggleBtn(!scheduleIt)}>Starting now</button>
+          <button onClick={() => toggleSchedule(true)} style={toggleBtn(scheduleIt)}>Schedule it</button>
+        </div>
+        {scheduleIt && (
+          <>
+            <input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)} style={inp} />
+            <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px", lineHeight: 1.5 }}>
+              Listed under Upcoming until someone takes it live. It won't show a score, and the start time passing doesn't start it.
+            </div>
+          </>
+        )}
+      </Field>
 
       <Field label="Type of game">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(84px, 1fr))", gap: "8px" }}>
