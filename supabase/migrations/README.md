@@ -5,24 +5,50 @@ Each one is written to be safe to run more than once.
 
 ## What is and isn't here
 
-These are the migrations written alongside the app code. **The earlier schema work is not in the repo** — `001` (the `player_data` rework that added `id`, `name_key` and `pin_hash`, the `player_data_backfill_keys` trigger, and `bowls_is_admin` / `bowls_name_key` / `bowls_sign_in` / `bowls_register` / `bowls_save_player`), the planned `002` / `002b` lockdown, `members.linked_player_id`, and this morning's `club_id` columns were all applied directly in the Supabase SQL editor. If you want those in version control too, export them and they can be added here.
+**Everything is here now.** Until 31 August this said the opposite: the earlier
+schema work — `001` (the `player_data` rework that added `id`, `name_key` and
+`pin_hash`, the `player_data_backfill_keys` trigger, and `bowls_is_admin` /
+`bowls_name_key` / `bowls_sign_in` / `bowls_register` / `bowls_save_player`),
+`members.linked_player_id`, the `club_id` columns, and the core tables
+themselves — had only ever been applied in the Supabase SQL editor, in
+twenty-seven ledger entries with no file behind any of them.
+
+`20260619_baseline_pre_repo_schema.sql` closes that. It was reconstructed from
+the live database by introspection and it runs first, so an empty Supabase
+project can be taken to exactly what production has by running this folder in
+filename order. That claim is tested rather than asserted — see **Rebuilding
+from scratch** at the foot of this file.
+
+Two things stay deliberately outside the folder, and both are correct: the
+planned `002` / `002b` lockdown (not written yet), and this club's own data —
+the tournaments, the roll of honour, the roster, the admin rows. A new club
+starts with empty tables and fills them in.
 
 ## Order and status
 
+Run them in filename order. Every one is idempotent.
+
 | # | Migration | What it does | Status |
 |---|---|---|---|
-| 1 | `20260722_live_games.sql` | Live games | Applied — live games are working |
-| 2 | `20260723_live_games_players_location.sql` | Disciplines, location and players | Applied — live games are working |
-| 3 | `20260829_live_games_scheduled.sql` | Scheduled fixtures | Check — needed for the Upcoming section |
-| 4 | `20260830_admin_reset_pin.sql` | Admin PIN reset | Applied — and the live function is AHEAD of this file; see the warning in section 4 before re-running it |
-| 5 | `20260830_live_games_ends.sql` | Games played over set ends | Applied — the columns and the check constraint are on `live_games` |
+| 1 | `20260619_baseline_pre_repo_schema.sql` | **The schema that was never written down** — core tables, `members_public`, ten functions, both triggers, RLS and grants | Applied 31 Aug, and a no-op against production by construction |
+| 2 | `20260722_live_games.sql` | Live games | Applied — live games are working |
+| 3 | `20260723_live_games_players_location.sql` | Disciplines, location and players | Applied — live games are working |
+| 4 | `20260829_live_games_scheduled.sql` | Scheduled fixtures | Applied — `starts_at` and its index are on `live_games` |
+| 5 | `20260830_admin_reset_pin.sql` | Admin PIN reset | Applied — but see #9, which supersedes the function this file creates |
 | 6 | `20260830_club_events.sql` | What's On — club social events | Applied — table, columns, duplicate guard and policies all confirmed against the database |
-| 7 | `20260831_club_events_end_time.sql` | The time an event finishes | Applied — `club_events.end_time` is on the live table (applied through the SQL editor, so it has no row in `supabase_migrations`) |
-| 8 | `20260831_grant_admin.sql` | Granting **and approving** admin actually work; `admins_player_id_uniq`; `admin_requests` stops carrying a PIN | Applied — verified live: five functions, the oracle closed to `anon`, `admin_requests` reshaped, both indexes, demotion guard refusing |
-| 9 | `20260901_admin_role_layers.sql` | Admin role layers — `bowls_admin_role`, a CHECK on `admins.role`, `events_admin` | Applied 31 Aug, 17:04 UTC as `admin_role_layers` — verified live: the four roles in the CHECK, `anon` can execute `bowls_admin_role` and still cannot execute `bowls_is_super_admin`, lockout counting increments and clears |
-| 10 | `20260902_event_posters.sql` | Posters on What's On — `club_events.poster_path`, the `event-posters` bucket, ticketed writes, the Open Graph share link | Applied 31 Aug, 20:20 UTC as `event_posters` — verified live: the column, the bucket with its limits, an upload round-trip, and an upload without a ticket refused |
+| 7 | `20260830_club_id_on_live_games.sql` | `club_id` on `live_games`, the one table the baseline cannot reach | Applied 31 Aug — found by the rebuild test, not by looking |
+| 8 | `20260830_live_games_ends.sql` | Games played over set ends | Applied — the columns and the check constraint are on `live_games` |
+| 9 | `20260830_reset_pin_keeps_admin_row_in_step.sql` | Brings `bowls_admin_reset_pin` up to the live body — the `admins.cloud_key` update that #5 is missing | Was already live (ledger `20260830095508`); the **file** was missing until 31 Aug |
+| 10 | `20260831_club_events_end_time.sql` | The time an event finishes | Applied — and registered in the ledger on 31 Aug, which it never had been |
+| 11 | `20260831_grant_admin.sql` | Granting **and approving** admin actually work; `admins_player_id_uniq`; `admin_requests` stops carrying a PIN | Applied — verified live: five functions, the oracle closed to `anon`, `admin_requests` reshaped, both indexes, demotion guard refusing |
+| 12 | `20260901_admin_role_layers.sql` | Admin role layers — `bowls_admin_role`, a CHECK on `admins.role`, `events_admin` | Applied 31 Aug, 17:04 UTC as `admin_role_layers` — verified live: the four roles in the CHECK, `anon` can execute `bowls_admin_role` and still cannot execute `bowls_is_super_admin`, lockout counting increments and clears |
+| 13 | `20260902_event_posters.sql` | Posters on What's On — `club_events.poster_path`, the `event-posters` bucket, ticketed writes, the Open Graph share link | Applied 31 Aug, 20:20 UTC as `event_posters`, plus `20260831205042 event_posters_revoke_ticket_grants` at 20:50 — verified live: the column, the bucket with its limits, an upload round-trip, and an upload without a ticket refused |
 
-Status is my best understanding from our sessions — worth confirming against the database rather than taking on trust.
+Status is no longer "my best understanding from our sessions". Every row above was
+checked against `information_schema`, `pg_constraint`, `pg_indexes`, `pg_policies`,
+`pg_get_functiondef`, `pg_trigger`, `storage.buckets` and `storage.objects` on
+31 August 2026, and the whole folder was replayed into an empty database and
+diffed against production object by object.
 
 ---
 
@@ -161,10 +187,13 @@ create index if not exists live_games_starts_at_idx
 ## 4. Admin PIN reset
 
 **File:** `supabase/migrations/20260830_admin_reset_pin.sql`  
-**Status:** Applied — but this file no longer matches the live function
+**Status:** Applied — and superseded by
+`20260830_reset_pin_keeps_admin_row_in_step.sql`, which runs after it
 
-> **⚠ This file is STALE. Do not re-run it.** The live
-> `bowls_admin_reset_pin` is ahead of this copy by one statement:
+> **This file is one statement behind the live function, and that is now
+> handled.** It used to say "STALE, do not re-run it", which protected a human
+> reading the README and did nothing for anyone replaying the folder. The
+> missing statement is:
 >
 > ```
 > update public.admins set cloud_key = v_new_key where player_id = v_account.id;
@@ -172,9 +201,14 @@ create index if not exists live_games_starts_at_idx
 >
 > `admins_pkey` is on `cloud_key`, so resetting an admin's PIN changes their
 > primary key. Without that line the admins row is left on the old key and they
-> silently lose admin. Running this file as written would overwrite the live
-> function and reintroduce that. If the function ever needs replacing, take the
-> definition out of the database with `pg_get_functiondef`, not from here.
+> silently lose admin.
+>
+> `20260830_reset_pin_keeps_admin_row_in_step.sql` sorts immediately after this
+> file and re-creates the function with the live body, so running the folder in
+> order now ends up correct whether or not anyone reads this box. The database
+> has recorded that fix since 30 August (ledger `20260830095508`); it was the
+> *file* that was missing. This one is left as it was written, on purpose — it
+> is the history, and the next file is the correction.
 
 
 Adds `bowls_admin_reset_pin`, a SECURITY DEFINER function that moves `player_data.player_name` and `player_data.pin_hash` together, repoints `members.linked_cloudkey` and clears any lockout.
@@ -2323,3 +2357,110 @@ select indexname, indexdef
   from pg_indexes
  where schemaname = 'public' and tablename = 'club_events';
 ```
+
+
+---
+
+## Rebuilding from scratch
+
+The point of all of the above is this: an empty Supabase project, plus this
+folder in filename order, should equal production. On 31 August 2026 that was
+tested rather than assumed.
+
+An empty PostgreSQL database was given the roles and schemas a Supabase project
+ships with (`anon`, `authenticated`, `service_role`; `extensions`, `storage`),
+the default privileges Supabase sets on `public`, and stand-ins for
+`storage.buckets` and `storage.objects`. All thirteen migrations were then
+applied in filename order, and every object in the result was compared against
+the live database:
+
+| Compared | Objects | Result |
+|---|---|---|
+| Columns (name, type, nullability, default) | 188 | identical |
+| Constraints (PK, FK, unique, check) | 48 | identical |
+| Indexes | 53 | identical |
+| RLS policies, `public` and `storage` | 38 | identical |
+| Functions (signature, `security definer`, `search_path`, EXECUTE grants) | 19 | identical |
+| Function bodies, comments and whitespace normalised | 19 | identical |
+| Triggers | 2 | identical |
+| Tables and views (RLS flag, grants, `reloptions`) | 20 | identical |
+| Storage buckets | 1 | identical |
+| Realtime publication membership | 1 | identical |
+| Column and object comments | 2 | identical |
+
+Two differences were found and are understood:
+
+* The live bodies of `bowls_revoke_admin` and `bowls_approve_admin_request`
+  carry no explanatory comments where `20260831_grant_admin.sql` has 15 and 10
+  lines of them. They were applied from a comment-stripped copy. The executable
+  code is identical once comments are removed — `932bf29f012bf9fb64beb56a67310b23`
+  over all nineteen functions on both sides. Cosmetic, and not worth a migration
+  to production to change.
+* Table grants read `arwdDxt` locally and `arwdDxtm` live. `m` is `MAINTAIN`,
+  which exists in PostgreSQL 17 and not in 16. An artefact of the test rig, not
+  of the migrations.
+
+The folder was then applied a **second** time over its own output. Everything
+ran clean and the schema fingerprint was unchanged, which is what "idempotent"
+has to mean before it is safe to run any of this against a live database.
+
+Finally, all of it was applied to production, where — being idempotent — it
+changed nothing. The fingerprint over all 438 objects was
+`6036add44f727cccddc567f6ffdac9f7` before and after, with 89 accounts and 216
+roster rows untouched. The only thing that changed was the ledger.
+
+### A note on how fast this moved
+
+Production changed **three times while this reconciliation was being written**,
+from a session working in parallel on the poster feature:
+
+| Ledger entry | Time (UTC) | What |
+|---|---|---|
+| `20260831202034 event_posters` | 20:20 | the bucket, the column, the tickets, the functions |
+| `20260831204330`–`204448` | 20:43–20:44 | this reconciliation's migrations |
+| `20260831205042 event_posters_revoke_ticket_grants` | 20:50 | `revoke all on poster_tickets from anon, authenticated` |
+
+The first landed after this audit had taken its inventory, which is why
+`club_events.poster_path` appears in the second read of the schema and not the
+first. The third landed after the verification run, which is why the comparison
+above had to be done again afterwards — and it is why this folder briefly
+carried a duplicate, already-stale copy of the poster migration, which was
+caught by diffing rather than by trusting, and removed.
+
+That is not a complaint about anyone's timing. It is the argument for the rule
+that came out of the night: **one named owner for the database, with the ledger
+read either side of any change.** Three parties wrote to one schema inside an
+hour and none could see the others' work. The read afterwards is the half that
+does the work — the read before was honest in every case, and still went stale
+within minutes.
+
+### What is deliberately NOT reproduced
+
+* **Seed data** — Irvine Park's tournaments, roll of honour, roster, admin
+  rows, committee positions, phone numbers. This club's records, not schema.
+* **The one row that is not optional** — `clubs`. Fifteen tables default
+  `club_id` to Irvine Park's id and carry a foreign key to `clubs`, so without
+  that row every insert fails. The baseline inserts it, flagged, because the
+  schema does not function without it. A second club needs its own id in those
+  defaults; see the note at the head of the baseline.
+* **The ad-hoc backup tables** — `admins_backup_20260830`,
+  `club_fixtures_backup_20260829`, `login_lockouts_cleared_20260829`,
+  `members_backup_20260829`, `player_data_backup_20260829`,
+  `player_data_deleted_20260830`, `roll_of_honour_backup_20260829`. They hold
+  real rows in production and are the residue of this club's data repairs. A
+  new club has nothing to have backed up. Listed here so that a future diff
+  against production explains itself instead of looking like fresh drift.
+
+### Known gaps, reported not fixed
+
+* `draw_results.draw_id` has **no foreign key** to `draws`, where
+  `draw_pairings.draw_id` does and cascades. Deleting a draw takes its pairings
+  and orphans its results. Almost certainly an oversight in `20260620125947`,
+  but production is what this folder records.
+* The `club_id` default is Irvine Park's UUID, hardcoded on fifteen tables, and
+  `club_config`'s primary key is `(key)` alone rather than `(club_id, key)`, so
+  two clubs cannot hold the same setting under different values. Both need
+  settling before club two.
+* `player_data` carries an `ALL / using(true)` policy, so `pin_hash` is readable
+  by anything holding the publishable key. That is `002b`'s, and untouched.
+
