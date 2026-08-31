@@ -90,6 +90,10 @@ const isIosDevice  = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 const isInstalled  = () => navigator.standalone === true ||
                            window.matchMedia("(display-mode: standalone)").matches;
 
+// The ladder, in the same order as the migration's check constraint. Anything
+// not on this list grants nothing.
+const ROLES = ["super_admin", "admin", "draw_admin", "events_admin"];
+
 // "/?game=<id>" — a link shared from a live game. Returns null when absent or
 // unreadable, so nothing downstream has to guard against a throw.
 function readGameParam() {
@@ -266,31 +270,27 @@ export default function BowlsTracker() {
 
     let cancelled = false;
     const nameUpper = myName.toUpperCase();
-    const key = `${nameUpper}-${myPin}`;
 
     (async () => {
-      const { data: ok, error } = await supabase.rpc("bowls_is_admin", {
+      // One call, and it answers with the role rather than yes/no. A boolean
+      // could not express layers, which is why every screen ended up gated on
+      // the same flag: a Social Convenor who should only add events got the
+      // members' phone numbers and the PIN reset as well.
+      //
+      // This replaces the old two-step — bowls_is_admin, then reading the
+      // admins row by name or cloud key to find the tier. That second step
+      // matched on strings the client held, which is the class of bug the
+      // grant work spent yesterday removing. The server resolves the account
+      // from the PIN and reads the role off its own row.
+      const { data: role, error } = await supabase.rpc("bowls_admin_role", {
         p_name: nameUpper,
         p_pin:  myPin,
       });
-      // Anything that is not an explicit true — an error, a null, a dropped
-      // request — leaves them an ordinary member.
-      if (cancelled || error || ok !== true) return;
+      // Anything that is not one of the four known roles — an error, a null, a
+      // dropped request — leaves them an ordinary member. Fail closed.
+      if (cancelled || error) return;
+      if (!ROLES.includes(role)) { setAdminVerified(true); return; }
 
-      // Confirmed. Now read the row for the admin/super_admin/draw_admin
-      // distinction, which is display and tier only — it grants nothing on its
-      // own. If the row can't be matched the member stays out, which is the
-      // fail-closed answer; fix the admins row rather than loosening this.
-      const [r1, r2] = await Promise.all([
-        supabase.from("admins").select("role").eq("player_name", nameUpper),
-        supabase.from("admins").select("role").eq("cloud_key", key),
-      ]);
-      if (cancelled) return;
-      const rows = [...(r1.data || []), ...(r2.data || [])];
-      const role = rows.some(r => r.role === "super_admin") ? "super_admin"
-                 : rows.some(r => r.role === "admin")       ? "admin"
-                 : rows.some(r => r.role === "draw_admin")  ? "draw_admin"
-                 : null;
       setAdminRole(role);
       setAdminVerified(true);
     })();
@@ -299,11 +299,30 @@ export default function BowlsTracker() {
     return () => { cancelled = true; };
   }, [myName, myPin]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Every admin gate in the app goes through these three, so verification only
-  // has to be applied once, here.
-  const isAdmin = adminVerified && (adminRole === "admin" || adminRole === "super_admin");
-  const isSuperAdmin = adminVerified && adminRole === "super_admin";
-  const isDrawAdmin = adminVerified && adminRole === "draw_admin";
+  // Gates are by capability, not by "is an admin". The role is one value; what
+  // it lets you do is the list below, and every screen asks the question it
+  // actually needs answering rather than the general one.
+  const role = adminVerified ? adminRole : null;
+  const isSuperAdmin = role === "super_admin";
+  const isAdmin      = role === "admin" || role === "super_admin";
+  const isDrawAdmin  = role === "draw_admin";
+
+  // What's On: the Social Convenor's whole job.
+  const canEditEvents  = isAdmin || role === "events_admin";
+  // Draws.
+  const canRunDraws    = isAdmin || role === "draw_admin";
+  // The roster: names, phone numbers, editing a member. Deliberately NOT
+  // extended to the section roles — a Social Convenor has no business in the
+  // members' contact details.
+  const canEditMembers = isAdmin;
+  // Setting someone else's PIN.
+  const canResetPins   = isAdmin;
+  // Handing out rights at all.
+  const canGrantAdmin  = isSuperAdmin;
+  // Whether there is an admin panel worth opening. An events_admin has no
+  // section in it — their rights are exercised on the What's On tab itself —
+  // so they get no padlock rather than a padlock onto an empty room.
+  const hasAdminPanel  = isAdmin || canRunDraws;
 
   async function claimSuperAdmin() {
     if (!cloudKey || !myName) return;
@@ -2077,7 +2096,7 @@ export default function BowlsTracker() {
                   — the last tab was laid out past the right edge of the screen
                   and could not be reached at all. It is also the right home for
                   it: the bar below is the club, this row is the app. */}
-              {(isAdmin || isDrawAdmin) && (
+              {hasAdminPanel && (
                 <button onClick={() => navigateTo("admin")} title="Admin"
                   style={{ background: activeTab === "admin" ? `${GREEN}12` : "none", border: "none", cursor: "pointer", padding: "7px 6px", color: activeTab === "admin" ? GREEN : TEXT3, borderRadius: "8px", display: "flex", alignItems: "center" }}>
                   <Lock size={20} strokeWidth={activeTab === "admin" ? 2 : 1.5} />
@@ -3847,15 +3866,20 @@ export default function BowlsTracker() {
         {/* ══════════════════════════════════════════
             WHAT'S ON TAB — the band, the karaoke, one-off nights
         ══════════════════════════════════════════ */}
-        {activeTab === "whatson" && <WhatsOnTab myName={myName} isAdmin={isAdmin} />}
+        {activeTab === "whatson" && <WhatsOnTab myName={myName} isAdmin={canEditEvents} />}
 
         {/* ══════════════════════════════════════════
             ADMIN TAB
         ══════════════════════════════════════════ */}
-        {activeTab === "admin" && (isAdmin || isDrawAdmin) && (
+        {activeTab === "admin" && hasAdminPanel && (
           <AdminPanel
             myName={myName}
             isSuperAdmin={isSuperAdmin}
+            canEditMembers={canEditMembers}
+            canResetPins={canResetPins}
+            canGrantAdmin={canGrantAdmin}
+            canRunDraws={canRunDraws}
+            adminRole={role}
             members={members}
             addMember={m => { const id = Date.now().toString(); const nm = { id, name: m.name, phone: m.phone || null, section: m.section, position: m.position || null, sort_order: 999 }; setMembers(p => [...p, nm]); supabase.from("members").insert(nm); }}
             saveEdit={(id, data) => { setMembers(p => p.map(m => m.id === id ? { ...m, ...data } : m)); supabase.from("members").update(data).eq("id", id); }}

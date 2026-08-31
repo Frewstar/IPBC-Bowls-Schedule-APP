@@ -182,6 +182,20 @@ function SheetPreviewOverlay({ draw, slots, prelims, roundDates, onClose, onPrin
   );
 }
 
+// What each tier can do, in plain words. The person granting has to be able to
+// tell them apart without knowing what a role string is, so every line says
+// what it grants AND what it withholds — the withholding is the point of
+// having tiers at all.
+export const GRANTABLE_ROLES = [
+  { value: "admin", label: "Admin",
+    blurb: "Everything except handing out admin rights: members and phone numbers, PIN resets, fixtures, draws, What's On." },
+  { value: "draw_admin", label: "Draw Admin",
+    blurb: "Draws only. Cannot see phone numbers, reset PINs or edit members." },
+  { value: "events_admin", label: "Social Convenor",
+    blurb: "Can add and cancel What's On events. Cannot see phone numbers, reset PINs or edit members." },
+];
+export const ROLE_BLURBS = Object.fromEntries(GRANTABLE_ROLES.map(r => [r.value, r.blurb]));
+
 const ADMIN_SECTIONS = ["Members", "Fixtures", "Competitions", "Club", "Access", "Lockouts", "Draw"];
 const DRAW_SECTIONS  = ["Draw"];
 const SECTION_ICONS  = { Members: Users, Fixtures: Calendar, Competitions: Trophy, Club: Shield, Access: Crown, Lockouts: Lock, Draw: Shuffle };
@@ -189,6 +203,9 @@ const SECTION_ICONS  = { Members: Users, Fixtures: Calendar, Competitions: Troph
 export default function AdminPanel({
   // identity
   myName, isSuperAdmin, isDrawAdmin = false,
+  // Capabilities, not a rank. Each section asks the question it needs.
+  canEditMembers = false, canResetPins = false, canGrantAdmin = false,
+  canRunDraws = false, adminRole = null,
   // members
   members, addMember, saveEdit, deleteMember,
   // fixtures
@@ -213,8 +230,22 @@ export default function AdminPanel({
   // claim requests
   claimRequests = [], resolveClaimRequest,
 }) {
-  const sections = isDrawAdmin ? DRAW_SECTIONS : ADMIN_SECTIONS;
-  const [section, setSection] = useState(isDrawAdmin ? "Draw" : "Members");
+  // Draw only the sections this person can actually use. Showing a section and
+  // then refusing inside it teaches people the app is broken; not showing it
+  // tells them what their role is.
+  const sections = ADMIN_SECTIONS.filter(s =>
+      s === "Draw"    ? canRunDraws
+    : s === "Access"  ? canGrantAdmin
+    : s === "Members" ? canEditMembers
+    :                   canEditMembers);   // Fixtures, Competitions, Club, Lockouts
+  const [section, setSection] = useState(sections[0] || "Draw");
+
+  // A role can be revoked or changed under someone with the panel open. If the
+  // section they were on is no longer theirs, move them rather than leaving
+  // them on a screen they can't use.
+  useEffect(() => {
+    if (sections.length && !sections.includes(section)) setSection(sections[0]);
+  }, [sections.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
   const [drawSection, setDrawSection] = useState(activeSection);
 
   return (
@@ -224,7 +255,7 @@ export default function AdminPanel({
         {sections.map(s => {
           const Icon = SECTION_ICONS[s];
           const active = section === s;
-          if (s === "Access" && !isSuperAdmin) return null;
+          if (s === "Access" && !canGrantAdmin) return null;
           return (
             <button key={s} onClick={() => setSection(s)}
               style={{ display: "flex", alignItems: "center", gap: "5px", padding: "7px 13px", borderRadius: "20px", border: `1px solid ${active ? MID : BORDER}`, background: active ? MID : SURFACE, color: active ? "#fff" : TEXT2, fontFamily: F_UI, fontSize: "12px", fontWeight: active ? "700" : "400", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
@@ -236,12 +267,12 @@ export default function AdminPanel({
         })}
       </div>
 
-      {section === "Members"      && <AdminMembers members={members} addMember={addMember} saveEdit={saveEdit} deleteMember={deleteMember} phoneRequests={phoneRequests} approvePhoneRequest={approvePhoneRequest} declinePhoneRequest={declinePhoneRequest} registeredUsers={registeredUsers} lockouts={lockouts} lockAppAccount={lockAppAccount} unlockAppAccount={unlockAppAccount} deleteAppAccount={deleteAppAccount} isSuperAdmin={isSuperAdmin} claimRequests={claimRequests} resolveClaimRequest={resolveClaimRequest} resetMemberPin={resetMemberPin} myName={myName} />}
-      {section === "Fixtures"     && <AdminFixtures fixtures={fixtures} addFixture={addFixture} editFixture={editFixture} deleteFixture={deleteFixture} />}
-      {section === "Competitions" && <AdminCompetitions tournaments={tournaments} onEditCompDates={onEditCompDates} />}
-      {section === "Club"         && <AdminClub rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
-      {section === "Access" && isSuperAdmin && <AdminAccess adminList={adminList} pendingAdminRequests={pendingAdminRequests} approveAdminRequest={approveAdminRequest} revokeAdmin={revokeAdmin} grantAdmin={grantAdmin} members={members} myName={myName} accessMsg={accessMsg} clearAccessMsg={clearAccessMsg} />}
-      {section === "Lockouts"     && <AdminLockouts lockouts={lockouts} clearLockout={clearLockout} />}
+      {section === "Members" && canEditMembers && <AdminMembers members={members} addMember={addMember} saveEdit={saveEdit} deleteMember={deleteMember} phoneRequests={phoneRequests} approvePhoneRequest={approvePhoneRequest} declinePhoneRequest={declinePhoneRequest} registeredUsers={registeredUsers} lockouts={lockouts} lockAppAccount={lockAppAccount} unlockAppAccount={unlockAppAccount} deleteAppAccount={deleteAppAccount} isSuperAdmin={isSuperAdmin} claimRequests={claimRequests} resolveClaimRequest={resolveClaimRequest} resetMemberPin={canResetPins ? resetMemberPin : null} myName={myName} />}
+      {section === "Fixtures" && canEditMembers && <AdminFixtures fixtures={fixtures} addFixture={addFixture} editFixture={editFixture} deleteFixture={deleteFixture} />}
+      {section === "Competitions" && canEditMembers && <AdminCompetitions tournaments={tournaments} onEditCompDates={onEditCompDates} />}
+      {section === "Club" && canEditMembers && <AdminClub rollOfHonour={rollOfHonour} honoraryMembers={honoraryMembers} recordWinner={recordWinner} addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />}
+      {section === "Access" && canGrantAdmin && <AdminAccess adminList={adminList} pendingAdminRequests={pendingAdminRequests} approveAdminRequest={approveAdminRequest} revokeAdmin={revokeAdmin} grantAdmin={grantAdmin} members={members} myName={myName} accessMsg={accessMsg} clearAccessMsg={clearAccessMsg} />}
+      {section === "Lockouts" && canEditMembers && <AdminLockouts lockouts={lockouts} clearLockout={clearLockout} />}
       {section === "Draw" && (
         <div>
           <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
@@ -866,7 +897,7 @@ function AdminClub({ rollOfHonour, honoraryMembers, recordWinner, addHonoraryMem
 // ─────────────────────────────────────────────
 // ACCESS SECTION (super admin only)
 // ─────────────────────────────────────────────
-const ROLE_LABELS = { admin: "Admin", draw_admin: "Draw Admin", super_admin: "Super Admin" };
+const ROLE_LABELS = { admin: "Admin", draw_admin: "Draw Admin", events_admin: "Social Convenor", super_admin: "Super Admin" };
 
 function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRequest, revokeAdmin, grantAdmin, members = [], myName, accessMsg = null, clearAccessMsg }) {
   const [grantSearch, setGrantSearch] = useState("");
@@ -918,7 +949,10 @@ function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRe
           <div key={a.cloud_key} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", marginBottom: "6px" }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{a.display_name || a.player_name}</div>
-              <div style={{ fontFamily: F_UI, fontSize: "11px", color: a.role === "super_admin" ? GOLD_MUTED : a.role === "draw_admin" ? MID : TEXT3 }}>{ROLE_LABELS[a.role] || a.role}</div>
+              <div style={{ fontFamily: F_UI, fontSize: "11px", color: a.role === "super_admin" ? GOLD_MUTED : a.role === "admin" ? TEXT3 : MID }}>{ROLE_LABELS[a.role] || a.role}</div>
+              {ROLE_BLURBS[a.role] && (
+                <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, lineHeight: 1.45, marginTop: "2px" }}>{ROLE_BLURBS[a.role]}</div>
+              )}
               {/* A row with no player_id is not attached to anybody's account,
                   so it grants nothing. Say that, rather than listing them as an
                   admin who then finds they have no admin panel. */}
@@ -958,11 +992,26 @@ function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRe
       <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
         <input value={grantSearch} onChange={e => setGrantSearch(e.target.value)} placeholder="Search member…"
           style={{ flex: 1, padding: "9px 12px", fontSize: "14px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE }} />
-        <select value={grantRole} onChange={e => setGrantRole(e.target.value)}
-          style={{ padding: "9px 10px", fontSize: "13px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, cursor: "pointer" }}>
-          <option value="admin">Admin</option>
-          <option value="draw_admin">Draw Admin</option>
-        </select>
+      </div>
+
+      {/* A picker, not a dropdown you have to already understand. Whoever is
+          granting has to choose a tier deliberately and be told what it means. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" }}>
+        {GRANTABLE_ROLES.map(r => {
+          const on = grantRole === r.value;
+          return (
+            <button key={r.value} onClick={() => setGrantRole(r.value)} aria-pressed={on}
+              style={{ textAlign: "left", background: on ? `${MID}0d` : SURFACE, border: `1px solid ${on ? MID : BORDER}`, borderRadius: "10px", padding: "10px 12px", cursor: "pointer", display: "flex", gap: "10px", alignItems: "flex-start" }}>
+              <span style={{ width: "16px", height: "16px", borderRadius: "50%", border: `2px solid ${on ? MID : BORDER}`, flexShrink: 0, marginTop: "2px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {on && <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: MID }} />}
+              </span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT }}>{r.label}</span>
+                <span style={{ display: "block", fontFamily: F_UI, fontSize: "11px", color: TEXT2, lineHeight: 1.5, marginTop: "2px" }}>{r.blurb}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
       {grantSearch.length >= 2 && filtered.slice(0, 6).map(m => {
         // Someone counts as already an admin only if their row actually grants
