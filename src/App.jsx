@@ -101,6 +101,22 @@ function readGameParam() {
   catch { return null; }
 }
 
+// A shared What's On link. Two shapes, because it can arrive two ways:
+//   /e/<id>        Vercel rewrites this to api/share.js, which answers the
+//                  crawler with the poster and sends a person on to /?event=…
+//   /?event=<id>   where that redirect lands — and also what the service
+//                  worker cannot produce, so the path form is read too: with
+//                  the app installed the worker answers /e/<id> from cache
+//                  and the redirect never runs.
+function readEventParam() {
+  try {
+    const q = new URLSearchParams(window.location.search).get("event");
+    if (q) return q;
+    const m = window.location.pathname.match(/^\/e\/([0-9a-fA-F-]{36})\/?$/);
+    return m ? m[1] : null;
+  } catch { return null; }
+}
+
 export default function BowlsTracker() {
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
 
@@ -120,7 +136,20 @@ export default function BowlsTracker() {
     try { window.history.replaceState({}, "", window.location.pathname); } catch {}
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [activeTab, setActiveTab] = useState(() => (readGameParam() ? "live" : "myties"));
+  // The event link puts the id in the path as well as the query, so this
+  // rewrites to "/" rather than to pathname — otherwise a reload of /e/<id>
+  // would reopen the night every time.
+  useEffect(() => {
+    if (!deepLinkEventId) return;
+    try { window.history.replaceState({}, "", "/"); } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Same one-shot read as the game link above: held in state so taking it out
+  // of the address bar doesn't close the sheet it opened.
+  const [deepLinkEventId, setDeepLinkEventId] = useState(readEventParam);
+
+  const [activeTab, setActiveTab] = useState(() =>
+    readGameParam() ? "live" : readEventParam() ? "whatson" : "myties");
   const [prevTab, setPrevTab] = useState("myties");
   function navigateTo(tab) { setPrevTab(t => activeTab !== tab ? activeTab : t); setActiveTab(tab); }
 
@@ -3866,7 +3895,15 @@ export default function BowlsTracker() {
         {/* ══════════════════════════════════════════
             WHAT'S ON TAB — the band, the karaoke, one-off nights
         ══════════════════════════════════════════ */}
-        {activeTab === "whatson" && <WhatsOnTab myName={myName} isAdmin={canEditEvents} />}
+        {activeTab === "whatson" && (
+          <WhatsOnTab
+            myName={myName}
+            myPin={myPin}
+            isAdmin={canEditEvents}
+            openEventId={deepLinkEventId}
+            onOpenedEvent={() => setDeepLinkEventId(null)}
+          />
+        )}
 
         {/* ══════════════════════════════════════════
             ADMIN TAB

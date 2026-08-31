@@ -17,9 +17,10 @@ These are the migrations written alongside the app code. **The earlier schema wo
 | 4 | `20260830_admin_reset_pin.sql` | Admin PIN reset | Applied — and the live function is AHEAD of this file; see the warning in section 4 before re-running it |
 | 5 | `20260830_live_games_ends.sql` | Games played over set ends | Applied — the columns and the check constraint are on `live_games` |
 | 6 | `20260830_club_events.sql` | What's On — club social events | Applied — table, columns, duplicate guard and policies all confirmed against the database |
-| 7 | `20260831_club_events_end_time.sql` | The time an event finishes | **Not yet applied** — written today |
+| 7 | `20260831_club_events_end_time.sql` | The time an event finishes | Applied — `club_events.end_time` is on the live table (applied through the SQL editor, so it has no row in `supabase_migrations`) |
 | 8 | `20260831_grant_admin.sql` | Granting **and approving** admin actually work; `admins_player_id_uniq`; `admin_requests` stops carrying a PIN | Applied — verified live: five functions, the oracle closed to `anon`, `admin_requests` reshaped, both indexes, demotion guard refusing |
-| 9 | `20260901_admin_role_layers.sql` | Admin role layers — `bowls_admin_role`, a CHECK on `admins.role`, `events_admin` | **Not yet applied** — written today |
+| 9 | `20260901_admin_role_layers.sql` | Admin role layers — `bowls_admin_role`, a CHECK on `admins.role`, `events_admin` | Applied 31 Aug, 17:04 UTC as `admin_role_layers` — verified live: the four roles in the CHECK, `anon` can execute `bowls_admin_role` and still cannot execute `bowls_is_super_admin`, lockout counting increments and clears |
+| 10 | `20260902_event_posters.sql` | Posters on What's On — `club_events.poster_path`, the `event-posters` bucket, ticketed writes, the Open Graph share link | Applied 31 Aug, 20:20 UTC as `event_posters` — verified live: the column, the bucket with its limits, an upload round-trip, and an upload without a ticket refused |
 
 Status is my best understanding from our sessions — worth confirming against the database rather than taking on trust.
 
@@ -1769,6 +1770,526 @@ end $$;
 ```
 
 ---
+
+## 10. Posters on What's On
+
+**Status:** Applied 31 August, 20:20 UTC as `event_posters`, with part 8 following
+at 20:56 as `event_posters_revoke_ticket_grants` — bucket and column both, before
+the client shipped
+
+Christine has the promoter's JPEG; it is what she puts on Facebook. This puts it
+on the event, on the card in the diary, and — the part that actually does her
+job — on the Open Graph image of the shared link.
+
+### Where the bytes go, and why not in the row
+
+`player_data.profile.avatar` stores base64 `data:` URLs in the jsonb row. Twelve
+members have one, 10–17KB each, and at 60px that is fine.
+
+It is the wrong pattern here and would not have been a small mistake. A readable
+poster is 300KB–1MB, and base64 adds about a third again. On `club_events` the
+row is read by every member on every What's On load, so a season with a dozen
+posters would be several megabytes down the wire to open the diary — whether or
+not anyone taps a poster. So: **Supabase Storage for the image, and the table
+stores the path.**
+
+`club_events.poster_path` holds `<event id>/<uuid>.jpg` — the object path, never
+a full URL. The project URL and the CDN in front of it can both change; the path
+cannot.
+
+### Storage policies are not table policies
+
+Every table in this app carries `ALL / public / using(true)` and the publishable
+key ships inside the JavaScript bundle. On a table that is a data-integrity
+problem — the worst case is someone rewriting the club's own rows, which are
+backed up.
+
+On a bucket it is a different problem. An open insert policy means anyone who
+opens devtools can upload arbitrary files to the club's storage, on the club's
+bill, served from the club's domain. That is file hosting for strangers, and
+cleaning it up starts with finding out what they put there.
+
+There is no Supabase Auth here — every visitor is `anon`, so "restrict writes to
+`authenticated`" restricts them to nobody. What gates the rest of the app is a
+name and a PIN checked in a SECURITY DEFINER function, and that is what gates
+this, in the only shape a storage policy allows:
+
+1. The client calls `bowls_poster_ticket(name, pin, event_id)`. That verifies the
+   PIN through `bowls_admin_role` — the same capability check, and the same
+   `login_lockouts` throttle, as adding an event.
+2. It returns **one exact object path** and records a ticket for it, valid five
+   minutes.
+3. The bucket's insert policy allows a write only to a path that has a live
+   ticket. Exact match, not a prefix.
+
+`poster_tickets` has RLS on and **no policies at all**, so a ticket cannot be
+found by looking — only issued. Checked rather than assumed: `set role anon;
+select count(*) from poster_tickets` returns **0** with live tickets in the table.
+
+Supabase grants `anon` table privileges across the `public` schema by default, so
+it held SELECT on this table even though RLS reduced that to nothing. Part 8 of
+the migration revokes it — not because the tickets were exposed, but because that
+grant is what would come back to life the day somebody adds a permissive policy
+or turns RLS off while debugging something else, and revoking it also keeps the
+table off the PostgREST surface rather than exposing an endpoint that answers
+with an empty list.
+
+The policies reach the table through `bowls_poster_ticket_ok()`, which is
+SECURITY DEFINER, and has to be: a policy expression runs as the caller, so a
+policy naming `poster_tickets` directly would be subject to that table's own RLS
+and would see zero rows — every upload would be refused, including the legitimate
+ones.
+
+| Operation | Who |
+|---|---|
+| SELECT | public, and intended — the crawler carries no credentials |
+| INSERT | only a path with a live `upload` ticket |
+| UPDATE | **no policy at all** — a poster is replaced by a new object, never overwritten |
+| DELETE | only a path with a live `delete` ticket |
+
+The bucket also carries `file_size_limit` 2MB and `allowed_mime_types`
+`image/jpeg, image/png, image/webp`. Those are enforced by the storage service on
+every request whatever the client believes — verified: a `text/plain` body to a
+correctly ticketed path is refused with `415 InvalidMimeType`.
+
+### What that is, and what it is not
+
+**Locked: the bytes.** Writing an object requires a name and PIN resolving to
+`events_admin` or above. The publishable key alone buys read access and nothing
+else. That is a real server-side lock, not a check in the client — verified
+against production, with the key from the bundle:
+
+    upload to a ticketed path      200
+    upload to an unticketed path   403  new row violates row-level security policy
+    delete without a ticket        403  Access denied
+    public read, no credentials    200  byte-identical to what went up
+
+**Not locked, and worth saying plainly:**
+
+* `club_events` is still `ALL/public/using(true)`, `poster_path` included. Anyone
+  with the key can point an event at a different poster, clear it, or delete the
+  event. **The image is gated; the pointer to it is not.** That is 002b's job,
+  along with every other table, and is deliberately untouched here.
+* A ticket lasts five minutes and is not single-use, so within that window its
+  holder could write that one path more than once. Bounded to one path, one
+  bucket, and the limits above.
+* Public read means public for as long as the object exists. Which is why
+  removing a poster **deletes the object** rather than clearing the column.
+* The CDN keeps serving a deleted object to anyone holding its exact URL until
+  its cache entry expires. Uploads set `cacheControl: 300`, so that window is
+  five minutes rather than the default hour — measured, not assumed:
+  `cache-control: public, max-age=300` comes back on the object. Once Facebook
+  has scraped an image it keeps its own copy indefinitely; that is outside
+  anything this app controls.
+* Any admin can upload anything the MIME limits allow. This grants the social
+  convenor a real capability; it does not police it.
+
+### Thumbnails: the add-on is off
+
+The plan was Supabase image transformations on read — one stored file, resized
+per use. **It is a paid add-on and it is off on this project.** Checked rather
+than assumed:
+
+    GET /storage/v1/render/image/public/event-posters/<path>?width=128
+    403 {"error":"FeatureNotEnabled","message":"feature not enabled for this tenant"}
+
+So the 64px thumbnail is the full object scaled by the browser. That is tolerable
+only because the upload path caps a poster at 1400px and under 300KB before it
+leaves the phone, most nights have no poster at all, and the same bytes are what
+the detail view needs one tap later — the thumbnail is a prefetch, not waste.
+
+`IMAGE_TRANSFORMS` in `src/lib/poster.js` is the single switch. Enable the add-on
+on the Supabase dashboard, flip it to `true`, and thumbnails become ~4KB with no
+other change. Every `<img>` already falls back to the full object if a render URL
+fails, so being wrong in either direction shows a poster rather than a broken
+image.
+
+### The resize happens on the phone
+
+A camera shot of a poster on the clubhouse wall is 4MB and 4032px. Uploading that
+raw would exceed the bucket limit, cost the uploader their data allowance, and
+hand every member a 4MB download.
+
+`shrinkForUpload` draws it to a canvas at a 1400px long edge and steps the JPEG
+quality down 0.8 → 0.5 until it is under 300KB, dropping the dimensions only if
+quality alone does not get there — a poster gone soft is still readable, one gone
+small is not. Measured in the browser: a 2400×3200 noise image of 7.6MB comes out
+at 256KB.
+
+Two things it does on the way that are worth knowing:
+
+* `createImageBitmap(file, { imageOrientation: "from-image" })` applies the EXIF
+  rotation. Without it a poster photographed in portrait arrives on its side,
+  which is the single most likely way this feature looks broken.
+* It always re-encodes, even a small file. The result is then known to be JPEG,
+  known to be inside the bucket's MIME list, and **stripped of the EXIF the
+  camera attached** — which on a phone photo includes where it was taken.
+
+### The share link
+
+`/e/<event id>` is rewritten to `api/share.js`, a serverless function that
+answers with real Open Graph tags: the poster as `og:image`, the night as the
+title, the date and time as the description, and `CANCELLED — ` on the front of
+the title when it is off. A person following the same link is redirected on into
+the app, landing on that night.
+
+This needs a server because the app is a single-page bundle: every URL returns
+the same `index.html`, and Facebook's crawler runs no JavaScript, so a plain link
+to the app shows the club badge and the club's name whatever you linked to.
+
+Three routes, all of which have to work:
+
+| Who follows the link | What answers | How the event is found |
+|---|---|---|
+| Facebook's crawler | Vercel → `api/share.js` | the OG tags; it stops there |
+| Someone without the app installed | Vercel → `api/share.js` → redirect | `/?event=<id>` |
+| Someone with the PWA installed | the service worker, from cache | the id read off the `/e/<id>` path |
+
+That third row is why `/e/` is **not** in `navigateFallbackDenylist` — an
+installed member should be able to follow a share link with no signal — and why
+`readEventParam` in `App.jsx` reads both the query and the path. `/api/` **is** in
+the denylist, otherwise the installed shell would answer the crawler's route from
+cache and the tags would never be reached.
+
+An event with no poster falls back to `icon-512.png`, so the card still reads as
+the club rather than as nothing. Everything taken from the row is HTML-escaped;
+if Supabase is slow or down the function still returns a card rather than an
+error page.
+
+**Vercel only.** `api/share.js` is a Vercel function and the rewrite is in
+`vercel.json`. The Netlify mirror still builds and serves the app, but `/e/<id>`
+there falls through to the SPA — the app opens on the right night, and the
+Facebook card is the generic one. Production is Vercel, so this is a preview-mirror
+gap rather than a member-facing one; it is the second thing the Netlify deploy has
+now missed, and retiring it would remove a whole class of "which one am I looking
+at".
+
+### Post-checks
+
+Run against production after applying, with the publishable key from the bundle —
+not the service key, because the point is what a member's browser can do:
+
+    -- the column
+    select column_name from information_schema.columns
+     where table_schema = 'public' and table_name = 'club_events' and column_name = 'poster_path';
+
+    -- the bucket and its limits
+    select id, public, file_size_limit, allowed_mime_types from storage.buckets where id = 'event-posters';
+
+    -- the policies: select open, insert and delete ticketed, no update policy at all
+    select cmd, policyname from pg_policies
+     where schemaname = 'storage' and tablename = 'objects' order by cmd;
+
+    -- anon can call what the policies call, and still cannot read the tickets
+    select has_function_privilege('anon', 'public.bowls_poster_ticket_ok(text, text)', 'execute') as want_true,
+           has_table_privilege('anon', 'public.poster_tickets', 'select')                          as want_false;
+
+And the round trip, which is the only one that proves the whole path:
+
+    K=<the publishable key from src/lib/supabase.js>
+    B=https://pjszrcaikpxdasknwyjb.supabase.co/storage/v1
+    # with a ticket issued by bowls_poster_ticket → 200
+    curl -X POST "$B/object/event-posters/$TICKETED_PATH" -H "apikey: $K" -H "Authorization: Bearer $K" \
+         -H "Content-Type: image/jpeg" --data-binary @poster.jpg
+    # to any other path → 403 new row violates row-level security policy
+    curl -X POST "$B/object/event-posters/anything-else.jpg" -H "apikey: $K" -H "Authorization: Bearer $K" \
+         -H "Content-Type: image/jpeg" --data-binary @poster.jpg
+    # and the bucket serves it to nobody in particular
+    curl "$B/object/public/event-posters/$TICKETED_PATH" | md5sum
+
+### The SQL
+
+```sql
+-- ════════════════════════════════════════════════════════════════════════
+--  EVENT POSTERS
+--  Run this once in the Supabase SQL editor (after 20260901_admin_role_layers.sql).
+--
+--  Christine has the promoter's JPEG — it's what she puts on Facebook. This
+--  puts it on the event, and on the Open Graph card of the shared link, which
+--  is the part that actually does her job for her.
+--
+--  WHAT THIS ADDS
+--    club_events.poster_path   the object path, not a URL. URLs change.
+--    bucket 'event-posters'    public read, size- and type-limited
+--    poster_tickets            short-lived permission to write ONE object
+--    bowls_poster_ticket()     mints one, PIN-gated, events_admin and up
+--    bowls_poster_remove_ticket()  the same for deleting one
+--    bowls_poster_ticket_ok()  what the storage policies call
+--
+--  NOT base64 in the row. player_data.profile stores avatars that way and at
+--  60px it is fine; a readable poster is 300KB-1MB and base64 adds a third
+--  again. On club_events that would mean all 214 members downloading every
+--  poster on every What's On load, whether or not they open one.
+-- ════════════════════════════════════════════════════════════════════════
+
+-- ── 1. The pointer ────────────────────────────────────────────────────────
+alter table public.club_events add column if not exists poster_path text;
+
+comment on column public.club_events.poster_path is
+  'Object path in the event-posters bucket, e.g. <event_id>/<uuid>.jpg. Never a full URL: the project URL and the CDN in front of it can both change, the path cannot. Null for the great majority of events.';
+
+
+-- ── 2. The bucket ─────────────────────────────────────────────────────────
+-- public = true so the object URL serves without a token, which is what makes
+-- the Open Graph image work: Facebook's crawler carries no credentials.
+--
+-- file_size_limit and allowed_mime_types are enforced by the storage service
+-- itself, on every request, whatever the client believes. The client resizes
+-- to under 300KB before upload; this is the backstop for when it doesn't.
+-- 2MB rather than 300KB so a legitimate poster from a browser that resizes
+-- less aggressively still lands, while a 4MB camera original still cannot.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('event-posters', 'event-posters', true, 2097152,
+        array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update
+  set public            = excluded.public,
+      file_size_limit   = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+
+-- ── 3. Why this is not "using (true)" ─────────────────────────────────────
+-- Every table policy in this app is ALL/public/using(true), and the
+-- publishable key is in the JavaScript bundle. On a table that is a
+-- data-integrity problem: the worst case is someone rewriting the club's own
+-- rows, which are backed up and can be put back.
+--
+-- On a storage bucket it is a different kind of problem. An open insert
+-- policy means anyone on the internet who opens devtools can upload arbitrary
+-- files to the club's storage, on the club's bill, served from the club's
+-- domain. That is free file hosting for strangers, and taking it down again
+-- means finding out what they put there first.
+--
+-- There is no Supabase Auth in this app — every visitor is the anon role, so
+-- "restrict writes to authenticated" restricts them to nobody. What gates the
+-- rest of the app is a name and a PIN checked in a SECURITY DEFINER function
+-- against player_data.pin_hash. This does the same, in the only shape storage
+-- policies allow:
+--
+--   1. The client asks bowls_poster_ticket(name, pin, event) for permission.
+--      That verifies the PIN and the role, exactly as adding an event does.
+--   2. It returns ONE exact object path and records a ticket for it, good for
+--      five minutes.
+--   3. The storage insert policy allows a write only to a path that has a
+--      live ticket. No ticket, no upload — the key alone buys nothing.
+--
+-- The ticket table is not readable by anon (RLS on, no policies), so a ticket
+-- cannot be found by looking; it has to be issued. The policies reach it
+-- through a SECURITY DEFINER function for that reason — a policy expression
+-- runs with the caller's privileges, so referring to the table directly would
+-- have required granting anon SELECT on it, which is the whole secret.
+create table if not exists public.poster_tickets (
+  id          uuid primary key default gen_random_uuid(),
+  event_id    uuid,
+  object_path text not null,
+  purpose     text not null check (purpose in ('upload', 'delete')),
+  created_by  text,
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null
+);
+
+alter table public.poster_tickets enable row level security;
+-- Deliberately no policies: anon and authenticated get nothing. Only the
+-- SECURITY DEFINER functions below touch this table.
+
+create index if not exists poster_tickets_path_idx on public.poster_tickets (object_path);
+
+
+-- ── 4. What the storage policies call ─────────────────────────────────────
+-- Exact path match, not a prefix: a ticket authorises one object and only the
+-- one it was issued for.
+create or replace function public.bowls_poster_ticket_ok(p_path text, p_purpose text)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.poster_tickets t
+     where t.object_path = p_path
+       and t.purpose     = p_purpose
+       and t.expires_at  > now()
+  );
+$$;
+
+-- Must stay executable by anon: the storage policies are evaluated as anon on
+-- every upload and delete. Same reasoning as bowls_admin_role in 20260901 —
+-- it is reachable with the publishable key but tells an attacker nothing they
+-- did not already supply, and it is the thing that makes the lock work.
+do $$
+declare r text;
+begin
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('grant execute on function public.bowls_poster_ticket_ok(text, text) to %I', r);
+    end if;
+  end loop;
+end $$;
+
+
+-- ── 5. The policies themselves ────────────────────────────────────────────
+drop policy if exists "event posters are public to read"  on storage.objects;
+drop policy if exists "event poster writes need a ticket" on storage.objects;
+drop policy if exists "event poster deletes need a ticket" on storage.objects;
+
+-- SELECT: public, and intended. The bucket is public so the object URL works
+-- for Facebook's crawler and for anyone the link is pasted to.
+create policy "event posters are public to read"
+  on storage.objects for select
+  using (bucket_id = 'event-posters');
+
+-- INSERT: only to a path with a live ticket.
+create policy "event poster writes need a ticket"
+  on storage.objects for insert
+  with check (bucket_id = 'event-posters'
+              and public.bowls_poster_ticket_ok(name, 'upload'));
+
+-- DELETE: only a path with a live delete ticket.
+create policy "event poster deletes need a ticket"
+  on storage.objects for delete
+  using (bucket_id = 'event-posters'
+         and public.bowls_poster_ticket_ok(name, 'delete'));
+
+-- UPDATE: no policy, so no overwrite. Replacing a poster uploads a new object
+-- under a fresh name and deletes the old one, which also sidesteps the CDN
+-- serving the previous image from cache under a reused path.
+
+
+-- ── 6. Minting a ticket ───────────────────────────────────────────────────
+-- Same capability as adding an event: events_admin, admin, super_admin. The
+-- role comes from bowls_admin_role, which verifies the PIN against
+-- player_data.pin_hash and counts failures into login_lockouts, so this
+-- inherits the throttle rather than opening a second unthrottled door.
+create or replace function public.bowls_poster_ticket(
+  p_name     text,
+  p_pin      text,
+  p_event_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_role text;
+  v_path text;
+begin
+  v_role := public.bowls_admin_role(p_name, p_pin);
+
+  if coalesce(v_role, '') not in ('events_admin', 'admin', 'super_admin') then
+    return jsonb_build_object(
+      'status',  'not_allowed',
+      'message', 'Only an admin or the social convenor can add a poster.');
+  end if;
+
+  if not exists (select 1 from public.club_events where id = p_event_id) then
+    return jsonb_build_object(
+      'status',  'no_event',
+      'message', 'That night is not in the diary any more.');
+  end if;
+
+  delete from public.poster_tickets where expires_at < now() - interval '1 day';
+
+  -- A fresh filename every time. Two uploads for the same event never collide,
+  -- and a replaced poster is never served stale from the CDN under a path that
+  -- now means something else.
+  v_path := p_event_id::text || '/' || gen_random_uuid()::text || '.jpg';
+
+  insert into public.poster_tickets (event_id, object_path, purpose, created_by, expires_at)
+  values (p_event_id, v_path, 'upload', upper(coalesce(p_name, '')), now() + interval '5 minutes');
+
+  return jsonb_build_object('status', 'ok', 'path', v_path);
+end $$;
+
+
+-- ── 7. And for taking one down ────────────────────────────────────────────
+-- Removing has to really remove. Christine will pick the wrong file at some
+-- point, and "remove" that only clears poster_path would leave the wrong image
+-- sitting on a public URL for as long as the bucket exists.
+create or replace function public.bowls_poster_remove_ticket(
+  p_name        text,
+  p_pin         text,
+  p_object_path text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_role text;
+  v_head text;
+begin
+  v_role := public.bowls_admin_role(p_name, p_pin);
+
+  if coalesce(v_role, '') not in ('events_admin', 'admin', 'super_admin') then
+    return jsonb_build_object(
+      'status',  'not_allowed',
+      'message', 'Only an admin or the social convenor can remove a poster.');
+  end if;
+
+  -- The path must be shaped like one this app issued: <event id>/<file>. Not a
+  -- security boundary on its own — only an admin gets this far — but it keeps a
+  -- malformed path from minting a ticket for something unrelated.
+  v_head := split_part(coalesce(p_object_path, ''), '/', 1);
+  if v_head = '' or v_head !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    return jsonb_build_object('status', 'bad_path', 'message', 'That is not a poster this app uploaded.');
+  end if;
+
+  delete from public.poster_tickets where expires_at < now() - interval '1 day';
+
+  insert into public.poster_tickets (event_id, object_path, purpose, created_by, expires_at)
+  values (v_head::uuid, p_object_path, 'delete', upper(coalesce(p_name, '')), now() + interval '5 minutes');
+
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+
+-- ── 8. And take the default grants off the ticket table ───────────────────
+-- Supabase grants anon and authenticated table privileges across the public
+-- schema by default, so anon holds SELECT on poster_tickets even though nothing
+-- should ever read it directly. RLS with no policies already reduces that to
+-- zero rows — checked, not assumed: `set role anon; select count(*)` returns 0
+-- with live tickets in the table. So this is not what makes the tickets secret.
+--
+-- It is worth doing anyway. The grant is the thing that would come back to life
+-- the day somebody adds a permissive policy or turns RLS off while debugging
+-- something else, and it also keeps the table off the PostgREST surface
+-- entirely rather than exposing an endpoint that answers with an empty list.
+-- The SECURITY DEFINER functions above run as the owner and are unaffected.
+do $$
+declare r text;
+begin
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke all on public.poster_tickets from %I', r);
+    end if;
+  end loop;
+end $$;
+
+-- ── What this is and is not ───────────────────────────────────────────────
+-- LOCKED: the bytes. Writing an object into this bucket requires a name and a
+-- PIN that resolve to events_admin or above. The publishable key on its own
+-- buys read access and nothing else. That is a real server-side lock, not a
+-- check in the client.
+--
+-- NOT LOCKED, and worth being plain about:
+--
+--   * club_events itself is still ALL/public/using(true), poster_path
+--     included. Anyone with the key from the bundle can point an event at a
+--     different poster, or clear it, or delete the event. The image is gated;
+--     the pointer to it is not. That is 002b's job, along with every other
+--     table, and is deliberately not changed here.
+--   * A ticket is good for five minutes and is not single-use, so within that
+--     window the admin who minted it could write that one path more than once.
+--     Bounded to one path, one bucket, and the size and MIME limits above.
+--   * Public read means public forever, for as long as the object exists. A
+--     poster uploaded by mistake is readable by anyone holding the URL until
+--     it is removed — which is why removing really deletes rather than just
+--     clearing the column.
+--   * Anyone who is an admin can upload anything the MIME limits allow. This
+--     grants the social convenor a real capability; it does not police it.
+```
 
 ## Verifying what has actually run
 
