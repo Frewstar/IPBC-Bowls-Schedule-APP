@@ -25,6 +25,12 @@ const check = async (name, fn) => {
   catch (e) { fail.push(name); console.log("  ❌", name, "\n     ", e.message.split("\n")[0]); }
 };
 
+// Start from the seed every time. These specs mutate the world — one severs
+// the stream, another deletes the game — so without this, whichever runs
+// second fails for reasons that have nothing to do with the code under test.
+// Test order must not decide whether a test passes.
+await api("/control/reset");
+
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
 
 // ── 1. two contexts, one game: the score moves with no refresh ────────────
