@@ -1,13 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Radio, Plus, Minus, ChevronLeft, MapPin, X,
-  Share2, Trash2, Flag, CircleCheckBig, Users, Clock,
+  Share2, Trash2, Flag, CircleCheckBig, Users, Clock, WifiOff,
 } from "lucide-react";
 import {
   GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER,
   TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, F_SANS, F_UI,
 } from "../../lib/theme.js";
 import { supabase } from "../../lib/supabase.js";
+import { useLiveGames } from "../../lib/useLiveGames.js";
+import { canScore } from "../../lib/liveGamesSync.js";
 
 const LIVE_RED = "#c0392b";
 const HOME_GROUND = "Irvine Park Bowling Club";
@@ -113,9 +115,8 @@ function byUpdatedDesc(a, b) {
   return new Date(b.updated_at) - new Date(a.updated_at);
 }
 
-export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, members = [], deepLinkGameId = null, onDeepLinkHandled }) {
-  const [games, setGames] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function LiveGamesTab({ myName, cloudKey, myMemberId = null, isAdmin, setActiveTab, members = [], deepLinkGameId = null, onDeepLinkHandled }) {
+  const { games, setGames, loading, connection, lastSync } = useLiveGames();
   const [view, setView] = useState("list");   // "list" | "detail" | "create"
   const [openId, setOpenId] = useState(null);
   const [toast, setToast] = useState(null);
@@ -123,28 +124,6 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
   const [, forceTick] = useState(0);
 
   const canCreate = !!(myName && cloudKey);
-
-  useEffect(() => {
-    let alive = true;
-    supabase.from("live_games").select("*").order("updated_at", { ascending: false })
-      .then(({ data }) => { if (alive && data) setGames(data); if (alive) setLoading(false); });
-
-    const channel = supabase
-      .channel("live_games_stream")
-      .on("postgres_changes", { event: "*", schema: "public", table: "live_games" }, payload => {
-        setGames(prev => {
-          if (payload.eventType === "DELETE") return prev.filter(g => g.id !== payload.old.id);
-          const row = payload.new;
-          const without = prev.filter(g => g.id !== row.id);
-          // Base order only — each section below sorts itself, so upcoming
-          // games are never ordered by when they were last edited.
-          return [row, ...without].sort(byUpdatedDesc);
-        });
-      })
-      .subscribe();
-
-    return () => { alive = false; supabase.removeChannel(channel); };
-  }, []);
 
   useEffect(() => {
     const t = setInterval(() => forceTick(n => n + 1), 30000);
@@ -167,6 +146,20 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     onDeepLinkHandled?.();
   }, [deepLinkGameId, loading, games]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A game can be removed while someone is watching it — one was, the night
+  // this was written. Realtime delivers the DELETE, the row leaves `games`,
+  // and without this the detail view would simply fall through to the list
+  // with no explanation. Deliberately NOT tied to `deleting` state: this
+  // fires for the watcher, not for whoever pressed the button.
+  const deletedWatched = view === "detail" && openId && !loading
+    && !games.some(g => g.id === openId);
+  useEffect(() => {
+    if (!deletedWatched) return;
+    setView("list");
+    setOpenId(null);
+    showToast("That game was deleted");
+  }, [deletedWatched]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Soonest first — a fixture list, not an activity feed.
   const scheduledGames = useMemo(
     () => games.filter(g => g.status === "scheduled").sort(byStartsAt), [games]);
@@ -177,7 +170,7 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
   const openGame = openId ? games.find(g => g.id === openId) : null;
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 2200); }
-  function canEdit(g) { return !!cloudKey && g && (g.creator_cloudkey === cloudKey || isAdmin); }
+  function canEdit(g) { return canScore(g, { memberId: myMemberId, cloudKey, isAdmin }); }
 
   async function patchGame(id, patch) {
     const full = { ...patch, updated_at: new Date().toISOString(), last_updated_by: myName || "Someone" };
@@ -260,7 +253,7 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
     return (
       <>
         <CreateGame
-          myName={myName} cloudKey={cloudKey} members={members}
+          myName={myName} cloudKey={cloudKey} myMemberId={myMemberId} members={members}
           onCancel={() => setView("list")}
           onCreated={id => { setOpenId(id); setView("detail"); }}
           showToast={showToast}
@@ -335,8 +328,15 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
 
         {!editable && g.status === "live" && (
           <div style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 14px", marginBottom: "14px", fontFamily: F_UI, fontSize: "12px", color: TEXT2, display: "flex", alignItems: "center", gap: "8px" }}>
-            <Radio size={14} strokeWidth={1.75} color={GOLD_MUTED} />
-            Following live — updates automatically. Only {g.creator_name || "the organiser"} & admins can edit.
+            {connection === "live"
+              ? <><Radio size={14} strokeWidth={1.75} color={GOLD_MUTED} style={{ flexShrink: 0 }} />
+                  Following live — updates automatically. Only {g.creator_name || "the organiser"} &amp; admins can edit.</>
+              : <><WifiOff size={14} strokeWidth={1.75} color={TEXT3} style={{ flexShrink: 0 }} />
+                  {/* Never claim live when we are not. If the socket is down the
+                      score still moves, just every 30 seconds instead of at once,
+                      and the reader is told which one they are getting. */}
+                  {connection === "connecting" ? "Connecting…" : "Not live — checking every 30 seconds."}
+                  {lastSync ? ` Last checked ${timeAgo(new Date(lastSync).toISOString())}.` : ""}</>}
           </div>
         )}
 
@@ -488,6 +488,19 @@ export default function LiveGamesTab({ myName, cloudKey, isAdmin, setActiveTab, 
           {liveGames.length > 0 && (
             <>
               {scheduledGames.length > 0 && <div style={{ ...sectionLabel, marginTop: "22px" }}>On now</div>}
+              {/* Only when there is something live to be wrong about. A stale
+                  fixture list or an old result costs nobody anything; a score
+                  that has stopped moving while the badge says LIVE is the whole
+                  bug. Each card already carries its own "N min ago" underneath
+                  this, which is the fallback the reader falls back TO. */}
+              {connection !== "live" && (
+                <div style={{ display: "flex", alignItems: "center", gap: "7px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "9px", padding: "8px 11px", marginBottom: "9px", fontFamily: F_UI, fontSize: "11px", color: TEXT3, lineHeight: 1.45 }}>
+                  <WifiOff size={13} strokeWidth={1.75} color={TEXT3} style={{ flexShrink: 0 }} />
+                  {connection === "connecting"
+                    ? "Connecting to live updates…"
+                    : "Live updates are off — checking every 30 seconds. Times below show how old each score is."}
+                </div>
+              )}
               {liveGames.map(g => <GameCard key={g.id} g={g} onOpen={() => { setOpenId(g.id); setView("detail"); }} />)}
             </>
           )}
@@ -656,7 +669,7 @@ function MemberPicker({ members, selected, onChange, max, placeholder }) {
 }
 
 // ── Create game form ────────────────────────────────────────────────────────
-function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast, pushGame }) {
+function CreateGame({ myName, cloudKey, myMemberId = null, members, onCancel, onCreated, showToast, pushGame }) {
   const [title, setTitle] = useState("");
   const [discipline, setDiscipline] = useState("team");
   const [homeTeam, setHomeTeam] = useState("IPBC");
@@ -746,7 +759,17 @@ function CreateGame({ myName, cloudKey, members, onCancel, onCreated, showToast,
       away_players: away,
       ends_total: byEnds ? numEnds : null,
       ends_played: 0,
-      creator_cloudkey: cloudKey,
+      creator_member_id: myMemberId || null,
+      // The credential is written ONLY when there is no member id to write
+      // instead — i.e. when the signer-in has not linked their roster entry.
+      // 67 of 216 members are linked, so this is not a rare path, and the
+      // alternative is a game its own marker cannot score. It is the same
+      // trade the permission check makes, and it is why creator_cloudkey
+      // cannot be dropped yet. A signed-in account always has a
+      // player_data.id even when it has no members row — keying on that
+      // instead would close this last gap, and is worth deciding before the
+      // column is dropped.
+      creator_cloudkey: myMemberId ? null : cloudKey,
       creator_name: myName,
       last_updated_by: myName,
     };
