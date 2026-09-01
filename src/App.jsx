@@ -708,13 +708,40 @@ export default function BowlsTracker() {
   }
 
   // ── Roll of Honour mutations ──
+  // This used to build the new array here and PATCH the table. roll_of_honour
+  // is SELECT-only to the app's key — deliberately, because 285 entries going
+  // back to 1958 were one careless request away from anybody holding the
+  // bundle — so that write had been failing with "permission denied" and the
+  // button had been reporting nothing at all.
+  //
+  // bowls_admin_record_winner is the way in. It re-checks the role on the
+  // server against the PIN typed at sign-in rather than the isAdmin flag in
+  // this component, derives the club from the account, and owns the {year,
+  // winner} shape. Returns the RPC's status object for the caller to report.
   async function recordWinner(compId, year, winner) {
-    const comp = rollOfHonour.find(c => c.id === compId);
-    if (!comp) return;
-    const existing = comp.winners.filter(w => w.year !== year);
-    const updated = [{ year, winner }, ...existing].sort((a, b) => b.year - a.year);
-    setRollOfHonour(prev => prev.map(c => c.id === compId ? { ...c, winners: updated } : c));
-    await supabase.from("roll_of_honour").update({ winners: updated }).eq("id", compId);
+    const { data, error } = await supabase.rpc("bowls_admin_record_winner", {
+      p_name:        (myName || "").toUpperCase(),
+      p_pin:         myPin || "",
+      p_category_id: compId,
+      p_year:        Number(year),
+      p_winner:      winner,
+    });
+    if (error) return { status: "error", message: `Couldn't save: ${error.message}` };
+    if (!data)  return { status: "error", message: "Couldn't save — no response from the server." };
+
+    // Read the status, not the absence of an error. A refusal comes back as a
+    // perfectly successful request carrying status:"not_allowed" — treating
+    // that as a save is exactly how a button comes to congratulate someone for
+    // a write that never happened.
+    if (data.status !== "ok") return data;
+
+    // Re-read rather than patch from here, so the board shows what the server
+    // holds — including the order it chose to store the years in.
+    const { data: row } = await supabase.from("roll_of_honour").select("winners").eq("id", compId).single();
+    if (Array.isArray(row?.winners)) {
+      setRollOfHonour(prev => prev.map(c => c.id === compId ? { ...c, winners: row.winners } : c));
+    }
+    return data;
   }
 
   // ── Honorary Members mutations ──
@@ -1283,6 +1310,7 @@ export default function BowlsTracker() {
 
   const [activeDrawEntry, setActiveDrawEntry] = useState(null);
   const [rohPrompt, setRohPrompt]             = useState(null);
+  const [rohPromptMsg, setRohPromptMsg]       = useState(null);
 
   // ── Sign-in flow ──
   const [pinConfirm, setPinConfirm]   = useState("");
@@ -4254,43 +4282,66 @@ export default function BowlsTracker() {
         />
       )}
 
-      {/* Roll of Honour confirm after Final win */}
+      {/* After a Final win in a member's own draw entry.
+          This used to PATCH roll_of_honour straight from here, on the word of
+          whoever ticked the box — the club's permanent record, 1958 onwards,
+          written by a self-reported result with nobody confirming it. It wrote
+          {year, name} where the whole board reads w.winner, so the line would
+          have rendered blank; and it announced "added to the Roll of Honour!"
+          unconditionally, so once the table went SELECT-only it congratulated
+          people for a write that had just been refused.
+          Now: an admin gets the button, and it goes through the RPC and
+          reports what came back. Anyone else gets the congratulation and the
+          truth about who puts names up.
+          The {year, name} half was fixed in place first, on the branch that
+          added the year picker. Deleting the write does not undo that fix —
+          it settles it, because the shape is now built by
+          jsonb_build_object inside bowls_admin_record_winner and no client
+          path can choose the key at all. */}
       {rohPrompt && (
-        <BottomSheet open={!!rohPrompt} onClose={() => setRohPrompt(null)} title="Add to Roll of Honour?">
+        <BottomSheet open={!!rohPrompt} onClose={() => { setRohPrompt(null); setRohPromptMsg(null); }}
+          title={isAdmin ? "Add to Roll of Honour?" : "Final won"}>
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div style={{ textAlign: "center", padding: "8px 0" }}>
               <div style={{ fontSize: "48px", marginBottom: "10px" }}>🏆</div>
               <div style={{ fontFamily: F_UI, fontSize: "17px", fontWeight: "700", color: TEXT }}>{rohPrompt.playerName}</div>
               <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginTop: "4px" }}>Won the {rohPrompt.tournamentName} — {rohPrompt.seasonYear}</div>
-              <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginTop: "8px" }}>Add this win to the club's Roll of Honour?</div>
+              <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginTop: "8px" }}>
+                {isAdmin
+                  ? "Add this win to the club's Roll of Honour?"
+                  : "The Roll of Honour is the club's permanent record, so a club admin puts the name up. Have a word with the committee if it hasn't appeared."}
+              </div>
+              {rohPromptMsg && (
+                <div style={{ fontFamily: F_UI, fontSize: "12px", marginTop: "10px", color: rohPromptMsg.ok ? GOLD_MUTED : LOSS_RED }}>
+                  {rohPromptMsg.text}
+                </div>
+              )}
             </div>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button onClick={() => setRohPrompt(null)}
-                style={{ flex: 1, padding: "12px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT2, cursor: "pointer" }}>
-                Not now
+            {isAdmin ? (
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button onClick={() => { setRohPrompt(null); setRohPromptMsg(null); }}
+                  style={{ flex: 1, padding: "12px", background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT2, cursor: "pointer" }}>
+                  Not now
+                </button>
+                <button onClick={async () => {
+                  const rohId = ROH_MAP[rohPrompt.tournamentId];
+                  if (!rohId) { setRohPromptMsg({ ok: false, text: "That competition isn't on the Roll of Honour." }); return; }
+                  setRohPromptMsg({ ok: true, text: "Saving…" });
+                  const res = await recordWinner(rohId, rohPrompt.seasonYear, rohPrompt.playerName);
+                  // The status, not the absence of an error.
+                  if (res?.status === "ok") { setRohPrompt(null); setRohPromptMsg(null); }
+                  else setRohPromptMsg({ ok: false, text: res?.message || "Couldn't save — no response from the server." });
+                }}
+                  style={{ flex: 2, padding: "12px", background: GOLD, border: `1px solid ${GOLD}`, borderRadius: "10px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: "#fff", cursor: "pointer" }}>
+                  Yes — add to Roll of Honour
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => { setRohPrompt(null); setRohPromptMsg(null); }}
+                style={{ padding: "12px", background: GOLD, border: `1px solid ${GOLD}`, borderRadius: "10px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: "#fff", cursor: "pointer" }}>
+                Close
               </button>
-              <button onClick={async () => {
-                const rohId = ROH_MAP[rohPrompt.tournamentId];
-                if (rohId) {
-                  const { data: current } = await supabase.from("roll_of_honour").select("winners").eq("id", rohId).single();
-                  const winners = Array.isArray(current?.winners) ? current.winners : [];
-                  // `winner`, not `name`. Everything that renders the Roll of
-                  // Honour reads w.winner, and recordWinner writes w.winner —
-                  // this path wrote w.name, so a winner added from a member's
-                  // own tracker would have shown as a blank line, and its
-                  // dedupe check could never match a row the admin had already
-                  // recorded for that year.
-                  if (!winners.some(w => w.year === rohPrompt.seasonYear && w.winner === rohPrompt.playerName)) {
-                    await supabase.from("roll_of_honour").update({ winners: [...winners, { year: rohPrompt.seasonYear, winner: rohPrompt.playerName }] }).eq("id", rohId);
-                  }
-                }
-                setRohPrompt(null);
-                alert(`${rohPrompt.playerName} added to the Roll of Honour for ${rohPrompt.seasonYear}!`);
-              }}
-                style={{ flex: 2, padding: "12px", background: GOLD, border: `1px solid ${GOLD}`, borderRadius: "10px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: "#fff", cursor: "pointer" }}>
-                Yes — add to Roll of Honour
-              </button>
-            </div>
+            )}
           </div>
         </BottomSheet>
       )}
