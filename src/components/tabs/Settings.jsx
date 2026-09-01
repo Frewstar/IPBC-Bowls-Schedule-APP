@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Settings, User, Shield, Info, Type, Download, Upload, Check, Trophy, Plus, Pencil, Calendar, Lock, ChevronLeft, UserCheck, Link } from "lucide-react";
+import { matchesSectionFilter } from "../../lib/sections.js";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
 import { save } from "../../lib/storage.js";
 import { supabase } from "../../lib/supabase.js";
@@ -203,7 +204,7 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
         )}
         <div>
           {(() => {
-            const shown = tournaments.filter(t => compSectionFilter === "all" || (t.section || "gents") === compSectionFilter);
+            const shown = tournaments.filter(t => matchesSectionFilter(t.section, compSectionFilter));
             if (shown.length > 0) return null;
             // No hardcoded competition list to fall back on any more, so say
             // which of the two reasons this is rather than showing nothing.
@@ -220,7 +221,7 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
               </div>
             );
           })()}
-          {tournaments.filter(t => compSectionFilter === "all" || (t.section || "gents") === compSectionFilter).map((t, i, arr) => {
+          {tournaments.filter(t => matchesSectionFilter(t.section, compSectionFilter)).map((t, i, arr) => {
             const isPersonal = t.source === "personal";
             return (
               <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "11px 16px", borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Trophy, Phone, ChevronDown, Shield, MapPin, Star, Clock, Plus, X } from "lucide-react";
 import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
 import { CLUB_POSITIONS } from "./Members.jsx";
@@ -28,6 +28,10 @@ const FACILITIES = [
 
 export default function ClubTab({ members = [], rollOfHonour = [], honoraryMembers = [], rollOfHonourLoad, honoraryLoad, isAdmin = false, recordWinner, addHonoraryMember, removeHonoraryMember, showPhones = false }) {
   const [expandedComp, setExpandedComp] = useState(null);
+  // "all" (each competition expandable, as before) or a single year across the
+  // whole board. 68 seasons are on record, 1958 to 2026, and until now the only
+  // way to read 1975 was to open every competition in turn.
+  const [rohYear, setRohYear] = useState("all");
   const [committeeOpen, setCommitteeOpen] = useState(false);
 
   // Roll of Honour: recording winner
@@ -38,6 +42,26 @@ export default function ClubTab({ members = [], rollOfHonour = [], honoraryMembe
   // Honorary Members: adding
   const [addingHon, setAddingHon] = useState(false);
   const [newHonName, setNewHonName] = useState("");
+
+  // Every year anyone won anything, newest first.
+  const rohYears = useMemo(() => {
+    const seen = new Set();
+    for (const c of rollOfHonour) for (const w of (c.winners || [])) {
+      if (w && w.year != null) seen.add(Number(w.year));
+    }
+    return [...seen].sort((a, b) => b - a);
+  }, [rollOfHonour]);
+
+  // One year picked: who won what. Competitions with nothing recorded for that
+  // year are left out rather than listed as blanks — a season the Junior Girls
+  // did not run is not a gap to display.
+  const rohForYear = useMemo(() => {
+    if (rohYear === "all") return null;
+    const y = Number(rohYear);
+    return rollOfHonour
+      .map(c => ({ comp: c, win: (c.winners || []).find(w => Number(w.year) === y) }))
+      .filter(x => x.win);
+  }, [rollOfHonour, rohYear]);
 
   function buildSection(section) {
     const officers = members
@@ -106,10 +130,53 @@ export default function ClubTab({ members = [], rollOfHonour = [], honoraryMembe
         <Trophy size={16} strokeWidth={2} color={GOLD_MUTED} /> Roll of Honour
       </div>
 
-      {rollOfHonour.length > 0 && (
+      {rollOfHonour.length > 0 && rohYears.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "9px", marginBottom: "12px", flexWrap: "wrap" }}>
+          <label htmlFor="roh-year" style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.09em" }}>
+            Season
+          </label>
+          <select id="roh-year" value={rohYear} onChange={e => { setRohYear(e.target.value); setExpandedComp(null); }}
+            style={{ flex: "0 1 auto", minHeight: "40px", padding: "8px 12px", borderRadius: "9px",
+                     border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT,
+                     fontFamily: F_UI, fontSize: "14px", fontWeight: "600" }}>
+            <option value="all">All years</option>
+            {rohYears.map(y => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
+          <span style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
+            {rohYear === "all"
+              ? `${rohYears.length} seasons on record, ${rohYears[rohYears.length - 1]}–${rohYears[0]}`
+              : `${rohForYear.length} recorded`}
+          </span>
+        </div>
+      )}
+
+      {rollOfHonour.length > 0 && rohYear === "all" && (
         <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px", paddingLeft: "2px" }}>
           Winners will appear here as this season&rsquo;s competitions conclude.
         </div>
+      )}
+
+      {/* ── One season, across the board ── */}
+      {rohYear !== "all" && (
+        rohForYear.length === 0 ? (
+          <div style={{ background: SURFACE, border: `1px dashed ${BORDER}`, borderRadius: "12px", padding: "22px 18px", marginBottom: "16px", textAlign: "center", fontFamily: F_UI, fontSize: "13px", color: TEXT3, lineHeight: 1.5 }}>
+            Nothing recorded for {rohYear}.
+          </div>
+        ) : (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 4px rgba(74,14,31,0.07)" }}>
+            {rohForYear.map(({ comp, win }, idx) => (
+              <div key={comp.id} style={{ display: "flex", alignItems: "center", borderBottom: idx < rohForYear.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                <div style={{ width: "3px", alignSelf: "stretch", background: comp.color || GOLD, flexShrink: 0 }} />
+                <div style={{ flex: 1, padding: "13px 14px", display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px" }}>
+                  <span style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "600", color: TEXT }}>{comp.name}</span>
+                  <span style={{ fontFamily: F_SANS, fontSize: "15px", fontWeight: "700", color: GOLD_MUTED, textAlign: "right" }}>
+                    {win.winner || "—"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       )}
 
       <LoadNotice
@@ -121,7 +188,7 @@ export default function ClubTab({ members = [], rollOfHonour = [], honoraryMembe
         emptyHint="Once this club's competitions are set up they'll be listed here, and winners can be recorded against them."
       />
 
-      {rollOfHonour.length > 0 && (
+      {rollOfHonour.length > 0 && rohYear === "all" && (
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 4px rgba(74,14,31,0.07)" }}>
         {rollOfHonour.map((comp, idx) => {
           const isOpen = expandedComp === comp.id;
