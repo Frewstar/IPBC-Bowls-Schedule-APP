@@ -4,7 +4,7 @@ import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, T
 import { save } from "../../lib/storage.js";
 import { supabase } from "../../lib/supabase.js";
 
-export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, activeSection = "gents", exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, isSuperAdmin = false, isAdmin = false, cloudKey = null, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack, linkedMemberName = "", onLinkName, onUnlinkName }) {
+export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, activeSection = "gents", exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, isSuperAdmin = false, isAdmin = false, tournamentsLoad, cloudKey = null, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack, linkedMemberName = "", onLinkName, onUnlinkName }) {
   const [compSectionFilter, setCompSectionFilter] = useState("all");
 
   // Admin request state (non-admins only)
@@ -202,6 +202,24 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
           </>
         )}
         <div>
+          {(() => {
+            const shown = tournaments.filter(t => compSectionFilter === "all" || (t.section || "gents") === compSectionFilter);
+            if (shown.length > 0) return null;
+            // No hardcoded competition list to fall back on any more, so say
+            // which of the two reasons this is rather than showing nothing.
+            return (
+              <div style={{ padding: "18px 16px", fontFamily: F_UI, fontSize: "12px", color: TEXT3, textAlign: "center", lineHeight: 1.55 }}>
+                {tournamentsLoad?.status === "failed"
+                  ? <>Couldn&rsquo;t load this club&rsquo;s competitions.{" "}
+                      <button onClick={tournamentsLoad.reload} style={{ background: "none", border: "none", color: GOLD_MUTED, fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: "pointer", textDecoration: "underline", padding: 0 }}>Retry</button></>
+                  : tournamentsLoad?.status === "loading"
+                    ? "Loading competitions\u2026"
+                    : tournaments.length === 0
+                      ? "No competitions set up for this club yet."
+                      : "No competitions in this section."}
+              </div>
+            );
+          })()}
           {tournaments.filter(t => compSectionFilter === "all" || (t.section || "gents") === compSectionFilter).map((t, i, arr) => {
             const isPersonal = t.source === "personal";
             return (

@@ -1,5 +1,7 @@
 // ── STORAGE KEYS ───────────────────────────────────────────────────────────
-export const MEMBERS_KEY  = "bowls_members_v1";
+// MEMBERS_KEY ("bowls_members_v1") was removed in Track 0: it was imported by
+// App.jsx and never read or written. The roster is not cached to localStorage
+// — it comes from Supabase or it does not come at all.
 export const TIES_KEY     = "bowls_ties_v2";
 export const SETTINGS_KEY = "ipbc_settings_v1";
 export const ENTRIES_KEY  = "bowls_entries_v1";

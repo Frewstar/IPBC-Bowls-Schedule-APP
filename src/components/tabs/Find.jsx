@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Phone } from "lucide-react";
 import { GREEN, GOLD, GOLD_MUTED, MID, SURFACE, BORDER, TEXT, TEXT2, TEXT3, F_SANS, F_UI } from "../../lib/theme.js";
-import { DEFAULT_TOURNAMENTS } from "../../lib/constants.js";
 import { rowsToDisplay, fmtRoundDate, ViewToggle, BracketDisplay, BracketTreeView, BRACKET_SIZE } from "../DrawViewer.jsx";
 import { buildTieSheetHtml } from "./AdminPanel.jsx";
 
@@ -12,7 +11,8 @@ function printTieSheet(draw, slots, prelims, roundDates) {
 }
 
 export default function FindTab({ search, setSearch, playerGames, tournaments, publishedDraws = [], drawPairings = [], onH2H }) {
-  const TOURNAMENTS = tournaments || DEFAULT_TOURNAMENTS;
+  // No hardcoded fallback — see the note in Draws.jsx.
+  const TOURNAMENTS = tournaments || [];
   const [selectedDraw, setSelectedDraw] = useState(null); // {draw, rows}
   const [viewMode, setViewMode]         = useState("list");
   const [showPreview, setShowPreview]   = useState(false);

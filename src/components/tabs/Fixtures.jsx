@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, X } from "lucide-react
 import BottomSheet from "../BottomSheet.jsx";
 import { GREEN, GOLD, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { DAY_NAMES, MONTH_ABBR, fixtureStatus } from "../../lib/utils.js";
+import LoadNotice from "../LoadNotice.jsx";
 
 const BLANK = { event_date: "", event: "", time: "", venue: "home", rinks: "" };
 
@@ -60,7 +61,7 @@ function toDateInput(date) {
   return d.toISOString().slice(0, 10);
 }
 
-export default function FixturesTab({ fixtures = [], fixturesExpanded, setFixturesExpanded, seasonYear, isAdmin = false, addFixture, editFixture, deleteFixture }) {
+export default function FixturesTab({ fixtures = [], fixturesLoad, fixturesExpanded, setFixturesExpanded, seasonYear, isAdmin = false, addFixture, editFixture, deleteFixture }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(BLANK);
@@ -114,6 +115,17 @@ export default function FixturesTab({ fixtures = [], fixturesExpanded, setFixtur
           </button>
         </div>
       )}
+
+      <LoadNotice
+        status={fixturesLoad?.status || "ready"}
+        hasData={fixtures.length > 0}
+        onRetry={fixturesLoad?.reload}
+        noun="fixtures"
+        emptyTitle="No fixtures yet"
+        emptyHint={isAdmin
+          ? "Add the season's matches with the button above and they'll appear here."
+          : "The season's matches haven't been added yet. Check back soon."}
+      />
 
       {/* ── Next Fixture hero card ── */}
       {nextUp && (
@@ -178,9 +190,11 @@ export default function FixturesTab({ fixtures = [], fixturesExpanded, setFixtur
         );
       })()}
 
-      <div style={{ textAlign: "center", marginTop: "12px", fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>
-        Irvine Park BC · {seasonYear || new Date().getFullYear()} Season · {fixtures.length} fixtures
-      </div>
+      {fixtures.length > 0 && (
+        <div style={{ textAlign: "center", marginTop: "12px", fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>
+          Irvine Park BC · {seasonYear || new Date().getFullYear()} Season · {fixtures.length} fixtures
+        </div>
+      )}
 
       {/* ── Add / Edit fixture sheet ── */}
       <BottomSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={editingId ? "Edit Fixture" : "Add Fixture"}>

@@ -1,0 +1,329 @@
+{
+  "_comment": [
+    "Seed template extracted from the client bundle at commit e3c3503 (Track 0).",
+    "NOT imported by the app. This is input for the onboarding flow (Track 7).",
+    "Contains structure only - no members, no phone numbers, no draw entries.",
+    "roundsTemplate keeps Irvine Park's 2026 round dates as an EXAMPLE of the",
+    "'<label>\\n<day> <month>' format the client parses; a new club replaces them."
+  ],
+  "extractedFrom": {
+    "commit": "e3c3503",
+    "date": "2026-09-01"
+  },
+  "tournaments": [
+    {
+      "id": "championship",
+      "name": "Championship",
+      "type": "Singles",
+      "color": "#ef4444",
+      "section": "gents",
+      "roundsTemplate": [
+        "1st Round\n9th June",
+        "2nd Round\n30th June",
+        "3rd Round\n23rd July",
+        "4th Round\n11th Aug",
+        "Semi Final\n21st Aug",
+        "Final"
+      ]
+    },
+    {
+      "id": "presidents",
+      "name": "Presidents",
+      "type": "Singles",
+      "color": "#f59e0b",
+      "section": "gents",
+      "roundsTemplate": [
+        "1st Round\n11th June",
+        "2nd Round\n29th June",
+        "3rd Round\n20th July",
+        "4th Round\n10th Aug",
+        "Semi Final\n21st Aug",
+        "Final"
+      ]
+    },
+    {
+      "id": "morton",
+      "name": "Morton",
+      "type": "Singles",
+      "color": "#06b6d4",
+      "section": "gents",
+      "roundsTemplate": [
+        "1st Round\n28th May",
+        "2nd Round\n18th June",
+        "3rd Round\n9th July",
+        "4th Round\n30th July",
+        "Semi Final\n21st Aug",
+        "Final"
+      ]
+    },
+    {
+      "id": "donaldson",
+      "name": "Donaldson",
+      "type": "Singles",
+      "color": "#ec4899",
+      "section": "gents",
+      "roundsTemplate": [
+        "1st Round\n28th May",
+        "2nd Round\n17th June",
+        "3rd Round\n14th July",
+        "4th Round\n3rd Aug",
+        "Semi Final\n21st Aug",
+        "Final"
+      ]
+    },
+    {
+      "id": "mitchell",
+      "name": "Mitchell Handicap",
+      "type": "Handicap",
+      "color": "#84cc16",
+      "section": "gents",
+      "roundsTemplate": [
+        "1st Round\n28th May",
+        "2nd Round\n18th June",
+        "3rd Round\n9th July",
+        "4th Round\n30th July",
+        "Semi Final\n21st Aug",
+        "Final"
+      ]
+    },
+    {
+      "id": "pairs",
+      "name": "Pairs",
+      "type": "Pairs",
+      "color": "#f97316",
+      "section": "gents",
+      "roundsTemplate": [
+        "1st Round\n18th June",
+        "2nd Round\n9th July",
+        "3rd Round\n27th July",
+        "Semi Final\n21st Aug",
+        "Final"
+      ]
+    },
+    {
+      "id": "triples",
+      "name": "Triples",
+      "type": "Triples",
+      "color": "#10b981",
+      "section": "gents",
+      "roundsTemplate": [
+        "1st Round\n4th June",
+        "2nd Round\n2nd July",
+        "3rd Round\n27th July",
+        "Semi Final\n21st Aug",
+        "Final"
+      ]
+    },
+    {
+      "id": "rinks",
+      "name": "Rinks",
+      "type": "Rinks",
+      "color": "#8b5cf6",
+      "section": "gents",
+      "roundsTemplate": [
+        "1st Round",
+        "2nd Round",
+        "Semi Final",
+        "Final"
+      ]
+    },
+    {
+      "id": "mixed-pairs",
+      "name": "Mixed Pairs",
+      "type": "Mixed Pairs",
+      "color": "#a78bfa",
+      "section": "mixed",
+      "roundsTemplate": [
+        "1st Round\n1st June",
+        "2nd Round\n23rd June",
+        "3rd Round\n13th July",
+        "4th Round\n27th July",
+        "Semi Final\n21st Aug",
+        "Final"
+      ]
+    },
+    {
+      "id": "balloted-pairs",
+      "name": "Balloted Pairs",
+      "type": "Pairs",
+      "color": "#c084fc",
+      "section": "mixed",
+      "roundsTemplate": [
+        "1st Round\n26th May",
+        "2nd Round\n15th June",
+        "3rd Round\n6th July",
+        "4th Round\n3rd Aug",
+        "Final\n21st Aug"
+      ]
+    },
+    {
+      "id": "ladies-championship",
+      "name": "Club Championship",
+      "type": "Singles",
+      "color": "#f43f5e",
+      "section": "ladies",
+      "roundsTemplate": []
+    },
+    {
+      "id": "ladies-presidents",
+      "name": "Presidents",
+      "type": "Singles",
+      "color": "#0ea5e9",
+      "section": "ladies",
+      "roundsTemplate": []
+    },
+    {
+      "id": "ladies-triples",
+      "name": "Triples",
+      "type": "Triples",
+      "color": "#d946ef",
+      "section": "ladies",
+      "roundsTemplate": []
+    },
+    {
+      "id": "jenny-brown",
+      "name": "Jenny Brown",
+      "type": "Singles",
+      "color": "#14b8a6",
+      "section": "ladies",
+      "roundsTemplate": []
+    },
+    {
+      "id": "marion-carroll",
+      "name": "Marion Carroll",
+      "type": "Singles",
+      "color": "#6366f1",
+      "section": "ladies",
+      "roundsTemplate": []
+    },
+    {
+      "id": "mary-mcguire",
+      "name": "Mary McGuire",
+      "type": "Singles",
+      "color": "#e879f9",
+      "section": "ladies",
+      "roundsTemplate": []
+    },
+    {
+      "id": "club-pairs",
+      "name": "Club Pairs",
+      "type": "Pairs",
+      "color": "#22d3ee",
+      "section": "ladies",
+      "roundsTemplate": []
+    },
+    {
+      "id": "three-bowl-pairs",
+      "name": "3 Bowl Pairs",
+      "type": "Pairs",
+      "color": "#a3e635",
+      "section": "ladies",
+      "roundsTemplate": []
+    },
+    {
+      "id": "nominated-pairs",
+      "name": "Nominated Pairs",
+      "type": "Pairs",
+      "color": "#f472b6",
+      "section": "ladies",
+      "roundsTemplate": []
+    },
+    {
+      "id": "senior-singles",
+      "name": "Senior Singles",
+      "type": "Singles",
+      "color": "#64748b",
+      "section": "seniors",
+      "roundsTemplate": []
+    },
+    {
+      "id": "senior-pairs",
+      "name": "Senior Pairs",
+      "type": "Pairs",
+      "color": "#78716c",
+      "section": "seniors",
+      "roundsTemplate": []
+    },
+    {
+      "id": "senior-triples",
+      "name": "Senior Triples",
+      "type": "Triples",
+      "color": "#92400e",
+      "section": "seniors",
+      "roundsTemplate": []
+    },
+    {
+      "id": "senior-rinks",
+      "name": "Senior Rinks",
+      "type": "Rinks",
+      "color": "#065f46",
+      "section": "seniors",
+      "roundsTemplate": []
+    }
+  ],
+  "rollOfHonour": [
+    {
+      "id": "championship",
+      "name": "Championship",
+      "color": "#ef4444"
+    },
+    {
+      "id": "presidents",
+      "name": "Presidents",
+      "color": "#f59e0b"
+    },
+    {
+      "id": "morton",
+      "name": "Morton",
+      "color": "#06b6d4"
+    },
+    {
+      "id": "donaldson",
+      "name": "Donaldson",
+      "color": "#ec4899"
+    },
+    {
+      "id": "mitchell",
+      "name": "Mitchell Handicap",
+      "color": "#84cc16"
+    },
+    {
+      "id": "pairs",
+      "name": "Pairs",
+      "color": "#f97316"
+    },
+    {
+      "id": "triples",
+      "name": "Triples",
+      "color": "#10b981"
+    },
+    {
+      "id": "rinks",
+      "name": "Rinks",
+      "color": "#8b5cf6"
+    },
+    {
+      "id": "mixed-pairs",
+      "name": "Mixed Pairs",
+      "color": "#a78bfa"
+    },
+    {
+      "id": "balloted-pairs",
+      "name": "Balloted Pairs",
+      "color": "#c084fc"
+    }
+  ],
+  "clubPositions": [
+    "President",
+    "Vice President",
+    "Secretary",
+    "Treasurer",
+    "Match Secretary",
+    "Bar Convenor",
+    "Social Convenor",
+    "Building Convenor",
+    "Past President",
+    "Honorary President",
+    "Management Committee"
+  ]
+}

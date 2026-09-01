@@ -2,26 +2,16 @@ import { useState } from "react";
 import { Trophy, Phone, ChevronDown, Shield, MapPin, Star, Clock, Plus, X } from "lucide-react";
 import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
 import { CLUB_POSITIONS } from "./Members.jsx";
+import LoadNotice from "../LoadNotice.jsx";
 
 const OFFICER_POSITIONS = CLUB_POSITIONS.filter(p => p && p !== "Management Committee");
 const POSITION_ORDER = Object.fromEntries(OFFICER_POSITIONS.map((p, i) => [p, i]));
 
-export const HONORARY_MEMBERS = [
-  "T. Shields", "K. Houston", "W. Reid", "J B Muir",
-];
-
-export const ROLL_OF_HONOUR = [
-  { id: "championship",   name: "Championship",      color: "#ef4444", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "presidents",     name: "Presidents",        color: "#f59e0b", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "morton",         name: "Morton",            color: "#06b6d4", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "donaldson",      name: "Donaldson",         color: "#ec4899", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "mitchell",       name: "Mitchell Handicap", color: "#84cc16", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "pairs",          name: "Pairs",             color: "#f97316", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "triples",        name: "Triples",           color: "#10b981", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "rinks",          name: "Rinks",             color: "#8b5cf6", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "mixed-pairs",    name: "Mixed Pairs",       color: "#a78bfa", winners: [{ year: 2026, winner: "TBC" }] },
-  { id: "balloted-pairs", name: "Balloted Pairs",    color: "#c084fc", winners: [{ year: 2026, winner: "TBC" }] },
-];
+// Irvine Park's ten competitions and four honorary members used to be declared
+// here and used as this component's default props, so any club whose own rows
+// had not loaded was shown Irvine Park's. They now live, structure only, in
+// seed/club-template.seed.json — input for onboarding, not a runtime fallback.
+// Both lists arrive as props from Supabase or they do not arrive at all.
 
 const FACILITIES = [
   "Two six-rink outdoor bowling greens",
@@ -36,7 +26,7 @@ const FACILITIES = [
   "Car Park (30+ spaces)",
 ];
 
-export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, honoraryMembers = HONORARY_MEMBERS, isAdmin = false, recordWinner, addHonoraryMember, removeHonoraryMember, showPhones = false }) {
+export default function ClubTab({ members = [], rollOfHonour = [], honoraryMembers = [], rollOfHonourLoad, honoraryLoad, isAdmin = false, recordWinner, addHonoraryMember, removeHonoraryMember, showPhones = false }) {
   const [expandedComp, setExpandedComp] = useState(null);
   const [committeeOpen, setCommitteeOpen] = useState(false);
 
@@ -116,10 +106,22 @@ export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, h
         <Trophy size={16} strokeWidth={2} color={GOLD_MUTED} /> Roll of Honour
       </div>
 
-      <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px", paddingLeft: "2px" }}>
-        Winners will appear here as this season's competitions conclude.
-      </div>
+      {rollOfHonour.length > 0 && (
+        <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginBottom: "10px", paddingLeft: "2px" }}>
+          Winners will appear here as this season&rsquo;s competitions conclude.
+        </div>
+      )}
 
+      <LoadNotice
+        status={rollOfHonourLoad?.status || "ready"}
+        hasData={rollOfHonour.length > 0}
+        onRetry={rollOfHonourLoad?.reload}
+        noun="the roll of honour"
+        emptyTitle="No competitions on the roll of honour"
+        emptyHint="Once this club's competitions are set up they'll be listed here, and winners can be recorded against them."
+      />
+
+      {rollOfHonour.length > 0 && (
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", overflow: "hidden", marginBottom: "16px", boxShadow: "0 1px 4px rgba(74,14,31,0.07)" }}>
         {rollOfHonour.map((comp, idx) => {
           const isOpen = expandedComp === comp.id;
@@ -197,6 +199,7 @@ export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, h
           );
         })}
       </div>
+      )}
 
       {/* ── Committee (collapsible) ── */}
       <button
@@ -277,6 +280,13 @@ export default function ClubTab({ members = [], rollOfHonour = ROLL_OF_HONOUR, h
                 </button>
               )}
             </div>
+            {honoraryMembers.length === 0 && (
+              <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, fontStyle: "italic" }}>
+                {honoraryLoad?.status === "failed"
+                  ? "Couldn't load honorary members."
+                  : "No honorary members recorded."}
+              </div>
+            )}
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
               {honoraryMembers.map((name, i) => (
                 <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: "4px", background: `${GOLD}12`, border: `1px solid ${GOLD}33`, borderRadius: "16px", padding: "3px 10px", fontFamily: F_UI, fontSize: "12px", color: GOLD_MUTED, fontWeight: "600" }}>

@@ -4,6 +4,7 @@ import BottomSheet from "../BottomSheet.jsx";
 import AvatarBubble from "../AvatarBubble.jsx";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { getSurname } from "../../lib/utils.js";
+import LoadNotice from "../LoadNotice.jsx";
 
 export const CLUB_POSITIONS = [
   "",
@@ -25,6 +26,7 @@ export default function MembersTab({
   groupedMembers,
   memberSearch, setMemberSearch,
   activeSection,
+  membersLoad,
   fileInputRef, handleFileChange,
   downloadCSV,
   uploadMsg,
@@ -131,6 +133,19 @@ export default function MembersTab({
           ))}
         </div>
       )}
+
+      <LoadNotice
+        status={membersLoad?.status || "ready"}
+        hasData={filteredMembers.length > 0}
+        onRetry={membersLoad?.reload}
+        noun="the member list"
+        emptyTitle={memberSearch ? "No members match that search" : `No ${activeSection} members yet`}
+        emptyHint={memberSearch
+          ? "Try a shorter search, or check the Gents/Ladies toggle."
+          : isAdmin
+            ? "Add members with the button above, or import them from a CSV once that's wired up."
+            : "The club's member list hasn't been added yet."}
+      />
 
       {/* ── Member list ── */}
       <div style={{ position: "relative" }}>
