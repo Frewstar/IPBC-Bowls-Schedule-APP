@@ -230,3 +230,23 @@ export function groupByDay(items = []) {
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
     .map(([date, list]) => ({ date, items: [...list].sort(byDateThenClock) }));
 }
+
+// ── What a filter chip is allowed to claim ──────────────────────────────────
+// A count on a filter describes what that filter will show. Nothing else.
+//
+// The diary shipped with chips counting the whole season while the list under
+// them showed one month, so September read "Matches 35" and then showed six.
+// The number is the thing people trust, so it has to be derived from the same
+// window the list is, which is what these two make easy: take the window
+// first, count second, and the two cannot disagree.
+export function inDateRange(items = [], startISO, endISO) {
+  return items.filter(i => i.date >= startISO && i.date <= endISO);
+}
+
+export function countByKind(items = []) {
+  return {
+    all:     items.length,
+    matches: items.filter(i => i.kind === KIND_FIXTURE).length,
+    socials: items.filter(i => i.kind !== KIND_FIXTURE).length,
+  };
+}
