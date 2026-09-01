@@ -1298,6 +1298,16 @@ export default function BowlsTracker() {
     "ladies-pairs":                "roh-ladies-pairs",
     "ladies-triples":              "roh-ladies-triples",
     "ladies-rinks":                "roh-ladies-rinks",
+    // roh-mixed-pairs has existed all along with nothing pointing at it, so
+    // the board could never be written to — the same silent nothing as the
+    // ladies Presidents, just not found yet. Balloted Pairs is the other
+    // mixed competition and has no board of its own; it is not mapped here,
+    // because two tournaments writing one board would overwrite each other's
+    // year.
+    "mixed-pairs":                 "roh-mixed-pairs",
+    // The four generic `seniors` tournaments are legacy and map to nothing on
+    // purpose: the 2026 set below owns these boards. Retiring them is the
+    // real action there, and it is Joseph's call, not a mapping change.
     "seniors-championship":        "roh-seniors-singles",
     "seniors-pairs":               "roh-seniors-pairs",
     "seniors-triples":             "roh-seniors-triples",

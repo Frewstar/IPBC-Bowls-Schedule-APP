@@ -1,6 +1,7 @@
 {
   "_read_from": "production pjszrcaikpxdasknwyjb, roll_of_honour, 2026-09-01",
   "_why": "Every ROH_MAP value must be one of these ids. 'roh-president' sat in the map pointing at a category that held 0 entries and was later deleted; nothing failed loudly, because a missing category comes back as no_category and reads like nothing happening. Refresh this list when categories are added or removed.",
+  "_retire_when": "Layer 2 of the deploy check lands — it reads information_schema and the live tables at build time, so it catches a dangling ROH_MAP value the same way it catches a missing column, without a snapshot anybody has to remember to refresh. Delete this file and test/rohMap.test.mjs then; do not run both. See the header of test/rohMap.test.mjs.",
   "categories": [
     { "id": "roh-gents-singles",          "name": "Gents Singles",          "seasons": 66 },
     { "id": "roh-gents-pairs",            "name": "Gents Pairs",            "seasons": 0 },

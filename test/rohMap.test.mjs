@@ -12,6 +12,28 @@
 //  database changes — refresh the fixture when categories come and go — but it
 //  catches a typo the moment it is typed, and it pins the Presidents pair so
 //  the single-Presidents assumption cannot come back.
+//
+//  ── THIS FILE IS A STOPGAP. RETIRE IT, DO NOT KEEP IT. ─────────────────────
+//
+//  It is the third instance of one class of fault: the client referencing
+//  something the database does not have.
+//
+//      admin_requests.role_title    button silently did nothing
+//      club_events.end_time         button silently did nothing, ten times,
+//                                   for Christine
+//      ROH_MAP → roh-president      a write path aimed at a category that was
+//                                   not there to write to
+//
+//  All three are what layer 2 of the deploy check was scoped to catch:
+//  extract what the client references, query information_schema and the live
+//  tables, fail the build on a mismatch. A dangling ROH_MAP value is the same
+//  shape as a missing column, and the deploy check reads the database at build
+//  time instead of trusting a snapshot somebody has to remember to refresh.
+//
+//  So when the deploy check lands, DELETE this file and
+//  test/fixtures-roh-categories.json rather than running both. A test nobody
+//  remembers to update is the next stale pointer — this one rots exactly the
+//  way roh-president did, and it would keep passing while it rotted.
 // ════════════════════════════════════════════════════════════════════════════
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -63,6 +85,20 @@ test("the ladies Presidents maps to the ladies board, 65 seasons", () => {
 
 test("they are two different boards", () => {
   assert.notEqual(MAP["presidents"], MAP["ladies-presidents"]);
+});
+
+// Mixed Pairs: the board existed with nothing pointing at it, which is the
+// same fault as the ladies Presidents seen from the other end.
+test("Mixed Pairs maps to the mixed board", () => {
+  assert.equal(MAP["mixed-pairs"], "roh-mixed-pairs");
+  assert.ok(CATEGORY_IDS.has("roh-mixed-pairs"));
+});
+
+// Balloted Pairs is the other mixed competition and has no board of its own.
+// Pointing it at roh-mixed-pairs would put two finals on one board, where the
+// second would replace the first for that year.
+test("Balloted Pairs is deliberately unmapped", () => {
+  assert.equal(MAP["balloted-pairs"], undefined);
 });
 
 test("roh-president, the stray, is not used as an id anywhere in src/", () => {
