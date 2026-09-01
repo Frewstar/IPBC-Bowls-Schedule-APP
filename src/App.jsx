@@ -33,6 +33,7 @@ import { TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
 import { supabase } from "./lib/supabase.js";
 import { useRemoteData } from "./lib/useRemoteData.js";
+import { tournamentVisibleToMember } from "./lib/sections.js";
 
 // ── component imports ─────────────────────────────────────────────────────────
 import BottomSheet from "./components/BottomSheet.jsx";
@@ -644,14 +645,6 @@ export default function BowlsTracker() {
   const PERSONAL_COMPS_KEY = "bowls_personal_comps_v1";
   const [personalComps, setPersonalComps] = useState(() => load(PERSONAL_COMPS_KEY, []));
   useEffect(() => { save(PERSONAL_COMPS_KEY, personalComps); }, [personalComps]);
-
-  function tournamentVisibleToMember(tSection, memSection) {
-    if (tSection === "mixed") return true;
-    if (tSection === "gents" && memSection.startsWith("gents")) return true;
-    if (tSection === "ladies" && memSection.startsWith("ladies")) return true;
-    if (tSection === "seniors" && memSection.includes("senior")) return true;
-    return false;
-  }
 
   const TOURNAMENTS = useMemo(() => {
     const personal = personalComps
@@ -4281,8 +4274,14 @@ export default function BowlsTracker() {
                 if (rohId) {
                   const { data: current } = await supabase.from("roll_of_honour").select("winners").eq("id", rohId).single();
                   const winners = Array.isArray(current?.winners) ? current.winners : [];
-                  if (!winners.some(w => w.year === rohPrompt.seasonYear && w.name === rohPrompt.playerName)) {
-                    await supabase.from("roll_of_honour").update({ winners: [...winners, { year: rohPrompt.seasonYear, name: rohPrompt.playerName }] }).eq("id", rohId);
+                  // `winner`, not `name`. Everything that renders the Roll of
+                  // Honour reads w.winner, and recordWinner writes w.winner —
+                  // this path wrote w.name, so a winner added from a member's
+                  // own tracker would have shown as a blank line, and its
+                  // dedupe check could never match a row the admin had already
+                  // recorded for that year.
+                  if (!winners.some(w => w.year === rohPrompt.seasonYear && w.winner === rohPrompt.playerName)) {
+                    await supabase.from("roll_of_honour").update({ winners: [...winners, { year: rohPrompt.seasonYear, winner: rohPrompt.playerName }] }).eq("id", rohId);
                   }
                 }
                 setRohPrompt(null);
