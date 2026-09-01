@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseClockToMinutes, fmtMinutes, fmtMinutesRange,
-  mergeDiary, byDateThenClock, groupByDay, KIND_FIXTURE, KIND_EVENT,
+  mergeDiary, byDateThenClock, groupByDay, countByKind, inDateRange, KIND_FIXTURE, KIND_EVENT,
 } from "../src/lib/diary.js";
 
 // ── Every distinct club_fixtures."time" in production on 1 Sep 2026 ─────────
@@ -219,4 +219,82 @@ test("19 Sep ties on the clock and the fixture still leads, deterministically", 
   // Both facts survive: the bowls on one row, the band on the other.
   assert.equal(day.items[0].rinks, 6);
   assert.equal(day.items[1].detail, "Live music Coverstory");
+});
+
+// ── Chip counts ─────────────────────────────────────────────────────────────
+// The chips shipped counting the whole season while the list under them showed
+// one month: September read "Matches 35" and then rendered six. The e2e that
+// was pointed at this measured the ROWS each chip produced, never the number
+// printed on the chip, so it passed throughout.
+//
+// The live rows for the three months that matter. August is included because
+// the UI cannot page back to a past month, so the browser test cannot reach it.
+const LIVE = {
+  fixtures: [
+    ["2026-08-01","Bellahouston BC","1.00pm"], ["2026-08-08","Stonehouse BC","1.30pm"],
+    ["2026-08-15","Open Triples","9.30am"],    ["2026-08-28","Championship Final","5.30pm"],
+    ["2026-08-29","Finals Weekend","12.00pm"], ["2026-08-30","Finals Weekend","12.00pm"],
+    ["2026-09-02","Charity Day","2.00pm"],     ["2026-09-05","Ruth McNab Pairs","9.30am"],
+    ["2026-09-11","Gents Trials","6.30pm"],    ["2026-09-12","Ladies/Gents","1.30pm"],
+    ["2026-09-19","Glasgow Ayrshire Presentation","2:00pm"], ["2026-09-26","Closing Day","1.30pm"],
+  ],
+  events: [
+    ["2026-09-05","Live music George Hoffin","20:00"], ["2026-09-06","Karaoke","16:00"],
+    ["2026-09-12","Ladies v Gents","14:00"],           ["2026-09-13","Karaoke","16:00"],
+    ["2026-09-19","Glasgow/Ayrshire Presention","14:00"], ["2026-09-20","Karaoke","16:00"],
+    ["2026-09-26","Mens Closing Day","14:00"],         ["2026-09-27","Karaoke","16:00"],
+    ["2026-10-03","Ladies closing day","14:00"],       ["2026-10-04","Karaoke","16:00"],
+    ["2026-10-10","Live music","20:00"],               ["2026-10-11","Karaoke","16:00"],
+    ["2026-10-17","Live music","20:00"],               ["2026-10-18","Karaoke","16:00"],
+    ["2026-10-23","PRESENTATION DANCE","18:00"],       ["2026-10-25","Tribute to TAKE THAT/WESTLIFE","16:00"],
+  ],
+};
+const liveDiary = () => mergeDiary(
+  LIVE.fixtures.map(([event_date, event, time], i) => ({ id: `f${i}`, event_date, event, time, venue: "home" })),
+  LIVE.events.map(([event_date, title, start_time], i) => ({ id: `e${i}`, event_date, title, start_time })),
+);
+
+test("chip counts are the month on screen, not the season", () => {
+  const expected = {
+    "2026-08": { all: 6,  matches: 6, socials: 0 },
+    "2026-09": { all: 14, matches: 6, socials: 8 },
+    "2026-10": { all: 8,  matches: 0, socials: 8 },
+  };
+  const lastDay = { "2026-08": "31", "2026-09": "30", "2026-10": "31" };
+  for (const [month, want] of Object.entries(expected)) {
+    const got = countByKind(inDateRange(liveDiary(), `${month}-01`, `${month}-${lastDay[month]}`));
+    assert.deepEqual(got, want, `${month} chips`);
+  }
+});
+
+test("a chip count equals the rows that chip will show — the invariant that broke", () => {
+  // Not "the number looks right": the number IS the length of what the filter
+  // yields, checked over every month, so the two cannot drift apart again.
+  for (const [start, end] of [["2026-08-01","2026-08-31"],["2026-09-01","2026-09-30"],["2026-10-01","2026-10-31"]]) {
+    const win = inDateRange(liveDiary(), start, end);
+    const counts = countByKind(win);
+    assert.equal(counts.all, win.length, `${start}: Everything`);
+    assert.equal(counts.matches, win.filter(i => i.kind === KIND_FIXTURE).length, `${start}: Matches`);
+    assert.equal(counts.socials, win.filter(i => i.kind !== KIND_FIXTURE).length, `${start}: Socials`);
+    assert.equal(counts.matches + counts.socials, counts.all, `${start}: the two halves make the whole`);
+  }
+});
+
+test("October Matches is 0 — a real number, not a missing chip", () => {
+  const oct = countByKind(inDateRange(liveDiary(), "2026-10-01", "2026-10-31"));
+  assert.equal(oct.matches, 0);
+  assert.equal(oct.all, 8);
+  // 0 is the useful answer here: it says the bowls season is over.
+  assert.equal(typeof oct.matches, "number");
+});
+
+test("a single tapped day scopes the counts to that day", () => {
+  const d = inDateRange(liveDiary(), "2026-09-12", "2026-09-12");
+  assert.deepEqual(countByKind(d), { all: 2, matches: 1, socials: 1 });
+});
+
+test("a window with nothing in it counts zero rather than throwing", () => {
+  assert.deepEqual(countByKind(inDateRange(liveDiary(), "2026-12-01", "2026-12-31")), { all: 0, matches: 0, socials: 0 });
+  assert.deepEqual(countByKind([]), { all: 0, matches: 0, socials: 0 });
+  assert.deepEqual(countByKind(), { all: 0, matches: 0, socials: 0 });
 });

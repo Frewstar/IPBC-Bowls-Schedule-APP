@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase.js";
 import { GREEN, GOLD, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { DAY_NAMES, MONTH_ABBR } from "../../lib/utils.js";
 import { posterUrl, posterThumbUrl, uploadPoster, removePoster, shareUrl } from "../../lib/poster.js";
-import { mergeDiary, groupByDay, KIND_FIXTURE, parseClockToMinutes, fmtMinutesRange } from "../../lib/diary.js";
+import { mergeDiary, groupByDay, countByKind, inDateRange, KIND_FIXTURE, parseClockToMinutes, fmtMinutesRange } from "../../lib/diary.js";
 
 const FULL_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -156,17 +156,16 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
   // below still operates on it alone, and fixtures are never written from
   // here. This is the read model laid over the top of both.
   const diary = useMemo(() => mergeDiary(fixtures, events), [fixtures, events]);
+  // Source-filtered but NOT window-filtered: this feeds the calendar dots
+  // (which show days either side of the month) and "next up" (which is the
+  // next thing whenever it is, not the next thing this month). The list below
+  // the grid uses `inWindow` instead — see there.
   const sorted = useMemo(
     () => source === "all"     ? diary
         : source === "matches" ? diary.filter(i => i.kind === KIND_FIXTURE)
         :                        diary.filter(i => i.kind !== KIND_FIXTURE),
     [diary, source],
   );
-  const counts = useMemo(() => ({
-    all:     diary.length,
-    matches: diary.filter(i => i.kind === KIND_FIXTURE).length,
-    socials: diary.filter(i => i.kind !== KIND_FIXTURE).length,
-  }), [diary]);
   const today = todayISO();
 
   // A shared link opened the app on a particular night. Wait for the rows —
@@ -203,14 +202,33 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
   const monthISOStart = toISODate(firstOfMonth(monthAnchor));
   const monthISOEnd = toISODate(new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 0));
 
-  // What the list below the grid is showing: one tapped day, or the whole
-  // month. A month is the unit a club programme is read in, and it is bounded
-  // — a year of a weekly karaoke is 52 rows in one list but only four or five
-  // in any month anyone is actually looking at.
-  const listed = useMemo(() => {
-    if (selectedDay) return sorted.filter(e => e.date === selectedDay);
-    return sorted.filter(e => e.date >= monthISOStart && e.date <= monthISOEnd);
-  }, [sorted, selectedDay, monthISOStart, monthISOEnd]);
+  // What the screen is showing: one tapped day, or the whole month. A month is
+  // the unit a club programme is read in, and it is bounded — a year of a
+  // weekly karaoke is 52 rows in one list but only four or five in any month
+  // anyone is actually looking at.
+  //
+  // NOT source-filtered. This is the window the chips describe, and it has to
+  // be established before them.
+  const inWindow = useMemo(
+    () => selectedDay
+      ? inDateRange(diary, selectedDay, selectedDay)
+      : inDateRange(diary, monthISOStart, monthISOEnd),
+    [diary, selectedDay, monthISOStart, monthISOEnd],
+  );
+
+  // A count on a filter describes what that filter will show — nothing else.
+  // These were the whole season while the list underneath was one month, so
+  // September read "Matches 35" and then showed six. Both now come off
+  // `inWindow`, which is what makes them agree by construction rather than by
+  // two filters being kept in step by hand.
+  const counts = useMemo(() => countByKind(inWindow), [inWindow]);
+
+  const listed = useMemo(
+    () => source === "all"     ? inWindow
+        : source === "matches" ? inWindow.filter(i => i.kind === KIND_FIXTURE)
+        :                        inWindow.filter(i => i.kind !== KIND_FIXTURE),
+    [inWindow, source],
+  );
 
   // The one thing most people open this tab to find out.
   const nextUp = useMemo(() => sorted.find(e => e.date >= today && !e.cancelled) || null, [sorted, today]);

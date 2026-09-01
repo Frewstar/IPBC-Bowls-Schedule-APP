@@ -145,35 +145,83 @@ server.listen(PORT, async () => {
     [...document.querySelectorAll("img")].filter(i => /storage\/v1|render\/image/.test(i.src)).length);
   check(posters >= 1, `George Hoffin poster thumbnail rendered (${posters} poster image(s))`);
 
-  // ── Filter chips ──────────────────────────────────────────────────────────
-  const chip = async label => {
+  // ── Filter chips: the NUMBER ON THE CHIP, and the rows it yields ──────────
+  // The previous version of this only counted rows and never read the chip's
+  // own label, which is how "Matches 35" shipped over a six-row September.
+  const readChips = () => p.evaluate(() => {
+    const out = {};
+    for (const btn of document.querySelectorAll("button")) {
+      const t = (btn.innerText || "").replace(/\s+/g, " ").trim();
+      const m = t.match(/^(Everything|Matches|Socials)\s+(\d+)$/);
+      if (m) out[m[1].toLowerCase()] = Number(m[2]);
+    }
+    return out;
+  });
+  const monthShown = () => p.evaluate(() => {
+    const el = [...document.querySelectorAll("div")].find(d => /^(January|February|March|April|May|June|July|August|September|October|November|December) \d{4}$/.test((d.innerText || "").trim()));
+    return el ? el.innerText.trim() : "(unknown)";
+  });
+  const countCards = () => p.evaluate(() => [...document.querySelectorAll("div")]
+    .filter(d => { const cs = getComputedStyle(d); return cs.borderLeftWidth === "4px" && cs.borderTopLeftRadius === "12px"; }).length);
+  const tapChip = async label => {
     await p.evaluate(l => {
-      const x = [...document.querySelectorAll("button")].find(b => (b.textContent || "").trim().startsWith(l));
+      const x = [...document.querySelectorAll("button")].find(b => new RegExp(`^${l}\\s+\\d+$`).test((b.innerText || "").replace(/\s+/g, " ").trim()));
       if (x) x.click();
     }, label);
-    await p.waitForTimeout(500);
-    return p.evaluate(() => {
-      const cards = [...document.querySelectorAll("div")].filter(d => {
-        const cs = getComputedStyle(d);
-        return cs.borderLeftWidth === "4px" && cs.borderTopLeftRadius === "12px";
-      });
-      return cards.map(c => (c.innerText || "").replace(/\n/g, " · "));
-    });
+    await p.waitForTimeout(450);
   };
 
-  const matches = await chip("Matches");
-  check(matches.length === 6, `Matches chip → 6 September fixtures (got ${matches.length})`);
-  check(matches.every(t => /\b(home|away)\b/i.test(t)), "every row under Matches carries a Home/Away pill");
-  check(matches.some(t => t.includes("Charity Day")) && matches.some(t => t.includes("Closing Day")),
-    "Matches includes Charity Day and Closing Day by name");
+  console.log("\n═══ chip counts describe the month on screen ═══");
+  // September is where the tab opens (today is 1 Sep 2026). The UI disables
+  // paging back, so August is unreachable here and is covered by unit test.
+  for (const [month, want] of [["September 2026", { everything: 14, matches: 6, socials: 8 }],
+                               ["October 2026",   { everything: 8,  matches: 0, socials: 8 }]]) {
+    if ((await monthShown()) !== month) {
+      await p.evaluate(() => { const x = [...document.querySelectorAll("button")].find(b => b.getAttribute("aria-label") === "Next month"); if (x) x.click(); });
+      await p.waitForTimeout(700);
+    }
+    check((await monthShown()) === month, `showing ${month}`);
+    await tapChip("Everything");
+    const chips = await readChips();
+    console.log(`   ${month}: Everything ${chips.everything} · Matches ${chips.matches} · Socials ${chips.socials}`);
+    check(chips.everything === want.everything, `${month} chip reads "Everything ${want.everything}" (read ${chips.everything})`);
+    check(chips.matches   === want.matches,     `${month} chip reads "Matches ${want.matches}" (read ${chips.matches})`);
+    check(chips.socials   === want.socials,     `${month} chip reads "Socials ${want.socials}" (read ${chips.socials})`);
 
-  const socials = await chip("Socials");
-  check(socials.length === 8, `Socials chip → 8 September events (got ${socials.length})`);
-  check(socials.filter(t => t.includes("Karaoke")).length === 4, "Socials keeps all 4 karaoke nights");
-  check(socials.some(t => t.includes("Live music George Hoffin")), "Socials includes the George Hoffin night by name");
+    // The invariant: the number on the chip is the number of rows it yields.
+    for (const [label, key] of [["Everything", "everything"], ["Matches", "matches"], ["Socials", "socials"]]) {
+      await tapChip(label);
+      const rendered = await countCards();
+      check(rendered === want[key], `${month} · ${label}: chip says ${want[key]}, list renders ${rendered}`);
+    }
+    await tapChip("Everything");
+  }
 
-  const all = await chip("Everything");
-  check(all.length === 14, `Everything chip → 14 September rows (got ${all.length})`);
+  // ── October Matches 0: the chip is there, and says so ─────────────────────
+  check((await monthShown()) === "October 2026", "still on October for the zero case");
+  await tapChip("Matches");
+  const zeroChips = await readChips();
+  check(zeroChips.matches === 0, `Matches chip still rendered, reading 0 (read ${zeroChips.matches})`);
+  const emptyText = await p.evaluate(() => document.body.innerText);
+  check(/No matches this month/i.test(emptyText),
+    "tapping Matches on October gives a worded empty state, not a blank area");
+  console.log(`   October · Matches → "${(emptyText.match(/No matches[^\n]*/i) || ["(none)"])[0]}"`);
+
+  // ── A tapped day scopes the chips to that day ─────────────────────────────
+  // Beyond the literal instruction ("scope to the month"), but it follows the
+  // rule: a count describes what the filter will show, and when one day is the
+  // subject that is the day. 12 September carries a fixture and a social.
+  await p.evaluate(() => { const x = [...document.querySelectorAll("button")].find(b => b.getAttribute("aria-label") === "Previous month"); if (x) x.click(); });
+  await p.waitForTimeout(700);
+  await tapChip("Everything");
+  await p.evaluate(() => { const x = [...document.querySelectorAll("button")].find(b => /Sat 12 Sep/i.test(b.getAttribute("aria-label") || "")); if (x) x.click(); });
+  await p.waitForTimeout(600);
+  const dayChips = await readChips();
+  console.log(`   12 Sep selected: Everything ${dayChips.everything} · Matches ${dayChips.matches} · Socials ${dayChips.socials}`);
+  check(dayChips.everything === 2 && dayChips.matches === 1 && dayChips.socials === 1,
+    `a tapped day scopes the chips to it — 2 / 1 / 1 (read ${dayChips.everything} / ${dayChips.matches} / ${dayChips.socials})`);
+  await tapChip("Matches");
+  check((await countCards()) === 1, "12 Sep · Matches: chip says 1, list renders 1");
 
   await b.close();
   server.close();
