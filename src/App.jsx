@@ -1276,16 +1276,38 @@ export default function BowlsTracker() {
   }
 
   // Roll of Honour tournament mapping
+  // Which honours board a tournament's final belongs on. Every value must be
+  // a real roll_of_honour.id — a target that does not exist fails as
+  // `no_category` and reads, from the outside, exactly like nothing happening.
+  // "presidents" pointed at "roh-president" for as long as anyone can
+  // remember; that category held 0 entries and has now been deleted as the
+  // stray it was, which is the only reason the dangling pointer surfaced.
+  // test/rohMap.test.mjs checks every value against the ids production holds.
   const ROH_MAP = {
     "championship":                "roh-gents-singles",
-    "presidents":                  "roh-president",
+    // TWO Presidents competitions, not one. The gents tournament is the bare
+    // "presidents" (67 seasons) and the ladies one is "ladies-presidents"
+    // (65) — separate boards. The ladies side had no entry here at all, so it
+    // was silently doing nothing for the same reason the gents side was.
+    "presidents":                  "roh-gents-presidents",
     "pairs":                       "roh-gents-pairs",
     "triples":                     "roh-gents-triples",
     "rinks":                       "roh-gents-rinks",
     "ladies-championship":         "roh-ladies-singles",
+    "ladies-presidents":           "roh-ladies-presidents",
     "ladies-pairs":                "roh-ladies-pairs",
     "ladies-triples":              "roh-ladies-triples",
     "ladies-rinks":                "roh-ladies-rinks",
+    // roh-mixed-pairs has existed all along with nothing pointing at it, so
+    // the board could never be written to — the same silent nothing as the
+    // ladies Presidents, just not found yet. Balloted Pairs is the other
+    // mixed competition and has no board of its own; it is not mapped here,
+    // because two tournaments writing one board would overwrite each other's
+    // year.
+    "mixed-pairs":                 "roh-mixed-pairs",
+    // The four generic `seniors` tournaments are legacy and map to nothing on
+    // purpose: the 2026 set below owns these boards. Retiring them is the
+    // real action there, and it is Joseph's call, not a mapping change.
     "seniors-championship":        "roh-seniors-singles",
     "seniors-pairs":               "roh-seniors-pairs",
     "seniors-triples":             "roh-seniors-triples",
