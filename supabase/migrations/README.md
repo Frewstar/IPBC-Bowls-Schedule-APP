@@ -44,6 +44,7 @@ Run them in filename order. Every one is idempotent.
 | 12 | `20260901_admin_role_layers.sql` | Admin role layers — `bowls_admin_role`, a CHECK on `admins.role`, `events_admin` | Applied 31 Aug, 17:04 UTC as `admin_role_layers` — verified live: the four roles in the CHECK, `anon` can execute `bowls_admin_role` and still cannot execute `bowls_is_super_admin`, lockout counting increments and clears |
 | 13 | `20260902_event_posters.sql` | Posters on What's On — `club_events.poster_path`, the `event-posters` bucket, ticketed writes, the Open Graph share link | Applied 31 Aug, 20:20 UTC as `event_posters`, plus `20260831205042 event_posters_revoke_ticket_grants` at 20:50 — verified live: the column, the bucket with its limits, an upload round-trip, and an upload without a ticket refused |
 | 14 | `20260903_live_games_creator_member_id.sql` | The sign-in PIN comes out of `live_games` — `creator_member_id`, backfilled, and `creator_cloudkey` cleared on finished games | Applied 31 Aug, 21:59 UTC as `live_games_creator_member_id` — ledger 43 rows before, 44 after |
+| 15 | `20260904_poster_path_club_prefix.sql` | Poster objects get the club in front — `<club_id>/<event_id>/<file>.jpg`, club derived from the account; `bowls_poster_remove_ticket` taught both shapes | Applied 1 Sep, 09:31 UTC as `poster_path_club_prefix` — ledger 44 rows before, 45 after. Storage policies deliberately unchanged |
 
 Status is no longer "my best understanding from our sessions". Every row above was
 checked against `information_schema`, `pg_constraint`, `pg_indexes`, `pg_policies`,
@@ -2441,6 +2442,72 @@ Credentials in the table: 2 before, 1 after, and the one left is deliberate.
 reads it, the same client-first ordering as everything else in this folder.
 
 ---
+
+## 12. Poster paths get the club in front
+
+**File:** `supabase/migrations/20260904_poster_path_club_prefix.sql`
+**Status:** Applied 1 September, 09:31 UTC as `poster_path_club_prefix` —
+ledger 44 rows before, 45 after, tail `20260901093137`.
+
+```
+was:  <event_id>/<file_uuid>.jpg
+now:  <club_id>/<event_id>/<file_uuid>.jpg
+```
+
+"The first path segment is always the tenant id" is the convention the rest of
+the estate follows, and it is what lets a storage policy read the club off a
+path without a join. Bowls did not follow it. Done now because the bucket holds
+exactly **one** object; at 200 clubs it is a migration of thousands of files.
+
+The club is **derived, never passed**. `bowls_poster_ticket` reads `club_id`
+off the `player_data` row that the caller's name + PIN resolve to. It re-checks
+the PIN rather than matching `name_key` alone, because `bowls_register`
+deliberately allows two accounts under one name with different PINs — and at
+200 clubs those two rows can be in different clubs. That is a second bcrypt on
+a path that already does one.
+
+### The delete path had to change with it
+
+`bowls_poster_remove_ticket` read the event id out of the **first** path
+segment. Under the new shape that segment is the club, so left alone it would
+have written a club id into `poster_tickets.event_id` — silently, because there
+is no foreign key on that column to reject it, and the delete itself would
+still have worked (`bowls_poster_ticket_ok` matches on `object_path`, not
+`event_id`). It now accepts both shapes and takes the event from the right
+position:
+
+| path | outcome |
+|---|---|
+| `<club>/<event>/<file>` | accept, event = segment 2 |
+| `<event>/<file>` (legacy) | accept, event = segment 1 |
+| `evil.jpg`, `notauuid/…`, `../../…`, 4 segments | `bad_path` |
+
+The legacy branch exists for the one object already in the bucket and can go
+once that object has been replaced.
+
+### What this is NOT
+
+Preparation for a club check, not the check. The storage policies are
+untouched — they still authorise by matching a live ticket's `object_path`, not
+by inspecting the path. Two gaps stay open until the tenancy work:
+
+* An `events_admin` of club A can still mint a ticket for club B's event; it
+  would be written under A's prefix. The fix is an
+  event-belongs-to-your-club check, and it belongs with tenancy.
+* The path prefix alone does not protect anything yet, precisely because
+  nothing reads it.
+
+### The existing object was not moved
+
+`062cda9f-…/2922d0b1-….jpg` — the George Hoffin poster, 156 KB — stays on the
+old two-segment path. Renaming means moving it through the storage API;
+editing `storage.objects.name` in SQL orphans the stored file from its row. It
+keeps working (public read is path-agnostic, and `club_events.poster_path`
+still matches it) and takes the new shape whenever it is next replaced.
+
+The client needed no change: it round-trips `ticket.path` into `poster_path`
+and hands `poster_path` back on removal, and `api/share.js` splits the path on
+`/` and re-encodes per segment, so any depth works.
 
 ## Verifying what has actually run
 
