@@ -662,8 +662,19 @@ export default function BowlsTracker() {
   }, [baseTournaments, personalComps, myName, activeSection]);
 
   // ── Fixtures (Supabase only — no hardcoded season) ──
+  // event_date leads and sort_order is the same-date tiebreak. That ordering,
+  // and not the reverse, is what makes sort_order advisory.
+  //
+  // Fixtures.jsx takes the "Next Fixture" hero from upcoming[0] — the first
+  // row in query order — and addFixture sends no sort_order, so every fixture
+  // added through the UI takes the column default of 99. Ordering by
+  // sort_order first would still place such a row at numeric position 99
+  // whatever its date: with the season seeded at 10..350, a fixture added for
+  // October would render between 23 and 31 May. Leading on event_date puts
+  // every row on its own date no matter what sort_order says, so the column
+  // can only ever break ties between two fixtures on the same day.
   const [fixtures, setFixtures, fixturesLoad] = useRemoteData(
-    () => supabase.from("club_fixtures").select("*").order("sort_order"),
+    () => supabase.from("club_fixtures").select("*").order("event_date").order("sort_order"),
     [],
     { transform: rows => (rows || []).map(f => ({ ...f, date: new Date(f.event_date + "T12:00:00") })) },
   );
