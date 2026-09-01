@@ -103,10 +103,17 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null); // null | "one" | "series"
-  // Which night's detail is open, and whether its poster is full-screen.
+  // Which event's detail is open, and whether its poster is full-screen.
   const [detailId, setDetailId] = useState(null);
   const [lightbox, setLightbox] = useState(null);     // null | { src, alt }
   const [posterBusy, setPosterBusy] = useState(false);
+  // A poster chosen in the form but not yet uploaded — the event has to exist
+  // before a ticket can be minted for it, so it waits here until Save.
+  const [pickedPoster, setPickedPoster] = useState(null);   // { file, previewUrl }
+  // An upload that failed AFTER the event saved. Held so she can try the
+  // poster again without retyping the event, and deliberately not a toast:
+  // a toast that vanishes is how you end up not knowing which half worked.
+  const [posterRetry, setPosterRetry] = useState(null);     // { eventId, title, file }
   const [confirmPosterDel, setConfirmPosterDel] = useState(false);
   const fileRef = useRef(null);
 
@@ -168,7 +175,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
   );
   const today = todayISO();
 
-  // A shared link opened the app on a particular night. Wait for the rows —
+  // A shared link opened the app on a particular event. Wait for the rows —
   // the id is known before the fetch finishes — then show it and move the
   // month to it, so closing the sheet leaves them somewhere that makes sense
   // rather than back on today.
@@ -180,9 +187,9 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
       setSelectedDay(hit.event_date);
       setDetailId(hit.id);
     } else {
-      // Shared, then removed — or a night before this month, which the query
+      // Shared, then removed — or a date before this month, which the query
       // window doesn't cover. Say so rather than opening nothing.
-      showToast("That night isn't in the diary any more");
+      showToast("That event isn't in the diary any more");
     }
     onOpenedEvent?.();
   }, [openEventId, loading, events]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -252,6 +259,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
     const start = selectedDay || (monthISOStart > today ? monthISOStart : today);
     setForm({ ...BLANK, event_date: start, from_date: start });
     setConfirmDel(null);
+    clearPickedPoster();
     setSheet("add");
   }
   function openEdit(row) {
@@ -259,6 +267,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
     setConfirmPosterDel(false);
     setForm({ ...BLANK, title: row.title, detail: row.detail || "", start_time: row.start_time || "", end_time: row.end_time || "", event_date: row.event_date });
     setConfirmDel(null);
+    clearPickedPoster();
     setSheet({ edit: row });
   }
 
@@ -275,8 +284,8 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
   const blockedReason =
     !form.title.trim() ? "Give it a name"
     : mode === "once" && !form.event_date ? "Pick a date"
-    : mode === "weekly" && !form.from_date ? "Pick the first night"
-    : mode === "weekly" && !form.to_date ? "Pick the last night"
+    : mode === "weekly" && !form.from_date ? "Pick the first date"
+    : mode === "weekly" && !form.to_date ? "Pick the last date"
     : mode === "weekly" && dates.length === 0 ? `No ${FULL_DAYS[form.weekday]}s between those dates`
     : null;
 
@@ -293,6 +302,16 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
     };
   }
 
+  // One tap. Behind it: save the event, then — if a poster was picked — mint a
+  // ticket for the row that now exists, upload, and set poster_path.
+  //
+  // THE EVENT IS NEVER ROLLED BACK. bowls_poster_ticket takes an event id, so
+  // the poster genuinely cannot go first; that is the schema showing through,
+  // and it is hidden rather than removed. What it must not do is cost her the
+  // event: on a weak signal in the clubhouse the upload is the part that
+  // fails, and losing a typed-out event because an image didn't go would be
+  // the worst outcome of the two. So a failed poster leaves the event saved,
+  // says which half worked, and keeps the file for a retry.
   async function save() {
     if (blockedReason) { showToast(blockedReason); return; }
     setSaving(true);
@@ -301,8 +320,10 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
         const patch = { title: form.title.trim(), detail: form.detail.trim() || null, start_time: form.start_time.trim() || null, end_time: form.end_time.trim() || null };
         const { error } = await supabase.from("club_events").update(patch).eq("id", editing.id);
         if (error) { showToast(`Couldn't save: ${error.message}`); return; }
-        setEvents(prev => prev.map(e => (e.id === editing.id ? { ...e, ...patch } : e)));
+        const updated = { ...editing, ...patch };
+        setEvents(prev => prev.map(e => (e.id === editing.id ? updated : e)));
         setSheet(null);
+        await finishWithPoster(updated, "Saved");
         return;
       }
       if (mode === "once") {
@@ -310,7 +331,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
         if (error) { showToast(dupeMessage(error, 1)); return; }
         setEvents(prev => [...prev.filter(e => e.id !== data.id), data]);
         setSheet(null);
-        showToast("Added");
+        await finishWithPoster(data, "Added");
         return;
       }
       await saveSeries();
@@ -319,12 +340,30 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
     }
   }
 
-  // Generate the nights as ordinary rows. No recurrence rule is stored and
-  // nothing is expanded on read, so cancelling one night later is an edit to
+  // The second half of the one tap. `row` is already saved by the time this
+  // runs, and stays saved.
+  async function finishWithPoster(row, verb) {
+    const picked = pickedPoster;
+    clearPickedPoster();
+    if (!picked) { showToast(verb); return; }
+
+    try {
+      await putPosterOn(row, picked.file);
+      showToast(`${verb}, with the poster`);
+    } catch (err) {
+      // Both facts, in one sentence, and a way back to the half that failed.
+      setPosterRetry({ eventId: row.id, title: row.title, file: picked.file });
+      showToast(`${verb} — but the poster didn't upload`);
+      console.warn("Poster upload failed after the event saved:", err);
+    }
+  }
+
+  // Generate the dates as ordinary rows. No recurrence rule is stored and
+  // nothing is expanded on read, so cancelling one later is an edit to
   // one row.
   async function saveSeries() {
     const title = form.title.trim();
-    // Don't write a night that's already listed. The unique index is the real
+    // Don't write a date that's already listed. The unique index is the real
     // guard — this is here so a second tap reads as "already done" rather than
     // as a database error, which is the shape of the club_fixtures duplicate.
     const { data: existing, error: readErr } = await supabase.from("club_events")
@@ -354,15 +393,15 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
     setSheet(null);
     const skipped = dates.length - fresh.length;
     showToast(skipped
-      ? `Added ${data.length} nights, skipped ${skipped} already listed`
-      : `Added ${data.length} nights`);
+      ? `Added ${data.length} events, skipped ${skipped} already listed`
+      : `Added ${data.length} events`);
   }
 
   // 23505 is the unique index doing its job — two taps that raced past the
   // check above. Say that, rather than showing the raw constraint name.
   function dupeMessage(error, n) {
     if (error?.code === "23505")
-      return n === 1 ? "That's already in the diary for that night" : "Those nights are already in the diary";
+      return n === 1 ? "That's already in the diary for that date" : "Those dates are already in the diary";
     return `Couldn't save: ${error?.message || "no response from the server"}`;
   }
 
@@ -389,7 +428,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
     showToast("Removed");
   }
 
-  // Removing the rest of a series leaves nights already past alone — the query
+  // Removing the rest of a series leaves dates already past alone — the query
   // is from today forward, same as the list.
   async function removeSeries(row) {
     const { error } = await supabase.from("club_events").delete()
@@ -404,42 +443,68 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
   // Three steps and the order matters. Upload first, point the row at the new
   // object second, take the old one down last: at no point is there an event
   // pointing at a file that isn't there.
-  async function attachPoster(file, row) {
-    if (!file || !row) return;
+  // Object URLs are a real allocation; revoke on replace and on close or a
+  // long editing session leaks one per pick.
+  function clearPickedPoster() {
+    setPickedPoster(prev => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  }
+  function pickPoster(file) {
+    if (!file) return;
+    clearPickedPoster();
+    setPickedPoster({ file, previewUrl: URL.createObjectURL(file) });
+  }
+
+  // Upload, then point the row at it. Shared by save(), the edit sheet and the
+  // retry banner so all three fail the same way. Throws — the caller decides
+  // what a failure costs, and for save() the answer is "not the event".
+  async function putPosterOn(row, file) {
+    const previous = row.poster_path || null;
+    // uploadPoster shrinks to 1400px / ~300KB on the phone first, which is why
+    // the George Hoffin poster is 153KB and not several megabytes.
+    const { path } = await uploadPoster({ eventId: row.id, name: myName, pin: myPin, file });
+
+    const { error } = await supabase.from("club_events").update({ poster_path: path }).eq("id", row.id);
+    if (error) throw new Error(`The poster uploaded but didn't attach: ${error.message}`);
+    setEvents(prev => prev.map(e => (e.id === row.id ? { ...e, poster_path: path } : e)));
+
+    // Replacing: the old object is nobody's poster now, so it goes. If this
+    // fails the member still sees the right poster — it leaves a file behind,
+    // which is a tidying problem, not a wrong-image problem.
+    if (previous) {
+      try { await removePoster({ path: previous, name: myName, pin: myPin }); }
+      catch (err) { console.warn("Old poster left behind:", previous, err); }
+    }
+    return path;
+  }
+
+  // The banner's button. The event is already saved and stays saved whatever
+  // happens here.
+  async function retryPoster() {
+    if (!posterRetry) return;
+    const row = events.find(e => e.id === posterRetry.eventId);
+    if (!row) { setPosterRetry(null); showToast("That event isn't in the diary any more"); return; }
     setPosterBusy(true);
     try {
-      const previous = row.poster_path || null;
-      const { path } = await uploadPoster({ eventId: row.id, name: myName, pin: myPin, file });
-
-      const { error } = await supabase.from("club_events").update({ poster_path: path }).eq("id", row.id);
-      if (error) throw new Error(`Poster uploaded but the night didn't save: ${error.message}`);
-      setEvents(prev => prev.map(e => (e.id === row.id ? { ...e, poster_path: path } : e)));
-
-      // Replacing: the old object is nobody's poster now, so it goes. If this
-      // fails the member still sees the right poster — it leaves a file behind,
-      // which is a tidying problem, not a wrong-image problem.
-      if (previous) {
-        try { await removePoster({ path: previous, name: myName, pin: myPin }); }
-        catch (err) { console.warn("Old poster left behind:", previous, err); }
-      }
-      showToast(previous ? "Poster replaced" : "Poster added");
+      await putPosterOn(row, posterRetry.file);
+      setPosterRetry(null);
+      showToast("Poster added");
     } catch (err) {
-      showToast(err.message || "Couldn't add the poster");
+      showToast(err.message || "The poster still didn't upload");
     } finally {
       setPosterBusy(false);
     }
   }
 
-  // The object goes before the column does. The other order would clear the
-  // pointer and leave the picture itself on a public URL — and the reason this
-  // button exists is the day the wrong file gets picked.
   async function dropPoster(row) {
     if (!row?.poster_path) return;
     setPosterBusy(true);
     try {
       await removePoster({ path: row.poster_path, name: myName, pin: myPin });
       const { error } = await supabase.from("club_events").update({ poster_path: null }).eq("id", row.id);
-      if (error) throw new Error(`Poster deleted but the night didn't save: ${error.message}`);
+      if (error) throw new Error(`Poster deleted but the event didn't save: ${error.message}`);
       setEvents(prev => prev.map(e => (e.id === row.id ? { ...e, poster_path: null } : e)));
       setConfirmPosterDel(false);
       showToast("Poster removed");
@@ -490,7 +555,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
           <CalendarDays size={32} strokeWidth={1} color={BORDER} style={{ marginBottom: "12px" }} />
           <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "600", color: TEXT2, marginBottom: "6px" }}>Nothing listed yet</div>
           <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, lineHeight: 1.5 }}>
-            {isAdmin ? "Tap New to put the band, the karaoke or a one-off night in the diary." : "Social nights at the club will be listed here."}
+            {isAdmin ? "Tap New to put the band, the karaoke or a one-off event in the diary." : "Social events at the club will be listed here."}
           </div>
         </div>
       ) : (
@@ -642,8 +707,28 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
         </>
       )}
 
+      {/* The event saved, the poster didn't. Persistent on purpose — a toast
+          that vanishes is how you end up not knowing which half worked. */}
+      {posterRetry && (
+        <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}55`, borderRadius: "11px", padding: "12px 14px", marginBottom: "14px" }}>
+          <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT, lineHeight: 1.5 }}>
+            <strong>{posterRetry.title}</strong> is in the diary, but its poster didn&rsquo;t upload.
+          </div>
+          <div style={{ display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" }}>
+            <button onClick={retryPoster} disabled={posterBusy}
+              style={{ background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "9px 14px", fontFamily: F_UI, fontSize: "12px", fontWeight: "700", cursor: posterBusy ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: "6px", minHeight: "40px" }}>
+              <ImagePlus size={14} strokeWidth={2} />{posterBusy ? "Uploading…" : "Try the poster again"}
+            </button>
+            <button onClick={() => setPosterRetry(null)} disabled={posterBusy}
+              style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "9px 14px", fontFamily: F_UI, fontSize: "12px", cursor: "pointer", minHeight: "40px" }}>
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Add / edit ── */}
-      <BottomSheet open={!!sheet} onClose={() => setSheet(null)} title={editing ? "Edit night" : "Add to What's On"}>
+      <BottomSheet open={!!sheet} onClose={() => setSheet(null)} title={editing ? "Edit event" : "Add to What's On"}>
         <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
 
           {!editing && (
@@ -687,8 +772,8 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
             <Field label="Date">
               <div style={{ fontFamily: F_SANS, fontSize: "17px", fontWeight: "600", color: TEXT }}>{fmtDateLong(editing.event_date)}</div>
               <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "4px", lineHeight: 1.5 }}>
-                To move a night, cancel this one and add the new date — that way anyone
-                turning up on the old night still sees it's off.
+                To move an event, cancel this one and add the new date — that way anyone
+                turning up on the old date still sees it&rsquo;s off.
               </div>
             </Field>
           ) : mode === "once" ? (
@@ -697,7 +782,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
             </Field>
           ) : (
             <>
-              <Field label="Which night?">
+              <Field label="Which day?">
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
                   {FULL_DAYS.map((d, i) => (
                     <button key={d} onClick={() => setForm(f => ({ ...f, weekday: i }))} style={toggleBtn(form.weekday === i)}>{DAY_NAMES[i]}</button>
@@ -713,14 +798,20 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
                   <strong style={{ color: TEXT }}>{dates.length} {FULL_DAYS[form.weekday]}{dates.length === 1 ? "" : "s"}</strong>
                   {" — "}{fmtDateLong(dates[0])} to {fmtDateLong(dates[dates.length - 1])}.
                   <div style={{ color: TEXT3, marginTop: "4px" }}>
-                    Each one goes in as its own night, so you can cancel one later without touching the rest.
+                    Each one goes in as its own event, so you can cancel one later without touching the rest.
                   </div>
                 </div>
               )}
             </>
           )}
 
-          {editing && (
+          {/* Shown when creating a one-off as well as when editing, so the
+              poster goes on while she still has it in her hand. Hidden for a
+              weekly run: a series is N events and a poster is per-event, so
+              one tap would mean N uploads on a clubhouse signal — the exact
+              fragility this change exists to avoid. Each event can take its
+              own poster afterwards. */}
+          {(editing || mode === "once") && (
             <Field label="Poster (optional)">
               <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp"
                 style={{ display: "none" }}
@@ -730,18 +821,38 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
                   // fires no change event otherwise, which reads as the button
                   // being broken.
                   ev.target.value = "";
-                  attachPoster(f, editing);
+                  pickPoster(f);
                 }} />
 
-              {editing.poster_path ? (
+              {/* Three states: one picked and waiting for Save, one already on
+                  the event, or none. */}
+              {pickedPoster ? (
+                <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                  <img src={pickedPoster.previewUrl} alt=""
+                    style={{ width: "76px", height: "101px", objectFit: "cover", borderRadius: "9px", border: `1px solid ${GREEN}`, background: SURFACE2, flexShrink: 0 }} />
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px", minWidth: 0 }}>
+                    <div style={{ fontFamily: F_UI, fontSize: "12px", color: GREEN, fontWeight: "700" }}>
+                      Goes on when you save
+                    </div>
+                    <button onClick={() => fileRef.current?.click()} style={secondaryBtn}>
+                      <ImagePlus size={15} strokeWidth={1.75} />Pick a different one
+                    </button>
+                    <button onClick={clearPickedPoster} style={secondaryBtn}>
+                      <X size={15} strokeWidth={1.75} />Don&rsquo;t add a poster
+                    </button>
+                  </div>
+                </div>
+              ) : editing?.poster_path ? (
                 <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
                   <img src={posterThumbUrl(editing.poster_path, 240)} alt={editing.title}
                     onError={ev => { ev.currentTarget.src = posterUrl(editing.poster_path); }}
                     style={{ width: "76px", height: "101px", objectFit: "cover", borderRadius: "9px", border: `1px solid ${BORDER}`, background: SURFACE2, flexShrink: 0 }} />
                   <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px", minWidth: 0 }}>
                     <button onClick={() => fileRef.current?.click()} disabled={posterBusy} style={secondaryBtn}>
-                      <ImagePlus size={15} strokeWidth={1.75} />{posterBusy ? "Working…" : "Replace it"}
+                      <ImagePlus size={15} strokeWidth={1.75} />Replace it
                     </button>
+                    {/* Removal stays its own action rather than waiting for
+                        Save: it deletes the file, so it asks for itself. */}
                     {confirmPosterDel ? (
                       <div style={{ display: "flex", gap: "8px" }}>
                         <button onClick={() => dropPoster(editing)} disabled={posterBusy} style={{ ...dangerBtn, flex: 1 }}>
@@ -757,17 +868,24 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
                   </div>
                 </div>
               ) : (
-                <button onClick={() => fileRef.current?.click()} disabled={posterBusy} style={{ ...secondaryBtn, width: "100%" }}>
-                  <ImagePlus size={15} strokeWidth={1.75} />{posterBusy ? "Working…" : "Add the poster"}
+                <button onClick={() => fileRef.current?.click()} style={{ ...secondaryBtn, width: "100%" }}>
+                  <ImagePlus size={15} strokeWidth={1.75} />Add the poster
                 </button>
               )}
 
               <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "8px", lineHeight: 1.5 }}>
-                The promoter's picture — the one that goes on Facebook. It's shrunk
+                The promoter&rsquo;s picture — the one that goes on Facebook. It&rsquo;s shrunk
                 on your phone before it uploads, so a photo straight from the camera
-                is fine. Removing it deletes it, it doesn't just hide it.
+                is fine. Removing it deletes it, it doesn&rsquo;t just hide it.
               </div>
             </Field>
+          )}
+
+          {!editing && mode === "weekly" && (
+            <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, lineHeight: 1.5, padding: "0 2px" }}>
+              A poster goes on one event at a time — add this run first, then open
+              any of them to put the poster on.
+            </div>
           )}
 
           {blockedReason && !editing && (
@@ -777,7 +895,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
           )}
 
           <button onClick={save} disabled={saving} style={{ width: "100%", background: saving ? TEXT3 : MID, border: "none", borderRadius: "10px", color: "#fff", padding: "14px", fontFamily: F_UI, fontSize: "14px", fontWeight: "700", cursor: saving ? "default" : "pointer" }}>
-            {saving ? "Saving…" : editing ? "Save changes" : mode === "weekly" && dates.length ? `Add ${dates.length} nights` : "Add to the diary"}
+            {saving ? "Saving…" : editing ? "Save changes" : mode === "weekly" && dates.length ? `Add ${dates.length} events` : "Add to the diary"}
           </button>
 
           {editing && (
@@ -788,11 +906,11 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
                 </button>
               ) : (
                 <button onClick={() => setCancelled(editing, true)} style={secondaryBtn}>
-                  <Ban size={15} strokeWidth={1.75} />Cancel this night
+                  <Ban size={15} strokeWidth={1.75} />Cancel this event
                 </button>
               )}
               <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, lineHeight: 1.5, padding: "0 2px" }}>
-                A cancelled night stays on the list with a line through it, so anyone
+                A cancelled event stays on the list with a line through it, so anyone
                 who was coming finds out. Removing it takes it off the list entirely.
               </div>
 
@@ -803,7 +921,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
                 </div>
               ) : (
                 <button onClick={() => setConfirmDel("one")} style={dangerBtn}>
-                  <Trash2 size={15} strokeWidth={1.75} />Remove this night
+                  <Trash2 size={15} strokeWidth={1.75} />Remove this event
                 </button>
               )}
 
@@ -814,7 +932,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
                 </div>
               ) : (
                 <button onClick={() => setConfirmDel("series")} style={dangerBtn}>
-                  <Trash2 size={15} strokeWidth={1.75} />Remove every remaining {form.title || "night"} in this run
+                  <Trash2 size={15} strokeWidth={1.75} />Remove every remaining {form.title || "event"} in this run
                 </button>
               ))}
             </div>
@@ -822,7 +940,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
         </div>
       </BottomSheet>
 
-      {/* ── One night, tapped from the list ── */}
+      {/* ── One event, tapped from the list ── */}
       <BottomSheet open={!!detail} onClose={() => setDetailId(null)} title={detail?.title || ""}>
         {detail && (
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -854,17 +972,17 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
             </div>
 
             <button onClick={() => shareEvent(detail)} style={{ ...secondaryBtn, width: "100%" }}>
-              <Share2 size={15} strokeWidth={1.75} />Share this night
+              <Share2 size={15} strokeWidth={1.75} />Share this event
             </button>
             <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "-6px", lineHeight: 1.5 }}>
               {detail.poster_path
                 ? "Pasted into Facebook, the link shows the poster."
-                : "Pasted into Facebook, the link shows the night and the club badge."}
+                : "Pasted into Facebook, the link shows the event and the club badge."}
             </div>
 
             {isAdmin && (
               <button onClick={() => openEdit(detail)} style={{ ...secondaryBtn, width: "100%" }}>
-                <Pencil size={14} strokeWidth={1.75} />Edit this night
+                <Pencil size={14} strokeWidth={1.75} />Edit this event
               </button>
             )}
           </div>
@@ -883,7 +1001,7 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
 }
 
 // ── Sub-components ──────────────────────────────────────────────────────────
-// The card most nights get. Almost everything the club puts on — the quiz, the
+// The card most events get. Almost everything the club puts on — the quiz, the
 // domino drive, the Sunday roll-up — will never have a poster, so this is the
 // design and the thumbnail is fitted into it: no reserved box, no placeholder,
 // no skeleton that never resolves. A card without a poster is byte for byte
@@ -976,7 +1094,7 @@ function DiaryCard({ item, isAdmin, onEdit, onOpen, past = false }) {
       boxShadow: "0 1px 3px rgba(74,14,31,0.06)",
     }}>
       {onOpen ? (
-        // The whole card opens the night. The pencil is a separate button
+        // The whole card opens the event. The pencil is a separate button
         // beside it rather than inside it — nesting one would be invalid, and
         // tapping "edit" would also fire "open".
         <button onClick={onOpen} aria-label={`${item.title}, ${fmtDateLong(item.date)}`}
