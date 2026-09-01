@@ -80,47 +80,64 @@ server.listen(PORT, async () => {
   // ── The month list, in render order ───────────────────────────────────────
   // Read the cards, not the whole page, so the calendar grid above doesn't
   // pollute the text.
-  const rows = await p.evaluate(() => {
-    // A diary row is the only thing with a 4px left accent and a 12px radius.
-    // Read it off the computed style: React writes the style attribute without
-    // the spacing a literal string match would expect.
-    const cards = [...document.querySelectorAll("div")].filter(d => {
+  // Read the DAY BLOCKS: each is a heading plus the cards stacked under it.
+  const readBlocks = () => p.evaluate(() => {
+    const isCard = d => {
       const cs = getComputedStyle(d);
       return cs.borderLeftWidth === "4px" && cs.borderTopLeftRadius === "12px";
+    };
+    const blocks = [...document.querySelectorAll("div")].filter(d => {
+      const kids = [...d.children];
+      return kids.length >= 2 && kids.some(isCard) && !isCard(d);
     });
-    return cards.map(c => (c.innerText || "").split("\n").map(t => t.trim()).filter(Boolean));
+    // Keep only the innermost such wrappers — a day block, not the whole list.
+    const inner = blocks.filter(b => !blocks.some(o => o !== b && b.contains(o)));
+    return inner.map(b => ({
+      heading: (b.firstElementChild && !isCard(b.firstElementChild))
+        ? (b.firstElementChild.innerText || "").trim() : "",
+      rows: [...b.children].filter(isCard)
+        .map(c => (c.innerText || "").split("\n").map(t => t.trim()).filter(Boolean).join(" · ")),
+    }));
   });
+  const blocks = await readBlocks();
+  const rows = blocks.flatMap(b => b.rows.map(r => ({ day: b.heading, text: r })));
 
-  console.log(`\n═══ SEPTEMBER — ${rows.length} rows rendered ═══`);
-  for (const r of rows) console.log("   " + r.join(" · "));
+  console.log(`\n═══ SEPTEMBER — ${blocks.length} day blocks, ${rows.length} rows ═══`);
+  for (const b of blocks) {
+    console.log(`   ${b.heading}`);
+    for (const r of b.rows) console.log(`      ${r}`);
+  }
 
   console.log("\n═══ every September row present, in order ═══");
+  check(blocks.length === 10, `10 day blocks expected (10 distinct dates), got ${blocks.length}`);
   check(rows.length === SEPTEMBER.length, `${SEPTEMBER.length} rows expected, ${rows.length} rendered`);
   SEPTEMBER.forEach(([day, title, time, kind], i) => {
-    const r = rows[i] || [];
-    const joined = r.join(" · ");
+    const r = rows[i] || { day: "", text: "" };
     // The Social chip is CSS-uppercased to "SOCIAL"; the Home/Away pills are
     // not transformed. Compare case-insensitively so the assertion tests the
     // badge being there, not how the stylesheet cases it.
     const badge = kind === "match"
-      ? /\b(home|away)\b/i.test(joined)
-      : /\bsocial\b/i.test(joined);
-    check(r[0] === day && joined.includes(title) && joined.includes(time) && badge,
-      `#${String(i + 1).padStart(2)} ${day} ${title} — ${time} [${kind}]${r.length ? "" : "  (nothing rendered)"}`);
+      ? /\b(home|away)\b/i.test(r.text)
+      : /\bsocial\b/i.test(r.text);
+    // The date now lives in the block heading, e.g. "SAT 5 SEP".
+    const onRightDay = new RegExp(`\\b${day}\\b`).test(r.day);
+    check(onRightDay && r.text.includes(title) && r.text.includes(time) && badge,
+      `#${String(i + 1).padStart(2)} ${day} ${title} — ${time} [${kind}]${r.text ? "" : "  (nothing rendered)"}`);
   });
 
   // ── The karaoke series shows every occurrence ─────────────────────────────
-  const karaoke = rows.filter(r => r.join(" ").includes("Karaoke"));
+  const karaoke = rows.filter(r => r.text.includes("Karaoke"));
   check(karaoke.length === 4, `all 4 karaoke nights present (6, 13, 20, 27) — found ${karaoke.length}`);
-  check(["6", "13", "20", "27"].every(d => karaoke.some(r => r[0] === d)), "karaoke on each of its own dates");
+  check(["6", "13", "20", "27"].every(d => karaoke.some(r => new RegExp(`\\b${d}\\b`).test(r.day))), "karaoke on each of its own dates");
 
   // ── The three same-day pairs both appear ──────────────────────────────────
   for (const [day, a, bTitle] of [["12", "Ladies/Gents", "Ladies v Gents"],
                                   ["19", "Glasgow Ayrshire Presentation", "Glasgow/Ayrshire Presention"],
                                   ["26", "Closing Day", "Mens Closing Day"]]) {
-    const onDay = rows.filter(r => r[0] === day).map(r => r.join(" · "));
-    check(onDay.some(t => t.includes(a)) && onDay.some(t => t.includes(bTitle)),
-      `${day} Sep carries both the fixture and the event`);
+    const block = blocks.find(bl => new RegExp(`\\b${day}\\b`).test(bl.heading));
+    const inBlock = block ? block.rows : [];
+    check(inBlock.length === 2 && inBlock[0].includes(a) && inBlock[1].includes(bTitle),
+      `${day} Sep is ONE block: ${a} then ${bTitle}`);
   }
 
   // ── Poster thumbnail carried over from What's On ──────────────────────────

@@ -167,11 +167,55 @@ export function byDateThenClock(a, b) {
 
 // The merged, ordered diary. Nothing is deduplicated and nothing is linked:
 // a fixture and an event on the same day are two rows, because they are two
-// records with two owners and the app has no way to know whether they are one
-// thing entered twice or a match followed by a band night.
+// records with two owners and neither is complete on its own — the fixture
+// carries the bowls (1.30pm, home, six rinks), the event carries the price and
+// the band (£12, Craig McGill). Merging the titles would lose one of them.
 export function mergeDiary(fixtures = [], events = []) {
   return [
     ...fixtures.map(fixtureToDiaryItem),
     ...events.map(eventToDiaryItem),
   ].sort(byDateThenClock);
+}
+
+// ── Reading a day ───────────────────────────────────────────────────────────
+// Inside a day block the bowls come first and the social second: the match is
+// why the day exists, and it is usually the earlier of the two anyway. Within
+// one kind it is back to the clock.
+//
+// This is deliberately NOT the same rule as byDateThenClock, which orders the
+// merged list and answers a different question. "What is on next?" is a
+// question about the clock — a social at 11am is next even if there is a
+// fixture at 6.30pm the same day — so nextUp keeps using the clock. "How does
+// this day read?" is a question about hierarchy. Every row in production
+// currently satisfies both at once, because on all four shared dates the bowls
+// are also earlier.
+export function byKindThenClock(a, b) {
+  if (a.kind !== b.kind) return a.kind === KIND_FIXTURE ? -1 : 1;
+  if (a.startMins == null && b.startMins == null) return 0;
+  if (a.startMins == null) return 1;
+  if (b.startMins == null) return -1;
+  return a.startMins - b.startMins;
+}
+
+// One block per date, every date, whether it holds one thing or three.
+//
+// Grouping is unconditional on purpose. The alternative — group only when the
+// two rows "look related" — means guessing relatedness from titles and times,
+// and that guess is exactly what reads 12 September's "Ladies/Gents" and
+// "Ladies v Gents" as one thing entered twice when they are a match and the
+// dance after it. A date is a fact; relatedness is an inference.
+//
+// It is also what stops the grouping implying anything. If only some days had
+// a heading, a heading would mean "these two are connected". Because every day
+// has one, a two-row day is just a day with two things on it, and the two
+// times and two badges underneath do the explaining.
+export function groupByDay(items = []) {
+  const days = new Map();
+  for (const it of items) {
+    if (!days.has(it.date)) days.set(it.date, []);
+    days.get(it.date).push(it);
+  }
+  return [...days.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([date, list]) => ({ date, items: [...list].sort(byKindThenClock) }));
 }

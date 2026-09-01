@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseClockToMinutes, fmtMinutes, fmtMinutesRange,
-  mergeDiary, byDateThenClock, KIND_FIXTURE, KIND_EVENT,
+  mergeDiary, byDateThenClock, groupByDay, byKindThenClock, KIND_FIXTURE, KIND_EVENT,
 } from "../src/lib/diary.js";
 
 // ── Every distinct club_fixtures."time" in production on 1 Sep 2026 ─────────
@@ -115,4 +115,61 @@ test("keys are unique across sources even if the two ids collide", () => {
     [{ id: "same", event_date: "2026-09-05", title: "E", start_time: "13:00" }],
   );
   assert.equal(new Set(merged.map(i => i.key)).size, 2);
+});
+
+// ── Day grouping ────────────────────────────────────────────────────────────
+test("every date becomes a block, one item or several", () => {
+  const days = groupByDay(mergeDiary(
+    [{ id: "f1", event_date: "2026-09-02", event: "Charity Day", time: "2.00pm", venue: "home" },
+     { id: "f2", event_date: "2026-09-05", event: "Ruth McNab Pairs", time: "9.30am", venue: "home" }],
+    [{ id: "e1", event_date: "2026-09-05", title: "Live music George Hoffin", start_time: "20:00", end_time: "00:00" },
+     { id: "e2", event_date: "2026-09-06", title: "Karaoke", start_time: "16:00", end_time: "21:00" }],
+  ));
+  assert.deepEqual(days.map(d => d.date), ["2026-09-02", "2026-09-05", "2026-09-06"]);
+  assert.deepEqual(days.map(d => d.items.length), [1, 2, 1]);
+  // 5 Sep: bowls in the morning, band in the evening — one block, both facts.
+  assert.deepEqual(days[1].items.map(i => i.title), ["Ruth McNab Pairs", "Live music George Hoffin"]);
+});
+
+test("bowls lead the day even when the social is earlier on the clock", () => {
+  // Does not occur in production today; this pins the rule down so it cannot
+  // drift into clock-order by accident.
+  const [day] = groupByDay(mergeDiary(
+    [{ id: "f", event_date: "2026-09-12", event: "Gents Trials", time: "6.30pm", venue: "home" }],
+    [{ id: "e", event_date: "2026-09-12", title: "Coffee morning", start_time: "11:00" }],
+  ));
+  assert.deepEqual(day.items.map(i => i.title), ["Gents Trials", "Coffee morning"]);
+  assert.deepEqual(day.items.map(i => i.timeLabel), ["6.30pm", "11am"]);
+});
+
+test("two socials and no fixture fall back to the clock", () => {
+  const [day] = groupByDay(mergeDiary([], [
+    { id: "b", event_date: "2026-09-06", title: "Karaoke", start_time: "16:00", end_time: "21:00" },
+    { id: "a", event_date: "2026-09-06", title: "Coffee morning", start_time: "10:00" },
+  ]));
+  assert.deepEqual(day.items.map(i => i.title), ["Coffee morning", "Karaoke"]);
+});
+
+test("two fixtures one day also fall back to the clock", () => {
+  const [day] = groupByDay(mergeDiary([
+    { id: "b", event_date: "2026-09-12", event: "Evening Trials", time: "6.30pm", venue: "home" },
+    { id: "a", event_date: "2026-09-12", event: "Morning Pairs", time: "9.30am", venue: "away" },
+  ], []));
+  assert.deepEqual(day.items.map(i => i.title), ["Morning Pairs", "Evening Trials"]);
+});
+
+test("grouping never merges or rewrites a title", () => {
+  const [day] = groupByDay(mergeDiary(
+    [{ id: "f", event_date: "2026-09-12", event: "Ladies/Gents", time: "1.30pm", venue: "home" }],
+    [{ id: "e", event_date: "2026-09-12", title: "Ladies v Gents", start_time: "14:00", detail: "£12 Dancing the night away to Craig McGill" }],
+  ));
+  assert.deepEqual(day.items.map(i => i.title), ["Ladies/Gents", "Ladies v Gents"]);
+  assert.equal(day.items[1].detail, "£12 Dancing the night away to Craig McGill");
+  assert.equal(day.items[0].venue, "home");
+});
+
+test("byKindThenClock is stable for identical items", () => {
+  const a = { kind: KIND_EVENT, startMins: 600 };
+  const b = { kind: KIND_EVENT, startMins: 600 };
+  assert.equal(byKindThenClock(a, b), 0);
 });

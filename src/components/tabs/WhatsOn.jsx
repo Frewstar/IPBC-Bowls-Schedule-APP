@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase.js";
 import { GREEN, GOLD, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { DAY_NAMES, MONTH_ABBR } from "../../lib/utils.js";
 import { posterUrl, posterThumbUrl, uploadPoster, removePoster, shareUrl } from "../../lib/poster.js";
-import { mergeDiary, KIND_FIXTURE, parseClockToMinutes, fmtMinutesRange } from "../../lib/diary.js";
+import { mergeDiary, groupByDay, KIND_FIXTURE, parseClockToMinutes, fmtMinutesRange } from "../../lib/diary.js";
 
 const FULL_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -594,14 +594,32 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
                : source === "socials" ? (selectedDay ? "Nothing social that day." : "Nothing social this month — try the arrow for next month.")
                : (selectedDay ? "Nothing on that day." : "Nothing on this month — try the arrow for next month.")}
             </div>
-          ) : listed.map(e => (
-            <DiaryCard key={e.key} item={e} past={e.date < today}
-              // Only events are editable or openable here. A fixture is the
-              // match secretary's record, shown read-only — no pencil, and no
-              // detail sheet, because there is nothing behind it to show.
-              isAdmin={isAdmin && e.kind !== KIND_FIXTURE}
-              onEdit={e.kind === KIND_FIXTURE ? null : () => openEdit(e.raw)}
-              onOpen={e.kind === KIND_FIXTURE ? null : () => setDetailId(e.id)} />
+          ) : groupByDay(listed).map(({ date, items }) => (
+            <div key={date} style={{ marginBottom: "16px" }}>
+              {/* The date is a heading rather than a chip on every row, so a
+                  day carrying a match AND the social after it reads as one day
+                  with two things on it — not as the app showing the same thing
+                  twice. Suppressed when a single day is already the subject:
+                  the section heading above has just said the date. */}
+              {!selectedDay && (
+                <div style={{ display: "flex", alignItems: "center", gap: "9px", margin: "0 0 7px 2px" }}>
+                  <span style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "700", color: TEXT2,
+                                 letterSpacing: "0.09em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                    {fmtDateLong(date)}
+                  </span>
+                  <span aria-hidden="true" style={{ flex: 1, height: "1px", background: BORDER }} />
+                </div>
+              )}
+              {items.map(e => (
+                <DiaryCard key={e.key} item={e} past={e.date < today}
+                  // Only events are editable or openable here. A fixture is the
+                  // match secretary's record, shown read-only — no pencil, and
+                  // no detail sheet, because there is nothing behind it to show.
+                  isAdmin={isAdmin && e.kind !== KIND_FIXTURE}
+                  onEdit={e.kind === KIND_FIXTURE ? null : () => openEdit(e.raw)}
+                  onOpen={e.kind === KIND_FIXTURE ? null : () => setDetailId(e.id)} />
+              ))}
+            </div>
           ))}
         </>
       )}
@@ -858,18 +876,12 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
 // are read-only here: no pencil, and no detail sheet, because the diary does
 // not own them.
 function DiaryCard({ item, isAdmin, onEdit, onOpen, past = false }) {
-  const d = fromISODate(item.date);
   const off = item.cancelled;
   const isFixture = item.kind === KIND_FIXTURE;
   const accent = off ? LOSS_RED : past ? BORDER : isFixture ? GREEN : GOLD;
 
   const body = (
     <>
-      <div style={{ minWidth: "38px", flexShrink: 0, textAlign: "center" }}>
-        <div style={{ fontFamily: F_SANS, fontSize: "21px", fontWeight: "700", color: off ? TEXT3 : GREEN, lineHeight: 1 }}>{d.getDate()}</div>
-        <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, textTransform: "uppercase", fontWeight: "600", marginTop: "2px" }}>{DAY_NAMES[d.getDay()]}</div>
-      </div>
-
       {/* alt="" on purpose: the title is the next thing in the reading order,
           and a screen reader announcing it twice is worse than not at all. */}
       {item.posterPath && (
