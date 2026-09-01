@@ -1,8 +1,28 @@
 import { defineConfig } from "vite";
+import { execSync } from "node:child_process";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  // Which build is this?
+  //
+  // Three rounds of debugging the sign-out flow were spent on the question,
+  // because the service worker in main.jsx deliberately does NOT apply a new
+  // build on reload while the page is visible — it waits until the tab is
+  // hidden, so that nobody gets yanked out of the app mid-score-entry. That
+  // is right for members and it means a tester pressing F5 after a deploy is
+  // very often still running the previous bundle.
+  //
+  // So the build says who it is, in Settings > About. Vercel and Netlify both
+  // put the commit in the environment; git is the fallback for a local build.
+  define: {
+    __BUILD_ID__: JSON.stringify(
+      (process.env.VERCEL_GIT_COMMIT_SHA || process.env.COMMIT_REF || (() => {
+        try { return execSync("git rev-parse --short HEAD").toString().trim(); } catch { return ""; }
+      })()).slice(0, 7) || "dev"
+    ),
+  },
+
   plugins: [
     react(),
     VitePWA({

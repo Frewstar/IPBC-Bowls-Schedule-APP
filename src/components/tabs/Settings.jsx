@@ -301,6 +301,13 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
           <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN, marginBottom: "4px" }}>Irvine Park Bowling Club</div>
           <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "8px" }}>Tournament Tracker · {settings.seasonYear || new Date().getFullYear()} Season</div>
           <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, lineHeight: 1.6 }}>Built by <strong style={{ color: TEXT2 }}>Frewstar</strong> for the members of IPBC. All data stays on your device.</div>
+          {/* Which build this actually is. The service worker keeps serving
+              the old one until the tab is hidden, so "I reloaded" is not the
+              same as "I am on the new build" — and without this there is no
+              way to tell them apart from inside the app. */}
+          <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, marginTop: "10px", letterSpacing: "0.04em" }}>
+            Build <strong style={{ color: TEXT2 }}>{__BUILD_ID__}</strong>
+          </div>
         </div>
       </div>
 
