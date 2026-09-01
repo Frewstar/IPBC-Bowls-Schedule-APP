@@ -540,6 +540,56 @@ end $$;
 
 
 
+-- ── 15. The upgrade-path fixture: sign out leaves ZERO rows ───────────────
+-- This is the shape the "switch account" bug appeared in, and it is a
+-- different fixture from a fresh sign-in: a device carrying a stored name and
+-- PIN with NO token, which is what every member installed before sessions
+-- existed is holding.
+--
+-- Row count is the assertion because it catches both halves of that bug at
+-- once — the sign-out that never reached the server, AND the extra session
+-- minted by being signed straight back in. The broken client produced two
+-- rows here, not zero.
+--
+-- The "exactly one" before the sign-out is not decoration. Without it, zero
+-- afterwards is equally true of a session that was never created.
+do $$
+declare
+  v_probe jsonb; v_id uuid; v_token text; v_before int; v_after int;
+begin
+  -- register, then throw the session away: now the account exists and this
+  -- "device" holds a name and PIN and nothing else. That is the upgrade path.
+  v_probe := public.bowls_register('ZZ SWITCH PROBE', '4271');
+  v_id    := (v_probe->>'id')::uuid;
+  delete from public.bowls_sessions where player_id = v_id;
+  if (select count(*) from public.bowls_sessions where player_id = v_id) <> 0 then
+    raise exception 'check 15 SETUP: the fixture starts with a session it should not have';
+  end if;
+
+  -- the upgrade effect: stored name + PIN, no token -> bowls_sign_in
+  v_token := public.bowls_sign_in('ZZ SWITCH PROBE', '4271')->>'token';
+
+  select count(*) into v_before from public.bowls_sessions where player_id = v_id;
+  if v_before <> 1 then
+    raise exception 'check 15 FAILED (before): expected exactly 1 session, found %', v_before;
+  end if;
+
+  -- the control: what "switch account" must do
+  perform public.bowls_sign_out(v_token);
+
+  select count(*) into v_after from public.bowls_sessions where player_id = v_id;
+  if v_after <> 0 then
+    raise exception 'check 15 FAILED (after): sign-out left % session(s) behind', v_after;
+  end if;
+  if (select count(*) from public.bowls_session_player(v_token)) <> 0 then
+    raise exception 'check 15 FAILED: the token still resolves after sign-out';
+  end if;
+
+  raise notice 'check 15 ok — upgrade-path device: 1 session before sign-out, 0 after';
+end $$;
+
+
+
 rollback;
 
 -- Everything above is undone. If you want to keep a change, this is not the

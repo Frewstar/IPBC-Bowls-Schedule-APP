@@ -31,6 +31,7 @@ import {
 import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_SANS, F_UI } from "./lib/theme.js";
 import { TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
 import { signInOutcome, registerOutcome } from "./lib/signIn.js";
+import { endServerSession, flushPendingSignouts, queuePendingSignout, PENDING_SIGNOUT_KEY } from "./lib/session.js";
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
 import { supabase } from "./lib/supabase.js";
 import { useRemoteData } from "./lib/useRemoteData.js";
@@ -281,6 +282,25 @@ export default function BowlsTracker() {
   // linked_cloudkey — the column that holds 69 live PINs — and that column
   // goes in Phase D.
   const [myPlayerId, setMyPlayerId] = useState(() => load("bowls_player_id", "") || "");
+
+  // "This member asked to leave", as a fact in its own right rather than
+  // something inferred from the absence of a token.
+  //
+  // The upgrade effect below signs a device in from a stored name and PIN
+  // when it finds no token. It cannot be allowed to do that to somebody who
+  // has just signed out — and "no token" alone does not tell those two apart.
+  // Clearing the name and PIN happens to stop it today, which is precisely
+  // the kind of accident that stops being true the first time somebody keeps
+  // the name around to prefill the sign-in box.
+  const [signedOut, setSignedOut] = useState(() => load("bowls_signed_out", false) === true);
+
+  // Tokens a sign-out failed to revoke, retried on the next load. See
+  // src/lib/session.js — a sign-out with no signal must not abandon a live
+  // credential.
+  const [pendingSignouts, setPendingSignouts] = useState(() => {
+    const v = load(PENDING_SIGNOUT_KEY, []);
+    return Array.isArray(v) ? v : [];
+  });
   // Anyone who has been through sign-in. A visitor following a shared game link
   // has no name, and must not see the roster or anyone's phone number.
   //
@@ -950,6 +970,8 @@ export default function BowlsTracker() {
   useEffect(() => { save("bowls_session_token", sessionToken); }, [sessionToken]);
   useEffect(() => { save("bowls_cloud_key", storedCloudKey); }, [storedCloudKey]);
   useEffect(() => { save("bowls_player_id", myPlayerId); }, [myPlayerId]);
+  useEffect(() => { save("bowls_signed_out", signedOut); }, [signedOut]);
+  useEffect(() => { save(PENDING_SIGNOUT_KEY, pendingSignouts); }, [pendingSignouts]);
   useEffect(() => { save("bowls_linked_member", linkedMemberName); }, [linkedMemberName]);
   useEffect(() => { save("bowls_linked_member_id", linkedMemberId || ""); }, [linkedMemberId]);
   useEffect(() => { save("bowls_profile", profile); }, [profile]);
@@ -1421,6 +1443,7 @@ export default function BowlsTracker() {
     setSessionToken(payload.token || "");
     setStoredCloudKey(payload.cloud_key || "");
     setMyPlayerId(payload.id || "");
+    setSignedOut(false);
 
     if (!background) {
       setNameInput(""); setPinInput(""); setPinConfirm("");
@@ -1447,22 +1470,54 @@ export default function BowlsTracker() {
     setMyPlayerId("");
     setMyPin("");
     setMyName("");
+    setLinkedMemberName("");
     setLinkedMemberId(null);
+    // The explicit part. Without it the upgrade effect would see a device
+    // with no token and sign it straight back in from what it could still
+    // find.
+    setSignedOut(true);
     setSettingName(true);
     setNameStep("name");
     setSignInState("idle");
   }
 
-  // Signing out ends the session on the server as well as on the device.
-  // Without the first half, "switch account" on a shared phone leaves a
-  // working token behind for whoever picks it up next.
+  // Signing out, both halves, in this order.
+  //
+  // The server is told FIRST, while the token is still in hand. The previous
+  // version cleared local state and then tried to call bowls_sign_out — and
+  // the call it made was `supabase.rpc(...).catch(...)`, which throws, because
+  // rpc() returns a PostgrestFilterBuilder and a builder has no .catch. The
+  // request was never dispatched, and the throw skipped the local sign-out
+  // that came after it — so every tap minted a session, abandoned it, and
+  // left the member signed in as themselves. See src/lib/session.js.
+  //
+  // If the server cannot be reached the member is still signed out here —
+  // they asked to leave this device, and a bad signal is not a reason to
+  // refuse — but the token is queued so the next load can revoke it, rather
+  // than being forgotten while it is still valid for 90 days.
   async function endSession() {
     const token = sessionToken;
-    setSessionToken("");
-    setStoredCloudKey("");
-    setMyPlayerId("");
-    if (token) await supabase.rpc("bowls_sign_out", { p_token: token }).catch(() => {});
+    const { ok } = await endServerSession(supabase, token);
+    if (!ok) setPendingSignouts(p => queuePendingSignout(p, token));
+    signOutLocally();
+    return ok;
   }
+
+  // ── Sign-outs that never reached the server ──────────────────────────────
+  // A token queued here is live: 90 days, and bowls_session_player slides
+  // that forward on every use, so an abandoned one outlives the member's
+  // interest in it by a wide margin. Retry until the server confirms, and
+  // only drop a token once it has.
+  useEffect(() => {
+    if (pendingSignouts.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const left = await flushPendingSignouts(supabase, pendingSignouts);
+      if (cancelled || left.length === pendingSignouts.length) return;
+      setPendingSignouts(left);
+    })();
+    return () => { cancelled = true; };
+  }, [pendingSignouts]);
 
   // ── Is this device still signed in? ──────────────────────────────────────
   // Ending a session is invisible until something asks. This is the asking.
@@ -1504,7 +1559,7 @@ export default function BowlsTracker() {
   // the member into their own lockout. "locked" is left alone — it costs no
   // attempt and clears itself after 24 hours.
   useEffect(() => {
-    if (sessionToken || !myName || !myPin) return;
+    if (sessionToken || signedOut || !myName || !myPin) return;
     let cancelled = false;
     (async () => {
       const outcome = signInOutcome(await supabase.rpc("bowls_sign_in", { p_name: myName, p_pin: myPin }));
@@ -1513,7 +1568,7 @@ export default function BowlsTracker() {
       if (outcome.action === "wrong-pin" || outcome.action === "register") signOutLocally();
     })();
     return () => { cancelled = true; };
-  }, [sessionToken, myName, myPin]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionToken, signedOut, myName, myPin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSignIn() {
     if (!nameInput.trim() || pinInput.length !== 4) return;
@@ -4311,13 +4366,9 @@ export default function BowlsTracker() {
         onSwitchAccount={async () => {
           const previous = myName;
           setShowProfileSheet(false);
-          // End it on the server, then forget it here. Both halves matter:
-          // without the first, handing the phone over leaves a working token
-          // on it; without the second, the name and PIN are still in
-          // localStorage and the upgrade effect would quietly sign this
-          // account straight back in and close the sheet they just opened.
+          // endSession owns both halves now: the server first, then the
+          // device. Prefilling the name is all that is left to do here.
           await endSession();
-          signOutLocally();
           setNameInput(previous);
         }}
       />
