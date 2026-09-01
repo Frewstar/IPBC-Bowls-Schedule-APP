@@ -45,6 +45,9 @@ Run them in filename order. Every one is idempotent.
 | 13 | `20260902_event_posters.sql` | Posters on What's On — `club_events.poster_path`, the `event-posters` bucket, ticketed writes, the Open Graph share link | Applied 31 Aug, 20:20 UTC as `event_posters`, plus `20260831205042 event_posters_revoke_ticket_grants` at 20:50 — verified live: the column, the bucket with its limits, an upload round-trip, and an upload without a ticket refused |
 | 14 | `20260903_live_games_creator_member_id.sql` | The sign-in PIN comes out of `live_games` — `creator_member_id`, backfilled, and `creator_cloudkey` cleared on finished games | Applied 31 Aug, 21:59 UTC as `live_games_creator_member_id` — ledger 43 rows before, 44 after |
 | 15 | `20260904_poster_path_club_prefix.sql` | Poster objects get the club in front — `<club_id>/<event_id>/<file>.jpg`, club derived from the account; `bowls_poster_remove_ticket` taught both shapes | Applied 1 Sep, 09:31 UTC as `poster_path_club_prefix` — ledger 44 rows before, 45 after. Storage policies deliberately unchanged |
+| 16 | `20260906_bowls_sessions.sql` | **Track 2, Step 2** — `bowls_sessions`, `bowls_session_issue`, `bowls_session_player`, `bowls_sign_out`; `bowls_sign_in` gains `token`, `club_id`, `member_id`, `member_name` | Applied 1 Sep — verified live: token resolves to the right account, bogus/empty/null/expired tokens resolve to nothing next to a live-token control, `anon` gets 42501 on the table and on both session functions |
+| 17 | `20260906_register_without_pin_in_player_name.sql` | **Track 2** — `bowls_register` stops building NAME-PIN. New accounts get the row's uuid as `player_name` | Applied 1 Sep — verified live: a registered probe carried no PIN in `player_name`, signed in afterwards, and registering twice produced one row not two. Probe rolled back |
+| 18 | `20260906_request_unlock.sql` | **Track 2, Step 3c's server half** — `bowls_request_unlock(p_name)`: the locked-out screen's button without the row id and without the PIN | Applied 1 Sep — verified live: sets the flag on a locked row, leaves `attempts` and `locked_until` alone, creates nothing for an unknown name |
 
 Status is no longer "my best understanding from our sessions". Every row above was
 checked against `information_schema`, `pg_constraint`, `pg_indexes`, `pg_policies`,
@@ -2508,6 +2511,108 @@ still matches it) and takes the new shape whenever it is next replaced.
 The client needed no change: it round-trips `ticket.path` into `poster_path`
 and hands `poster_path` back on removal, and `api/share.js` splits the path on
 `/` and re-encodes per segment, so any depth works.
+
+## 13. Sessions — sign-in issues a token
+
+**File:** `supabase/migrations/20260906_bowls_sessions.sql`
+**Status:** Applied 1 Sep
+
+The app has no Supabase auth session, so `auth.uid()` is null on every
+request and RLS cannot express "this row is yours" — there is nothing in the
+request to compare a row against. That is the real reason `using (true)` is on
+every table. It was not a decision; it was the only thing that worked.
+
+This is the missing identity. `bowls_sign_in` mints an opaque token (32 bytes
+from `gen_random_bytes`, base64url), the client sends it back, and SECURITY
+DEFINER functions resolve it themselves. `bowls_session_player` is the one
+place a token becomes a player, and every RPC added from here takes
+`player_id` and `club_id` from what it returns rather than from its own
+arguments — which is what the multi-club work needs, since a caller must never
+get to name the club it is writing to.
+
+Two things worth knowing:
+
+* **The table stores `sha256(token)`, not the token.** This is a deviation
+  from the plan, which said to store the token. The reason is the bug this
+  track exists to fix: `player_data` was also a table nobody was supposed to
+  be able to read. A hash means that if this table is ever exposed by
+  accident, the rows are worthless rather than a set of live logins. Reverting
+  to raw tokens is a two-line change and nothing else depends on it.
+* **`bowls_session_issue` and `bowls_session_player` are closed to everybody.**
+  Postgres grants EXECUTE to PUBLIC by default, and `bowls_session_issue`
+  takes a `player_id` — leaving the default in place would have published an
+  endpoint that mints a session for any account you care to name, which is a
+  worse hole than the one being closed.
+
+`bowls_sign_in` keeps every field and all five status strings it already had
+(`ok | invalid | locked | not_found | wrong_pin`) and adds four: `token`,
+`club_id`, `member_id`, `member_name`. The member fields resolve through
+`members.linked_player_id`, the uuid — not `linked_cloudkey` — so the answer
+comes back without going near a PIN.
+
+Nothing in this file changes a single permission. It is what makes Steps 3
+and 4 possible; on its own the schema is exactly as open as it was.
+
+---
+
+## 14. Registration stops storing the PIN
+
+**File:** `supabase/migrations/20260906_register_without_pin_in_player_name.sql`
+**Status:** Applied 1 Sep
+
+`bowls_register` was the function registration was about to move onto, and it
+did this:
+
+```sql
+v_legacy := v_display || '-' || p_pin;
+insert into public.player_data (player_name, ...) values (v_legacy, ...)
+```
+
+So every account created through the "safe" path re-created the exposure the
+track is closing, one member at a time. Moving registration onto it unchanged
+would have been worse than leaving registration alone.
+
+The root cause is that `player_data.player_name` is both the identity and the
+credential — it is the primary key **and** the PIN. `name_key`, `pin_hash` and
+`display_name` already carry everything the app needs, so `player_name` only
+has to be unique and stable. It is now the row's own uuid.
+
+One consequence to keep in mind: the primary key used to be doing half the
+duplicate-guarding, because two people registering the same name with the same
+PIN collided on `player_name` and the second was handed the first's row. A
+uuid cannot collide, so the advisory lock and the "you already have an
+account" pre-check are now the only things keeping that case to one account.
+Both were already there; they simply matter more.
+
+This changes **new** accounts only. The 92 existing rows still hold NAME-PIN.
+Rewriting them has to happen after the client is off `linked_cloudkey` and
+`admins.cloud_key`, and is proposed separately rather than improvised here.
+
+A cosmetic follow-on: the admin panel's account list shows `player_name`,
+which for a new account is now a uuid. It should show `display_name` instead —
+part of the admin-panel commit in Step 3.
+
+---
+
+## 15. The locked-out button, without the row id
+
+**File:** `supabase/migrations/20260906_request_unlock.sql`
+**Status:** Applied 1 Sep
+
+The locked-out screen has a button that asks an admin to let the member back
+in, and today it needs the lockout row's `id` — which the client only has
+because it selected the whole row a moment earlier. After Step 4 it will have
+neither the row nor the id, and `bowls_sign_in`'s `locked` status carries
+`locked_until` and nothing else.
+
+`bowls_request_unlock(p_name)` is the replacement. It deliberately does not
+ask for the row id (the client will not have one) or the PIN (they are locked
+out precisely because they do not know it). It returns void whatever happens,
+so a caller cannot use it to ask whether a name has an account, and it only
+ever raises the flag on a row that is currently locked — it cannot create a
+lockout, extend one, clear one, or touch `attempts` or `locked_until`.
+
+---
 
 ## Verifying what has actually run
 
