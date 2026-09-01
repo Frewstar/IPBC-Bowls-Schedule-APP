@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Trophy, Phone, ChevronDown, Shield, MapPin, Star, Clock, Plus, X } from "lucide-react";
-import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
+import { GREEN, GOLD, GOLD_LIGHT, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
 import { CLUB_POSITIONS } from "./Members.jsx";
 import LoadNotice from "../LoadNotice.jsx";
 
@@ -38,6 +38,9 @@ export default function ClubTab({ members = [], rollOfHonour = [], honoraryMembe
   const [recordingComp, setRecordingComp] = useState(null);
   const [winnerYear, setWinnerYear] = useState(String(new Date().getFullYear()));
   const [winnerName, setWinnerName] = useState("");
+  const [savingWinner, setSavingWinner] = useState(false);
+  // What the server said, and which competition it said it about.
+  const [winnerMsg, setWinnerMsg] = useState(null);
 
   // Honorary Members: adding
   const [addingHon, setAddingHon] = useState(false);
@@ -78,12 +81,22 @@ export default function ClubTab({ members = [], rollOfHonour = [], honoraryMembe
     setRecordingComp(comp.id);
     setWinnerYear(String(new Date().getFullYear()));
     setWinnerName("");
+    setWinnerMsg(null);
   }
 
+  // The server decides, and it answers in words. Only its own "ok" closes the
+  // form: a refusal leaves the name and year on screen with the reason
+  // underneath, because a form that clears itself has said the write went
+  // through whatever the reason underneath it says.
   async function saveWinner() {
-    if (!winnerName.trim()) return;
-    await recordWinner(recordingComp, parseInt(winnerYear, 10), winnerName.trim());
-    setRecordingComp(null);
+    if (!winnerName.trim() || savingWinner) return;
+    const compId = recordingComp;
+    setSavingWinner(true);
+    setWinnerMsg(null);
+    const res = await recordWinner(compId, parseInt(winnerYear, 10), winnerName.trim());
+    setSavingWinner(false);
+    setWinnerMsg({ ok: res?.status === "ok", compId, text: res?.message || "Couldn't save — no response from the server." });
+    if (res?.status === "ok") setRecordingComp(null);
   }
 
   async function saveHonMember() {
@@ -241,11 +254,24 @@ export default function ClubTab({ members = [], rollOfHonour = [], honoraryMembe
                       <input placeholder="Member name" value={winnerName} onChange={e => setWinnerName(e.target.value)}
                         style={{ width: "100%", boxSizing: "border-box", padding: "9px 10px", border: `1px solid ${BORDER}`, borderRadius: "7px", fontSize: "14px", fontFamily: F_UI, outline: "none", background: SURFACE, color: TEXT }} />
                     </div>
-                    <button onClick={saveWinner} disabled={!winnerName.trim()}
-                      style={{ background: winnerName.trim() ? MID : BORDER, border: "none", borderRadius: "7px", color: winnerName.trim() ? "#fff" : TEXT3, padding: "9px 14px", fontSize: "13px", fontFamily: F_UI, fontWeight: "700", cursor: winnerName.trim() ? "pointer" : "default", whiteSpace: "nowrap" }}>
-                      Save
+                    <button onClick={saveWinner} disabled={!winnerName.trim() || savingWinner}
+                      style={{ background: winnerName.trim() && !savingWinner ? MID : BORDER, border: "none", borderRadius: "7px", color: winnerName.trim() && !savingWinner ? "#fff" : TEXT3, padding: "9px 14px", fontSize: "13px", fontFamily: F_UI, fontWeight: "700", cursor: winnerName.trim() && !savingWinner ? "pointer" : "default", whiteSpace: "nowrap" }}>
+                      {savingWinner ? "Saving…" : "Save"}
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* What the server said — the refusal as well as the save. */}
+              {winnerMsg?.compId === comp.id && (
+                <div style={{
+                  padding: "9px 14px 11px 17px",
+                  background: winnerMsg.ok ? `${GOLD}0a` : `${LOSS_RED}0d`,
+                  borderTop: `1px solid ${winnerMsg.ok ? `${GOLD}33` : `${LOSS_RED}33`}`,
+                  fontFamily: F_UI, fontSize: "12px",
+                  color: winnerMsg.ok ? GOLD_MUTED : LOSS_RED,
+                }}>
+                  {winnerMsg.text}
                 </div>
               )}
 

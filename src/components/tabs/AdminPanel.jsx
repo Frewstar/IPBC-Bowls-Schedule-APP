@@ -828,6 +828,22 @@ function AdminClub({ rollOfHonour, honoraryMembers, recordWinner, addHonoraryMem
   const [recordingComp, setRecordingComp] = useState(null);
   const [winnerYear, setWinnerYear] = useState(new Date().getFullYear());
   const [winnerName, setWinnerName] = useState("");
+  const [savingWinner, setSavingWinner] = useState(false);
+  const [winnerMsg, setWinnerMsg] = useState(null);
+
+  // Same rule as the Club tab's copy of this form: the server's own "ok"
+  // closes it, and anything else stays put with the reason showing. The write
+  // is refused unless bowls_admin_role says admin or super_admin, so a Social
+  // Convenor reaching this screen gets told, not ignored.
+  async function saveWinner(compId) {
+    if (!winnerName.trim() || savingWinner) return;
+    setSavingWinner(true);
+    setWinnerMsg(null);
+    const res = await recordWinner(compId, Number(winnerYear), winnerName.trim());
+    setSavingWinner(false);
+    setWinnerMsg({ ok: res?.status === "ok", compId, text: res?.message || "Couldn't save — no response from the server." });
+    if (res?.status === "ok") setRecordingComp(null);
+  }
 
   return (
     <div>
@@ -858,7 +874,7 @@ function AdminClub({ rollOfHonour, honoraryMembers, recordWinner, addHonoraryMem
           <div key={comp.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "12px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: recordingComp === comp.id ? "10px" : 0 }}>
               <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{comp.name}</div>
-              <button onClick={() => { setRecordingComp(recordingComp === comp.id ? null : comp.id); setWinnerName(""); setWinnerYear(new Date().getFullYear()); }}
+              <button onClick={() => { setRecordingComp(recordingComp === comp.id ? null : comp.id); setWinnerName(""); setWinnerYear(new Date().getFullYear()); setWinnerMsg(null); }}
                 style={{ background: recordingComp === comp.id ? SURFACE : MID, border: `1px solid ${recordingComp === comp.id ? BORDER : "transparent"}`, borderRadius: "6px", color: recordingComp === comp.id ? TEXT2 : "#fff", padding: "5px 10px", fontSize: "11px", cursor: "pointer", fontFamily: F_UI, fontWeight: "600" }}>
                 {recordingComp === comp.id ? "Cancel" : "+ Record"}
               </button>
@@ -875,9 +891,13 @@ function AdminClub({ rollOfHonour, honoraryMembers, recordWinner, addHonoraryMem
                   <input value={winnerName} onChange={e => setWinnerName(e.target.value)} placeholder="Member name"
                     style={{ width: "100%", boxSizing: "border-box", padding: "8px", fontSize: "13px", border: `1px solid ${BORDER}`, borderRadius: "7px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE }} />
                 </div>
-                <button onClick={() => { if (!winnerName.trim()) return; recordWinner(comp.id, winnerYear, winnerName.trim()); setRecordingComp(null); }}
-                  style={{ background: GREEN, border: "none", borderRadius: "7px", color: "#fff", padding: "8px 12px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", flexShrink: 0 }}>Save</button>
+                <button onClick={() => saveWinner(comp.id)} disabled={!winnerName.trim() || savingWinner}
+                  style={{ background: winnerName.trim() && !savingWinner ? GREEN : BORDER, border: "none", borderRadius: "7px", color: winnerName.trim() && !savingWinner ? "#fff" : TEXT3, padding: "8px 12px", fontSize: "12px", cursor: winnerName.trim() && !savingWinner ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700", flexShrink: 0 }}>
+                  {savingWinner ? "Saving…" : "Save"}</button>
               </div>
+            )}
+            {winnerMsg?.compId === comp.id && (
+              <div style={{ marginTop: "8px", fontFamily: F_UI, fontSize: "11px", color: winnerMsg.ok ? TEXT2 : LOSS_RED }}>{winnerMsg.text}</div>
             )}
             {comp.winners?.length > 0 && (
               <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "3px" }}>
