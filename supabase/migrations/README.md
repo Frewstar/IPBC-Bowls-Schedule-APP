@@ -120,6 +120,41 @@ begin
 end $$;
 ```
 
+### The status controls are client-side guards, and that is all they are
+
+Added 1 Sep 2026, after a real incident: a legitimate admin tapped **Go live**
+on a final scheduled ten days out. One tap, no confirmation, and nothing in the
+app to put it back — it was reversed by hand in the database. The client now
+asks before starting a game scheduled for another day, and offers **Back to
+scheduled** on a live game.
+
+**Neither of those is enforced anywhere.** The four policies above are
+`using (true)`, so anyone holding the publishable key out of the bundle can
+`PATCH /rest/v1/live_games?id=eq.…` with any `status` they like and never see a
+prompt. The same is true of `canScore` in `src/lib/liveGamesSync.js`, which
+decides which buttons to *draw*, not who may write.
+
+So, plainly:
+
+* These controls stop **mistakes**. They do not stop **misuse**.
+* "Only the creator and admins can put a game back" describes the buttons on
+  screen. It does not describe the table.
+* A confirmation the client can skip is not a check. It is a question asked on
+  the way past.
+
+The real lock is the same one owed to the rest of this table: a `SECURITY
+DEFINER` RPC that verifies a PIN server-side and owns the status transitions,
+after which these policies can close. Noted here and in
+`20260903_live_games_creator_member_id.sql`; not built.
+
+One thing the guards *do* get right, and it is worth writing down because it is
+easy to get wrong: "has this game been scored?" is answered by `totalsFor` in
+`src/lib/liveGameGuards.js`, not by reading `home_score` / `away_score`. A
+`rinks` game keeps `0` in those columns and carries the real numbers in the
+`rinks` array — the Balloted Pairs game reads `0–0` on the columns while
+standing at 17–13 over 16 ends. Anything that asks the question off the columns
+will call a finished match untouched.
+
 ---
 
 ## 2. Disciplines, location and players

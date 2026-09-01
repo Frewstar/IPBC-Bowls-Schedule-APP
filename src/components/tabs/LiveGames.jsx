@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Radio, Plus, Minus, ChevronLeft, MapPin, X,
-  Share2, Trash2, Flag, CircleCheckBig, Users, Clock, WifiOff, Eye,
+  Share2, Trash2, Flag, CircleCheckBig, Users, Clock, WifiOff, Eye, Undo2,
 } from "lucide-react";
 import {
   GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER,
@@ -10,6 +10,7 @@ import {
 import { supabase } from "../../lib/supabase.js";
 import { useLiveGames } from "../../lib/useLiveGames.js";
 import { canScore } from "../../lib/liveGamesSync.js";
+import { totalsFor, earlyStartWarning, undoLiveWarning } from "../../lib/liveGameGuards.js";
 import { useWatching } from "../../lib/useWatching.js";
 
 const LIVE_RED = "#c0392b";
@@ -26,15 +27,9 @@ const DISCIPLINES = [
 const discLabel = id => (DISCIPLINES.find(d => d.id === id) || {}).label || "";
 
 // ── helpers ──────────────────────────────────────────────────────────────
-function totalsFor(g) {
-  if (!g) return { home: 0, away: 0 };
-  if (g.format === "single") return { home: g.home_score || 0, away: g.away_score || 0 };
-  const rinks = Array.isArray(g.rinks) ? g.rinks : [];
-  return {
-    home: rinks.reduce((s, r) => s + (Number(r.home) || 0), 0),
-    away: rinks.reduce((s, r) => s + (Number(r.away) || 0), 0),
-  };
-}
+// totalsFor moved to lib/liveGameGuards.js — the undo prompt has to ask the
+// same question this screen does about whether a game has been scored, and two
+// copies of that answer would disagree on a rinks game.
 
 function timeAgo(iso) {
   if (!iso) return "";
@@ -216,9 +211,24 @@ export default function LiveGamesTab({ myName, cloudKey, myMemberId = null, isAd
     await patchGame(g.id, { status: finished ? "finished" : "live" });
     showToast(finished ? "Marked as finished" : "Back to live");
   }
+  // Only asks when it is actually early — see earlyStartWarning. A game with
+  // no starts_at, or one due today, stays one tap.
   async function goLive(g) {
+    const warning = earlyStartWarning(g);
+    if (warning && !window.confirm(warning)) return;
     await patchGame(g.id, { status: "live" });
     showToast("Game is now live");
+  }
+
+  // The way back from a mis-tap. Frictionless at 0–0 with no ends, because
+  // that is the case this exists for; anything already scored asks first and
+  // says the score is kept, rather than discarding it silently or keeping it
+  // silently.
+  async function backToScheduled(g) {
+    const warning = undoLiveWarning(g);
+    if (warning && !window.confirm(warning)) return;
+    await patchGame(g.id, { status: "scheduled" });
+    showToast("Back to scheduled");
   }
   async function deleteGame(g) {
     if (!window.confirm(`Delete "${g.home_team} v ${g.away_team}"? This can't be undone.`)) return;
@@ -434,9 +444,16 @@ export default function LiveGamesTab({ myName, cloudKey, myMemberId = null, isAd
                 <Radio size={15} strokeWidth={2} />Go live
               </button>
             ) : g.status === "live" ? (
-              <button onClick={() => setFinished(g, true)} style={{ flex: 1, minWidth: "150px", background: GOLD, border: "none", borderRadius: "10px", color: "#fff", padding: "12px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
-                <Flag size={15} strokeWidth={2} />Mark as finished
-              </button>
+              <>
+                <button onClick={() => setFinished(g, true)} style={{ flex: 1, minWidth: "150px", background: GOLD, border: "none", borderRadius: "10px", color: "#fff", padding: "12px", fontFamily: F_UI, fontSize: "13px", fontWeight: "700", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
+                  <Flag size={15} strokeWidth={2} />Mark as finished
+                </button>
+                {/* Beside the buttons it undoes, and drawn under the same
+                    `editable` test — the creator or an admin, nobody else. */}
+                <button onClick={() => backToScheduled(g)} style={{ flex: 1, minWidth: "150px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", color: TEXT2, padding: "12px", fontFamily: F_UI, fontSize: "13px", fontWeight: "600", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
+                  <Undo2 size={15} strokeWidth={1.75} />Back to scheduled
+                </button>
+              </>
             ) : (
               <button onClick={() => setFinished(g, false)} style={{ flex: 1, minWidth: "150px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", color: TEXT2, padding: "12px", fontFamily: F_UI, fontSize: "13px", fontWeight: "600", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px" }}>
                 <Radio size={15} strokeWidth={1.75} />Reopen as live
