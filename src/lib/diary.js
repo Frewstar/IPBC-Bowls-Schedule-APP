@@ -157,6 +157,14 @@ export function eventToDiaryItem(e) {
 // timeless event FIRST ("usually the all-day thing"); no row in either table
 // currently has a missing or unreadable time, so nothing on screen moves, but
 // the rule is now uniform rather than per-source.
+//
+// EXACT TIES. 19 September has both a fixture ("2:00pm") and an event
+// ("14:00") at 840 minutes, so the clock separates nothing and this returns 0.
+// The fixture still renders first, and deterministically: Array#sort is stable
+// (ES2019 onward) and mergeDiary concatenates fixtures ahead of events. That is
+// the sensible result, but it comes from input order rather than from a rule
+// here, so a test pins it — reversing the concat in mergeDiary would silently
+// flip 19 September otherwise.
 export function byDateThenClock(a, b) {
   if (a.date !== b.date) return a.date < b.date ? -1 : 1;
   if (a.startMins == null && b.startMins == null) return 0;
@@ -178,24 +186,27 @@ export function mergeDiary(fixtures = [], events = []) {
 }
 
 // ── Reading a day ───────────────────────────────────────────────────────────
-// Inside a day block the bowls come first and the social second: the match is
-// why the day exists, and it is usually the earlier of the two anyway. Within
-// one kind it is back to the clock.
+// A day block runs forwards on the clock, both sources treated the same. There
+// is no bowls-first hierarchy, and there was briefly: it read correctly only
+// because the bowls happen to be earlier on all four shared dates in the
+// current season, which is coincidence rather than principle. A members'
+// coffee morning at 11am sharing a date with 6.30pm trials is an ordinary
+// bowls-club day, and hierarchy would have rendered 6.30pm above 11am.
 //
-// This is deliberately NOT the same rule as byDateThenClock, which orders the
-// merged list and answers a different question. "What is on next?" is a
-// question about the clock — a social at 11am is next even if there is a
-// fixture at 6.30pm the same day — so nextUp keeps using the clock. "How does
-// this day read?" is a question about hierarchy. Every row in production
-// currently satisfies both at once, because on all four shared dates the bowls
-// are also earlier.
-export function byKindThenClock(a, b) {
-  if (a.kind !== b.kind) return a.kind === KIND_FIXTURE ? -1 : 1;
-  if (a.startMins == null && b.startMins == null) return 0;
-  if (a.startMins == null) return 1;
-  if (b.startMins == null) return -1;
-  return a.startMins - b.startMins;
-}
+// Three reasons:
+//
+//   * A day block answers "what's on this day", and people read a day
+//     forwards. That is the mental model of every diary they have used.
+//   * The badge already says which is the match and which is the social.
+//     Order does not need to carry that a second time — and when the two
+//     disagree, the reader trusts the visible times.
+//   * It is one rule instead of two. Within a block showing both times,
+//     6.30pm above 11am reads as a bug, not a hierarchy. One rule is easier
+//     to keep true, so groupByDay sorts with byDateThenClock — the same
+//     comparator that orders the merged list and picks nextUp. Within a day
+//     the dates are equal, so it degenerates to the clock.
+//
+// Unknown time still sorts last: see byDateThenClock.
 
 // One block per date, every date, whether it holds one thing or three.
 //
@@ -217,5 +228,5 @@ export function groupByDay(items = []) {
   }
   return [...days.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-    .map(([date, list]) => ({ date, items: [...list].sort(byKindThenClock) }));
+    .map(([date, list]) => ({ date, items: [...list].sort(byDateThenClock) }));
 }

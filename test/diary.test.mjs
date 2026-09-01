@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseClockToMinutes, fmtMinutes, fmtMinutesRange,
-  mergeDiary, byDateThenClock, groupByDay, byKindThenClock, KIND_FIXTURE, KIND_EVENT,
+  mergeDiary, byDateThenClock, groupByDay, KIND_FIXTURE, KIND_EVENT,
 } from "../src/lib/diary.js";
 
 // ── Every distinct club_fixtures."time" in production on 1 Sep 2026 ─────────
@@ -131,18 +131,41 @@ test("every date becomes a block, one item or several", () => {
   assert.deepEqual(days[1].items.map(i => i.title), ["Ruth McNab Pairs", "Live music George Hoffin"]);
 });
 
-test("bowls lead the day even when the social is earlier on the clock", () => {
-  // Does not occur in production today; this pins the rule down so it cannot
-  // drift into clock-order by accident.
+test("a day runs forwards on the clock even when the social comes first", () => {
+  // The case that decided the rule. A coffee morning at 11am with 6.30pm
+  // trials is an ordinary bowls-club day; a bowls-first hierarchy would put
+  // 6.30pm above 11am, which reads as a bug. Does not occur in the current
+  // season — that is why it needs pinning down.
   const [day] = groupByDay(mergeDiary(
     [{ id: "f", event_date: "2026-09-12", event: "Gents Trials", time: "6.30pm", venue: "home" }],
     [{ id: "e", event_date: "2026-09-12", title: "Coffee morning", start_time: "11:00" }],
   ));
-  assert.deepEqual(day.items.map(i => i.title), ["Gents Trials", "Coffee morning"]);
-  assert.deepEqual(day.items.map(i => i.timeLabel), ["6.30pm", "11am"]);
+  assert.deepEqual(day.items.map(i => i.title), ["Coffee morning", "Gents Trials"]);
+  assert.deepEqual(day.items.map(i => i.timeLabel), ["11am", "6.30pm"]);
+  // The badge, not the order, is what says which is which.
+  assert.deepEqual(day.items.map(i => i.kind), [KIND_EVENT, KIND_FIXTURE]);
 });
 
-test("two socials and no fixture fall back to the clock", () => {
+test("the four shared dates in the season are unaffected by the flip", () => {
+  // On 5, 12, 19 and 26 September the bowls are also the earlier of the two,
+  // so clock order and the old bowls-first order agree. Nothing on screen
+  // moved when the rule changed.
+  const cases = [
+    ["2026-09-05", "Ruth McNab Pairs", "9.30am", "Live music George Hoffin", "20:00"],
+    ["2026-09-12", "Ladies/Gents",     "1.30pm", "Ladies v Gents",           "14:00"],
+    ["2026-09-19", "Glasgow Ayrshire Presentation", "2:00pm", "Glasgow/Ayrshire Presention", "14:00"],
+    ["2026-09-26", "Closing Day",      "1.30pm", "Mens Closing Day",         "14:00"],
+  ];
+  for (const [date, fixture, ftime, event, etime] of cases) {
+    const [day] = groupByDay(mergeDiary(
+      [{ id: "f", event_date: date, event: fixture, time: ftime, venue: "home" }],
+      [{ id: "e", event_date: date, title: event, start_time: etime }],
+    ));
+    assert.deepEqual(day.items.map(i => i.title), [fixture, event], `${date}: bowls still lead`);
+  }
+});
+
+test("two socials and no fixture read forwards on the clock", () => {
   const [day] = groupByDay(mergeDiary([], [
     { id: "b", event_date: "2026-09-06", title: "Karaoke", start_time: "16:00", end_time: "21:00" },
     { id: "a", event_date: "2026-09-06", title: "Coffee morning", start_time: "10:00" },
@@ -150,7 +173,7 @@ test("two socials and no fixture fall back to the clock", () => {
   assert.deepEqual(day.items.map(i => i.title), ["Coffee morning", "Karaoke"]);
 });
 
-test("two fixtures one day also fall back to the clock", () => {
+test("two fixtures one day read forwards on the clock", () => {
   const [day] = groupByDay(mergeDiary([
     { id: "b", event_date: "2026-09-12", event: "Evening Trials", time: "6.30pm", venue: "home" },
     { id: "a", event_date: "2026-09-12", event: "Morning Pairs", time: "9.30am", venue: "away" },
@@ -168,8 +191,32 @@ test("grouping never merges or rewrites a title", () => {
   assert.equal(day.items[0].venue, "home");
 });
 
-test("byKindThenClock is stable for identical items", () => {
-  const a = { kind: KIND_EVENT, startMins: 600 };
-  const b = { kind: KIND_EVENT, startMins: 600 };
-  assert.equal(byKindThenClock(a, b), 0);
+test("one comparator orders the merged list and every day block", () => {
+  // groupByDay sorts with byDateThenClock, the same function that orders the
+  // merged list and picks nextUp. Within a day the dates are equal, so it is
+  // the clock alone.
+  const a = { date: "2026-09-06", startMins: 600 };
+  const b = { date: "2026-09-06", startMins: 600 };
+  assert.equal(byDateThenClock(a, b), 0);
+  assert.ok(byDateThenClock({ date: "2026-09-06", startMins: 660 }, { date: "2026-09-06", startMins: 1110 }) < 0);
+  // unknown time still last
+  assert.ok(byDateThenClock({ date: "2026-09-06", startMins: null }, { date: "2026-09-06", startMins: 1110 }) > 0);
+});
+
+test("19 Sep ties on the clock and the fixture still leads, deterministically", () => {
+  // Both rows are 840 minutes: the fixture reads "2:00pm", the event "14:00".
+  // The clock separates nothing, so the order comes from stable sort over
+  // mergeDiary's fixtures-then-events concatenation. Pinned because reversing
+  // that concat would flip the day with no other test noticing.
+  const fixture = { id: "f", event_date: "2026-09-19", event: "Glasgow Ayrshire Presentation", time: "2:00pm", venue: "home", rinks: 6 };
+  const event   = { id: "e", event_date: "2026-09-19", title: "Glasgow/Ayrshire Presention", start_time: "14:00", detail: "Live music Coverstory" };
+
+  const [day] = groupByDay(mergeDiary([fixture], [event]));
+  assert.equal(day.items[0].startMins, day.items[1].startMins, "the two genuinely tie");
+  assert.deepEqual(day.items.map(i => i.kind), [KIND_FIXTURE, KIND_EVENT]);
+  assert.deepEqual(day.items.map(i => i.title),
+    ["Glasgow Ayrshire Presentation", "Glasgow/Ayrshire Presention"]);
+  // Both facts survive: the bowls on one row, the band on the other.
+  assert.equal(day.items[0].rinks, 6);
+  assert.equal(day.items[1].detail, "Live music Coverstory");
 });
