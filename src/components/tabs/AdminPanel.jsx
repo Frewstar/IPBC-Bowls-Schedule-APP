@@ -3,7 +3,12 @@ import { BRACKET_SIZE, bracketPairs, rowsToDisplay, fmtRoundDate, ViewToggle, Br
 import { Users, Calendar, Shield, Lock, Plus, Pencil, Trash2, Crown, Trophy, Shuffle, X } from "lucide-react";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { supabase } from "../../lib/supabase.js";
+import { escapeHtml } from "../../lib/html.js";
 
+// Everything interpolated below that is not a constant of this file goes
+// through escapeHtml. The sheet is written into a window.open() document and
+// read back as a blob: URL, both of which run in this app's origin — so a
+// stray `<` in a player name is not only a broken printout.
 export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolbar = true } = {}) {
   const LABELS  = ["1st Round", "2nd Round", "3rd Round", "4th Round", "Semi-Final", "Final"];
   const ROW_H   = 13;
@@ -40,7 +45,7 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
     const filled = !!s?.name;
     nameRows += `<div style="height:${ROW_H}px;display:flex;align-items:flex-end;position:relative;">
       <span style="width:${NUM_W}px;font-size:8px;color:#666;text-align:right;padding-right:3px;flex-shrink:0;padding-bottom:1px;">${i + 1}</span>
-      <div style="width:${NAME_W}px;border-bottom:1px solid ${filled ? "#333" : "#ccc"};font-size:${filled ? "10" : "9"}px;font-weight:${filled ? "700" : "400"};color:${filled ? "#111" : "#ccc"};padding-left:3px;padding-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s?.name ? s.name + (s.handicap ? ` (${s.handicap})` : "") : ""}</div>
+      <div style="width:${NAME_W}px;border-bottom:1px solid ${filled ? "#333" : "#ccc"};font-size:${filled ? "10" : "9"}px;font-weight:${filled ? "700" : "400"};color:${filled ? "#111" : "#ccc"};padding-left:3px;padding-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s?.name ? escapeHtml(s.name) + (s.handicap ? ` (${escapeHtml(s.handicap)})` : "") : ""}</div>
     </div>`;
   }
 
@@ -68,7 +73,7 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
     const dateStr  = roundDates[ri] ? fmtRoundDate(roundDates[ri]) : "";
     const hdrHtml  = `<div style="height:${HDR}px;padding-left:2px;display:flex;flex-direction:column;justify-content:center;">
       <div style="font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:#444;">${LABELS[ri]}</div>
-      ${dateStr ? `<div style="font-size:7px;color:#888;margin-top:1px;">${dateStr}</div>` : ""}
+      ${dateStr ? `<div style="font-size:7px;color:#888;margin-top:1px;">${escapeHtml(dateStr)}</div>` : ""}
     </div>`;
     const winnerHtml = isLast ? `<div style="position:absolute;top:${rly(ROUNDS - 1, 0) + HDR + 4}px;left:2px;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:#333;">Winner</div>` : "";
 
@@ -82,15 +87,23 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
     <p style="font-size:8px;color:#666;margin-bottom:5px;">Play these matches first — winners enter the main draw.</p>
     <table style="border-collapse:collapse;font-size:10px;">
       ${prelims.map(m => `<tr>
-        <td style="padding:3px 8px 3px 0;font-weight:600;">${m.p1?.name || ""}${m.p1?.handicap ? ` (${m.p1.handicap})` : ""}</td>
+        <td style="padding:3px 8px 3px 0;font-weight:600;">${escapeHtml(m.p1?.name || "")}${m.p1?.handicap ? ` (${escapeHtml(m.p1.handicap)})` : ""}</td>
         <td style="padding:3px 8px;color:#888;font-size:8px;">vs</td>
-        <td style="padding:3px 8px 3px 0;font-weight:600;">${m.p2 ? m.p2.name + (m.p2.handicap ? ` (${m.p2.handicap})` : "") : "BYE"}</td>
+        <td style="padding:3px 8px 3px 0;font-weight:600;">${m.p2 ? escapeHtml(m.p2.name) + (m.p2.handicap ? ` (${escapeHtml(m.p2.handicap)})` : "") : "BYE"}</td>
         <td style="padding:3px 0;color:#666;font-size:9px;">Score _____ – _____</td>
       </tr>`).join("")}
     </table>
   </div>` : "";
 
-  const safeName = (draw?.tournament_name || "Draw").replace(/"/g, "");
+  // Was `(draw?.tournament_name || "Draw").replace(/"/g, "")` — one
+  // character's worth of escaping, on a value that then went into a <title>,
+  // a heading, and a JavaScript string literal, each of which needs something
+  // different. The two defaults differed ("Draw" in the title, "Competition"
+  // in the heading); keeping both so the printed sheet is unchanged.
+  const titleName  = draw?.tournament_name || "Draw";
+  const headerName = draw?.tournament_name || "Competition";
+  const seasonYear = String(draw?.season_year || "");
+  const pdfName    = `${titleName}_${seasonYear}.pdf`;
   const toolbarHtml = withToolbar ? `
   <div class="toolbar" style="display:flex;gap:8px;padding:10px 14px;background:#f5f5f5;border-bottom:1px solid #ddd;margin:-10px -14px 12px;">
     <button onclick="doPrint()" style="flex:1;padding:9px 16px;background:#1a5e35;color:#fff;border:none;border-radius:6px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;">🖨️ Print</button>
@@ -105,7 +118,7 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
 <html>
 <head>
 <meta charset="UTF-8">
-<title>${safeName} ${draw?.season_year || ""}</title>
+<title>${escapeHtml(titleName)} ${escapeHtml(seasonYear)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:Arial,sans-serif;color:#111;padding:10px 14px;}
@@ -113,12 +126,12 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
   @media print{body{padding:0;}.toolbar{display:none!important;}}
 </style>
 </head>
-<body>
+<body data-pdf-name="${escapeHtml(pdfName)}">
   ${toolbarHtml}
   <div style="text-align:center;border-bottom:2px solid #111;padding-bottom:7px;margin-bottom:8px;">
     <div style="font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:#777;">Irvine Park Bowling Club</div>
-    <div style="font-size:17px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">${draw?.tournament_name || "Competition"}</div>
-    <div style="font-size:9px;color:#666;margin-top:2px;">${draw?.season_year || ""} Season</div>
+    <div style="font-size:17px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">${escapeHtml(headerName)}</div>
+    <div style="font-size:9px;color:#666;margin-top:2px;">${escapeHtml(seasonYear)} Season</div>
   </div>
   ${prelimHtml}
   <div style="position:relative;display:flex;align-items:flex-start;">
@@ -137,7 +150,11 @@ export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolba
     function doPrint() { window.print(); }
     function doSavePdf() {
       var orig = document.title;
-      document.title = "${safeName}_${draw?.season_year || ""}.pdf";
+      // Read off the body rather than being spliced in here. HTML-escaping
+      // inside a script would put &amp; in the filename, and escaping for
+      // JavaScript still leaves a closing script tag able to end this element
+      // early — so the name never enters the script as source at all.
+      document.title = document.body.dataset.pdfName || orig;
       window.print();
       document.title = orig;
     }
