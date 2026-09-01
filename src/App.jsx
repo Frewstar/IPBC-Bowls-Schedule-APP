@@ -29,10 +29,10 @@ import {
 
 // ── lib imports ──────────────────────────────────────────────────────────────
 import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_SANS, F_UI } from "./lib/theme.js";
-import { MEMBERS_KEY, TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
+import { TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
-import { DEFAULT_TOURNAMENTS, FIXTURES, DEFAULT_MEMBERS } from "./lib/constants.js";
 import { supabase } from "./lib/supabase.js";
+import { useRemoteData } from "./lib/useRemoteData.js";
 
 // ── component imports ─────────────────────────────────────────────────────────
 import BottomSheet from "./components/BottomSheet.jsx";
@@ -40,7 +40,8 @@ import AvatarBubble from "./components/AvatarBubble.jsx";
 import ProfileSheet from "./components/ProfileSheet.jsx";
 import SettingsTab from "./components/tabs/Settings.jsx";
 import HelpTab from "./components/tabs/Help.jsx";
-import ClubTab, { ROLL_OF_HONOUR, HONORARY_MEMBERS } from "./components/tabs/Club.jsx";
+import ClubTab from "./components/tabs/Club.jsx";
+import LoadNotice from "./components/LoadNotice.jsx";
 import FixturesTab from "./components/tabs/Fixtures.jsx";
 import FindTab from "./components/tabs/Find.jsx";
 import DrawsTab from "./components/tabs/Draws.jsx";
@@ -120,9 +121,10 @@ function readEventParam() {
 export default function BowlsTracker() {
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
 
-  const [members, setMembers] = useState(() =>
-    DEFAULT_MEMBERS.map(m => ({ ...m, section: m.section || "gents" }))
-  );
+  // The roster is declared below, next to the Supabase read that fills it. It
+  // used to be seeded here from a hardcoded list in the bundle — 136 of Irvine
+  // Park's members and their mobile numbers, shipped to every device and shown
+  // to anyone whose own roster had not loaded.
   const [ties, setTies]       = useState(() => load(TIES_KEY, {}));
   // A shared game link, /?game=<id>. Read on the first render rather than in an
   // effect, so someone following a link from WhatsApp lands on the game instead
@@ -251,6 +253,29 @@ export default function BowlsTracker() {
   // readable by anyone who knows how. 002b is the actual fix; this stops the
   // roster being handed to a visitor who simply backs out of a shared game.
   const signedIn = !!myName;
+
+  // ── The roster (Supabase only) ──
+  // This is the read that mattered most. It used to start from a bundled copy
+  // of Irvine Park's 136 members — names, sections and mobile numbers — and
+  // replace it only when the server returned rows. A second club's roster is
+  // empty, so the replacement never happened and its members were handed
+  // another club's contact details, permanently.
+  //
+  // Now the list starts empty and only the server fills it. An empty result is
+  // an empty roster and says so; a failed request says that instead.
+  //
+  // A signed-out visitor still gets the columns the public tabs need and
+  // nothing else, so phone numbers never reach the device rather than merely
+  // being hidden on it. Signing in refetches the full row.
+  const [members, setMembers, membersLoad] = useRemoteData(
+    () => supabase
+      .from("members")
+      .select(signedIn ? "*" : "id, name, section, position, sort_order")
+      .order("sort_order").order("name"),
+    [signedIn],
+    { transform: rows => (rows || []).map(m => ({ ...m, section: m.section || "gents" })) },
+  );
+
 
   const cloudKey = myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null;
   // Linked member: canonical name from members list (used for draw lookups)
@@ -604,17 +629,17 @@ export default function BowlsTracker() {
   const [h2hOpponent, setH2hOpponent] = useState(null); // string | null
   function openH2H(name) { if (name) setH2hOpponent(name.trim()); }
 
-  // ── Competitions (Supabase-first, fallback to hardcoded) ──
-  const [baseTournaments, setBaseTournaments] = useState(() =>
-    DEFAULT_TOURNAMENTS.map(t => ({ ...t, source: "ipbc", sourceLabel: "IPBC" }))
+  // ── Competitions (Supabase only) ──
+  // There is deliberately no hardcoded fallback. This used to seed from a
+  // bundled competition list and only overwrite when the read returned rows,
+  // so a club with no competitions of its own was shown Irvine Park's — for
+  // ever, because an empty table never stops looking empty. See
+  // useRemoteData.js for why the status matters more than the row count.
+  const [baseTournaments, setBaseTournaments, tournamentsLoad] = useRemoteData(
+    () => supabase.from("tournaments").select("*").order("sort_order"),
+    [],
+    { transform: rows => (rows || []).map(t => ({ ...t, source: "ipbc", sourceLabel: "IPBC" })) },
   );
-  useEffect(() => {
-    supabase.from("tournaments").select("*").order("sort_order")
-      .then(({ data }) => {
-        if (data?.length > 0)
-          setBaseTournaments(data.map(t => ({ ...t, source: "ipbc", sourceLabel: "IPBC" })));
-      });
-  }, []);
 
   const PERSONAL_COMPS_KEY = "bowls_personal_comps_v1";
   const [personalComps, setPersonalComps] = useState(() => load(PERSONAL_COMPS_KEY, []));
@@ -636,29 +661,38 @@ export default function BowlsTracker() {
     return [...base, ...personal];
   }, [baseTournaments, personalComps, myName, activeSection]);
 
-  // ── Fixtures (Supabase-first, fallback to hardcoded) ──
-  const [fixtures, setFixtures] = useState(() => FIXTURES.map(f => ({ ...f })));
-  useEffect(() => {
-    supabase.from("club_fixtures").select("*").order("sort_order")
-      .then(({ data }) => {
-        if (data?.length > 0)
-          setFixtures(data.map(f => ({ ...f, date: new Date(f.event_date + "T12:00:00") })));
-      });
-  }, []);
+  // ── Fixtures (Supabase only — no hardcoded season) ──
+  // event_date leads and sort_order is the same-date tiebreak. That ordering,
+  // and not the reverse, is what makes sort_order advisory.
+  //
+  // Fixtures.jsx takes the "Next Fixture" hero from upcoming[0] — the first
+  // row in query order — and addFixture sends no sort_order, so every fixture
+  // added through the UI takes the column default of 99. Ordering by
+  // sort_order first would still place such a row at numeric position 99
+  // whatever its date: with the season seeded at 10..350, a fixture added for
+  // October would render between 23 and 31 May. Leading on event_date puts
+  // every row on its own date no matter what sort_order says, so the column
+  // can only ever break ties between two fixtures on the same day.
+  const [fixtures, setFixtures, fixturesLoad] = useRemoteData(
+    () => supabase.from("club_fixtures").select("*").order("event_date").order("sort_order"),
+    [],
+    { transform: rows => (rows || []).map(f => ({ ...f, date: new Date(f.event_date + "T12:00:00") })) },
+  );
 
-  // ── Roll of Honour (Supabase-first) ──
-  const [rollOfHonour, setRollOfHonour] = useState(ROLL_OF_HONOUR);
-  useEffect(() => {
-    supabase.from("roll_of_honour").select("*").order("sort_order")
-      .then(({ data }) => { if (data?.length > 0) setRollOfHonour(data); });
-  }, []);
+  // ── Roll of Honour (Supabase only — no hardcoded competition list) ──
+  const [rollOfHonour, setRollOfHonour, rollOfHonourLoad] = useRemoteData(
+    () => supabase.from("roll_of_honour").select("*").order("sort_order"),
+    [],
+  );
 
-  // ── Honorary members (Supabase-first) ──
-  const [honoraryMembers, setHonoraryMembers] = useState(HONORARY_MEMBERS);
-  useEffect(() => {
-    supabase.from("club_config").select("value").eq("key", "honorary_members").maybeSingle()
-      .then(({ data }) => { if (data?.value) setHonoraryMembers(data.value); });
-  }, []);
+  // ── Honorary members (Supabase only — no hardcoded names) ──
+  // A single club_config row rather than a list, so `initial` is [] and the
+  // transform reaches through to the jsonb `value` column.
+  const [honoraryMembers, setHonoraryMembers, honoraryLoad] = useRemoteData(
+    () => supabase.from("club_config").select("value").eq("key", "honorary_members").maybeSingle(),
+    [],
+    { transform: row => row?.value || [] },
+  );
 
   // ── Fixture mutations ──
   async function addFixture(data) {
@@ -776,7 +810,9 @@ export default function BowlsTracker() {
     const t = baseTournaments.find(t2 => t2.id === tournamentId);
     const manual = t?.round_dates?.[roundIdx];
     if (manual) return manual;
-    return getTournRoundDate(tournamentId, roundIdx, settings.seasonYear || new Date().getFullYear());
+    // baseTournaments, not a hardcoded list: the round dates must come from
+    // the same competitions the rest of the screen is showing.
+    return getTournRoundDate(baseTournaments, tournamentId, roundIdx, settings.seasonYear || new Date().getFullYear());
   }
 
   function openAllRoundDatesEditor(t) {
@@ -863,20 +899,6 @@ export default function BowlsTracker() {
 
   // ── Supabase cloud sync ──
   const [syncStatus, setSyncStatus] = useState("idle"); // "idle"|"syncing"|"synced"|"error"
-
-  // Load members from Supabase (falls back to DEFAULT_MEMBERS if offline)
-  useEffect(() => {
-    // A signed-out visitor gets the columns the public tabs need and nothing
-    // else, so phone numbers never reach the device rather than merely being
-    // hidden on it. Signing in refetches the full row.
-    const columns = signedIn ? "*" : "id, name, section, position, sort_order";
-    supabase.from("members").select(columns).order("sort_order").order("name")
-      .then(({ data, error }) => {
-        if (!error && data?.length > 0) {
-          setMembers(data.map(m => ({ ...m, section: m.section || "gents" })));
-        }
-      });
-  }, [signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Set once the cloud copy for the current account has been read. The upload below
   // waits for it, so a slow first fetch can't push this device's empty state over
@@ -1829,9 +1851,10 @@ export default function BowlsTracker() {
     setJoinRequests(j => j.filter(r => r.id !== req.id));
     await supabase.from("members").insert({ name: req.name, phone: req.phone || null, section: req.section, sort_order: 9999 });
     await supabase.from("member_join_requests").update({ status: "approved" }).eq("id", req.id);
-    // Refresh members list
-    supabase.from("members").select("*").order("sort_order").order("name")
-      .then(({ data }) => { if (data) setMembers(data.map(m => ({ ...m, section: m.section || "gents" }))); });
+    // Re-read through the same hook that owns the roster, so a failure here is
+    // reported the same way as a failure on first load rather than silently
+    // leaving a stale list on screen.
+    membersLoad.reload();
   }
 
   async function declineJoinRequest(reqId) {
@@ -1889,8 +1912,13 @@ export default function BowlsTracker() {
       const parsed = parseCSV(ev.target.result);
       if (!parsed) { setUploadMsg("Error: Could not read file — check it has Name, Phone, Section columns."); return; }
       setMembers(parsed);
-      setUploadMsg(`Loaded ${parsed.length} members from file.`);
-      setTimeout(() => setUploadMsg(null), 4000);
+      // Deliberately still local-only — this has never written to Supabase, and
+      // wiring it up belongs with the onboarding work, not here. What changes
+      // is that it no longer says otherwise: with the roster now starting
+      // empty, an admin importing into a new club would previously watch the
+      // members appear and then lose them on the next refresh with no warning.
+      setUploadMsg(`Previewing ${parsed.length} members from file — NOT saved. Importing to the club's records isn't built yet.`);
+      setTimeout(() => setUploadMsg(null), 8000);
     };
     reader.readAsText(file);
     e.target.value = "";
@@ -3561,7 +3589,8 @@ export default function BowlsTracker() {
           return (
             <div>
               <ClubTab members={members} showPhones={signedIn} rollOfHonour={rollOfHonour}
-                honoraryMembers={honoraryMembers} isAdmin={isAdmin} recordWinner={recordWinner}
+                honoraryMembers={honoraryMembers} rollOfHonourLoad={rollOfHonourLoad} honoraryLoad={honoraryLoad}
+                isAdmin={isAdmin} recordWinner={recordWinner}
                 addHonoraryMember={addHonoraryMember} removeHonoraryMember={removeHonoraryMember} />
 
               {/* ── My Honours — the club's roll of honour is above, this is yours ── */}
@@ -3813,7 +3842,7 @@ export default function BowlsTracker() {
             FIXTURES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "fixtures" && (
-          <FixturesTab fixtures={fixtures} fixturesExpanded={fixturesExpanded} setFixturesExpanded={setFixturesExpanded} seasonYear={settings.seasonYear || new Date().getFullYear()} isAdmin={isAdmin} addFixture={addFixture} editFixture={editFixture} deleteFixture={deleteFixture} />
+          <FixturesTab fixtures={fixtures} fixturesLoad={fixturesLoad} fixturesExpanded={fixturesExpanded} setFixturesExpanded={setFixturesExpanded} seasonYear={settings.seasonYear || new Date().getFullYear()} isAdmin={isAdmin} addFixture={addFixture} editFixture={editFixture} deleteFixture={deleteFixture} />
         )}
                 {/* ══════════════════════════════════════════
             MEMBERS TAB
@@ -3826,6 +3855,7 @@ export default function BowlsTracker() {
             groupedMembers={groupedMembers}
             memberSearch={memberSearch} setMemberSearch={setMemberSearch}
             activeSection={activeSection}
+            membersLoad={membersLoad}
             fileInputRef={fileInputRef} handleFileChange={handleFileChange}
             downloadCSV={downloadCSV}
             uploadMsg={uploadMsg}
@@ -3876,7 +3906,7 @@ export default function BowlsTracker() {
               backupFileRef={backupFileRef}
               handleBackupImport={handleBackupImport}
               backupMsg={backupMsg}
-              tournaments={baseTournaments}
+              tournaments={baseTournaments} tournamentsLoad={tournamentsLoad}
               activeSection={activeSection}
               onAddComp={openAddComp}
               onEditComp={openEditComp}
@@ -3949,7 +3979,7 @@ export default function BowlsTracker() {
             addFixture={addFixture}
             editFixture={editFixture}
             deleteFixture={deleteFixture}
-            tournaments={baseTournaments}
+            tournaments={baseTournaments} tournamentsLoad={tournamentsLoad}
             onEditCompDates={openAllRoundDatesEditor}
             rollOfHonour={rollOfHonour}
             honoraryMembers={honoraryMembers}

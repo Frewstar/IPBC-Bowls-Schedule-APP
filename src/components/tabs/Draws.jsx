@@ -1,10 +1,11 @@
 import { Trophy, Phone, ChevronRight, ChevronLeft, Clock } from "lucide-react";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
-import { DEFAULT_TOURNAMENTS } from "../../lib/constants.js";
 import { getRoundLabel } from "../../lib/utils.js";
 
 export default function DrawsTab({ myEntries, activeTournament, setActiveTournament, setActiveRound, setActiveTab, members, tournaments }) {
-  const TOURNAMENTS = tournaments || DEFAULT_TOURNAMENTS;
+  // No hardcoded fallback: an absent list means this club has no competitions
+  // loaded, not that it should be shown another club's.
+  const TOURNAMENTS = tournaments || [];
   const myDrawEntries = myEntries;
 
   const drawEntry = activeTournament

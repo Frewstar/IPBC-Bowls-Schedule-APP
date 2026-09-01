@@ -1,5 +1,3 @@
-import { DEFAULT_TOURNAMENTS as TOURNAMENTS } from "./constants.js";
-
 export const DAY_NAMES  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 export const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -37,9 +35,15 @@ export function parseTournRoundDate(roundStr, year = new Date().getFullYear()) {
   return `${year}-${month}-${day}`;
 }
 
-// Get auto-date for a given tournament + round index
-export function getTournRoundDate(tournamentId, roundIdx, year = new Date().getFullYear()) {
-  const t = TOURNAMENTS.find(t2 => t2.id === tournamentId);
+// Get auto-date for a given tournament + round index.
+//
+// `tournaments` is passed in rather than read from a module-level constant.
+// It used to close over Irvine Park's hardcoded competition list, so a club
+// whose tournaments came from Supabase still had its round dates answered
+// from Irvine Park's 2026 calendar — the tournaments were right and the dates
+// underneath them were another club's.
+export function getTournRoundDate(tournaments, tournamentId, roundIdx, year = new Date().getFullYear()) {
+  const t = (tournaments || []).find(t2 => t2.id === tournamentId);
   return t?.rounds?.[roundIdx] ? parseTournRoundDate(t.rounds[roundIdx], year) : "";
 }
 
