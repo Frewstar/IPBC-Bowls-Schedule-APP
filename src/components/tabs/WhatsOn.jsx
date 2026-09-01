@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { PartyPopper, Plus, Pencil, Clock, CalendarDays, Trash2, Ban, RotateCcw, ChevronLeft, ChevronRight, ImagePlus, Share2, X } from "lucide-react";
+import { PartyPopper, Plus, Pencil, Clock, CalendarDays, Trash2, Ban, RotateCcw, ChevronLeft, ChevronRight, ImagePlus, Share2, X, Trophy } from "lucide-react";
 import BottomSheet from "../BottomSheet.jsx";
 import { supabase } from "../../lib/supabase.js";
 import { GREEN, GOLD, GOLD_MUTED, MID, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
 import { DAY_NAMES, MONTH_ABBR } from "../../lib/utils.js";
 import { posterUrl, posterThumbUrl, uploadPoster, removePoster, shareUrl } from "../../lib/poster.js";
+import { mergeDiary, KIND_FIXTURE, parseClockToMinutes, fmtMinutesRange } from "../../lib/diary.js";
 
 const FULL_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -65,26 +66,15 @@ function seriesDates(fromISO, toISO, weekday) {
   return out;
 }
 
-// "20:00" → "8pm", "20:30" → "8.30pm". Null time reads as no time at all.
-function fmtTime(t, withSuffix = true) {
-  if (!t) return "";
-  const [h, m] = t.split(":").map(Number);
-  if (h === 0 && m === 0) return "midnight";
-  const suffix = withSuffix ? (h < 12 ? "am" : "pm") : "";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return m === 0 ? `${h12}${suffix}` : `${h12}.${String(m).padStart(2, "0")}${suffix}`;
-}
-
-// How the club's own flyers put it: "4-9", "4-8PM". So "16:00"+"21:00" reads
-// "4–9pm", not "4pm – 9pm" — the first suffix is dropped when both ends share
-// it, which is how anyone would say it out loud. Different halves of the day
-// keep both: "11am–1pm".
+// The detail sheet and the share text still work on raw club_events rows, so
+// they need an "HH:MM" front door. It delegates to the diary formatter rather
+// than repeating it: two implementations of one format is how they drift, and
+// this one has to keep agreeing with the merged list on the same screen.
+//
+// (api/share.js carries its own copy on purpose — it is built by Vercel's Node
+// runtime and cannot import from the Vite bundle. That one is hand-synced.)
 function fmtWhen(start, end) {
-  if (!start) return end ? `until ${fmtTime(end)}` : "";
-  if (!end) return fmtTime(start);
-  const sh = Number(start.split(":")[0]), eh = Number(end.split(":")[0]);
-  const sameHalf = (sh < 12) === (eh < 12) && !(eh === 0 && sh !== 0);
-  return `${fmtTime(start, !sameHalf)}–${fmtTime(end)}`;
+  return fmtMinutesRange(parseClockToMinutes(start), parseClockToMinutes(end));
 }
 
 function fmtMonth(d) {
@@ -96,17 +86,13 @@ function fmtDateLong(iso) {
   return `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTH_ABBR[d.getMonth()]}`;
 }
 
-// Sort by the day, then by the clock. An event with no time listed goes first,
-// because that's usually the all-day thing.
-function byWhen(a, b) {
-  if (a.event_date !== b.event_date) return a.event_date < b.event_date ? -1 : 1;
-  return (a.start_time || "").localeCompare(b.start_time || "");
-}
-
 const BLANK = { title: "", detail: "", start_time: "20:00", end_time: "", event_date: "", weekday: 6, from_date: "", to_date: "" };
 
-export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId = null, onOpenedEvent }) {
+export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId = null, onOpenedEvent, fixtures = [] }) {
   const [events, setEvents] = useState([]);
+  // "all" | "matches" | "socials". The diary is the default view; the chips
+  // narrow it. Christine's own view — socials only — is one tap away.
+  const [source, setSource] = useState("all");
   const [loading, setLoading] = useState(true);
   // Which month the grid is showing, and which day (if any) has been tapped.
   const [monthAnchor, setMonthAnchor] = useState(() => firstOfMonth(new Date()));
@@ -165,7 +151,22 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
     return () => { alive = false; document.removeEventListener("visibilitychange", onVisible); };
   }, []);
 
-  const sorted = useMemo(() => [...events].sort(byWhen), [events]);
+  // ── The diary: both sources, one order ────────────────────────────────────
+  // `events` stays the write model — every add, edit, cancel and poster action
+  // below still operates on it alone, and fixtures are never written from
+  // here. This is the read model laid over the top of both.
+  const diary = useMemo(() => mergeDiary(fixtures, events), [fixtures, events]);
+  const sorted = useMemo(
+    () => source === "all"     ? diary
+        : source === "matches" ? diary.filter(i => i.kind === KIND_FIXTURE)
+        :                        diary.filter(i => i.kind !== KIND_FIXTURE),
+    [diary, source],
+  );
+  const counts = useMemo(() => ({
+    all:     diary.length,
+    matches: diary.filter(i => i.kind === KIND_FIXTURE).length,
+    socials: diary.filter(i => i.kind !== KIND_FIXTURE).length,
+  }), [diary]);
   const today = todayISO();
 
   // A shared link opened the app on a particular night. Wait for the rows —
@@ -192,8 +193,8 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
   const byDate = useMemo(() => {
     const m = new Map();
     for (const e of sorted) {
-      if (!m.has(e.event_date)) m.set(e.event_date, []);
-      m.get(e.event_date).push(e);
+      if (!m.has(e.date)) m.set(e.date, []);
+      m.get(e.date).push(e);
     }
     return m;
   }, [sorted]);
@@ -207,12 +208,12 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
   // — a year of a weekly karaoke is 52 rows in one list but only four or five
   // in any month anyone is actually looking at.
   const listed = useMemo(() => {
-    if (selectedDay) return sorted.filter(e => e.event_date === selectedDay);
-    return sorted.filter(e => e.event_date >= monthISOStart && e.event_date <= monthISOEnd);
+    if (selectedDay) return sorted.filter(e => e.date === selectedDay);
+    return sorted.filter(e => e.date >= monthISOStart && e.date <= monthISOEnd);
   }, [sorted, selectedDay, monthISOStart, monthISOEnd]);
 
   // The one thing most people open this tab to find out.
-  const nextUp = useMemo(() => sorted.find(e => e.event_date >= today && !e.cancelled) || null, [sorted, today]);
+  const nextUp = useMemo(() => sorted.find(e => e.date >= today && !e.cancelled) || null, [sorted, today]);
 
   // Read out of `events` rather than held as a row, so cancelling or adding a
   // poster from inside the sheet updates what the sheet is showing.
@@ -478,14 +479,14 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
         <>
           {/* The question most people open this tab to answer, before any grid. */}
           {nextUp && (
-            <button onClick={() => { setMonthAnchor(firstOfMonth(fromISODate(nextUp.event_date))); setSelectedDay(nextUp.event_date); }}
+            <button onClick={() => { setMonthAnchor(firstOfMonth(fromISODate(nextUp.date))); setSelectedDay(nextUp.date); }}
               style={{ width: "100%", textAlign: "left", background: `linear-gradient(150deg, ${GREEN} 0%, #3d0f1a 100%)`, border: "none", borderRadius: "14px", padding: "14px 16px", marginBottom: "14px", cursor: "pointer", boxShadow: "0 4px 16px rgba(74,14,31,0.18)" }}>
               <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: "5px" }}>
-                {nextUp.event_date === today ? "Tonight" : "Next up"}
+                {nextUp.date === today ? "Tonight" : "Next up"}
               </div>
               <div style={{ fontFamily: F_SANS, fontSize: "20px", fontWeight: "700", color: "#fff", lineHeight: 1.15 }}>{nextUp.title}</div>
               <div style={{ fontFamily: F_UI, fontSize: "12px", color: "rgba(255,255,255,0.8)", marginTop: "4px" }}>
-                {nextUp.event_date === today ? "" : fmtDateLong(nextUp.event_date) + " · "}{fmtWhen(nextUp.start_time, nextUp.end_time) || "time to be confirmed"}
+                {nextUp.date === today ? "" : fmtDateLong(nextUp.date) + " · "}{nextUp.timeLabel || "time to be confirmed"}
                 {nextUp.detail ? ` · ${nextUp.detail}` : ""}
               </div>
             </button>
@@ -538,8 +539,11 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
                     {/* one dot per event, so a busy Saturday reads as busy */}
                     <span style={{ display: "flex", gap: "2px", height: "4px", alignItems: "center" }}>
                       {on.slice(0, 3).map(e => (
-                        <span key={e.id} style={{ width: "4px", height: "4px", borderRadius: "50%",
-                          background: isSel ? "#fff" : e.cancelled ? LOSS_RED : GOLD,
+                        // Gold for a social, green for a match — the same two
+                        // colours the rows below use, so the grid and the list
+                        // read as one thing.
+                        <span key={e.key} style={{ width: "4px", height: "4px", borderRadius: "50%",
+                          background: isSel ? "#fff" : e.cancelled ? LOSS_RED : e.kind === KIND_FIXTURE ? GREEN : GOLD,
                           opacity: e.cancelled ? 0.75 : 1 }} />
                       ))}
                     </span>
@@ -550,6 +554,28 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
           </div>
 
           {/* ── What's on, for the day tapped or the month shown ── */}
+          {/* One list, two sources — the chips narrow it rather than
+              splitting it. Counts are of the whole diary, not the month, so
+              the number does not jump about as you page through. */}
+          <div style={{ display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
+            {[["all", "Everything"], ["matches", "Matches"], ["socials", "Socials"]].map(([k, label]) => {
+              const on = source === k;
+              return (
+                <button key={k} onClick={() => setSource(k)} aria-pressed={on}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: "6px",
+                    background: on ? GREEN : SURFACE, border: `1px solid ${on ? GREEN : BORDER}`,
+                    borderRadius: "20px", color: on ? "#fff" : TEXT2,
+                    padding: "7px 13px", fontSize: "12px", fontFamily: F_UI,
+                    fontWeight: on ? "700" : "500", cursor: "pointer", minHeight: "36px",
+                  }}>
+                  {label}
+                  <span style={{ fontSize: "11px", opacity: on ? 0.75 : 0.6, fontVariantNumeric: "tabular-nums" }}>{counts[k]}</span>
+                </button>
+              );
+            })}
+          </div>
+
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "10px" }}>
             <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: GOLD_MUTED, letterSpacing: "0.12em", textTransform: "uppercase" }}>
               {selectedDay ? fmtDateLong(selectedDay) : fmtMonth(monthAnchor)}
@@ -564,11 +590,18 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
 
           {listed.length === 0 ? (
             <div style={{ background: SURFACE, border: `1px dashed ${BORDER}`, borderRadius: "12px", padding: "28px 20px", textAlign: "center", fontFamily: F_UI, fontSize: "13px", color: TEXT3, lineHeight: 1.5 }}>
-              {selectedDay ? "Nothing on that day." : "Nothing on this month — try the arrow for next month."}
+              {source === "matches" ? (selectedDay ? "No match that day." : "No matches this month — try the arrow for next month.")
+               : source === "socials" ? (selectedDay ? "Nothing social that day." : "Nothing social this month — try the arrow for next month.")
+               : (selectedDay ? "Nothing on that day." : "Nothing on this month — try the arrow for next month.")}
             </div>
           ) : listed.map(e => (
-            <EventCard key={e.id} e={e} isAdmin={isAdmin} past={e.event_date < today}
-              onEdit={() => openEdit(e)} onOpen={() => setDetailId(e.id)} />
+            <DiaryCard key={e.key} item={e} past={e.date < today}
+              // Only events are editable or openable here. A fixture is the
+              // match secretary's record, shown read-only — no pencil, and no
+              // detail sheet, because there is nothing behind it to show.
+              isAdmin={isAdmin && e.kind !== KIND_FIXTURE}
+              onEdit={e.kind === KIND_FIXTURE ? null : () => openEdit(e.raw)}
+              onOpen={e.kind === KIND_FIXTURE ? null : () => setDetailId(e.id)} />
           ))}
         </>
       )}
@@ -819,80 +852,116 @@ export default function WhatsOnTab({ myName, myPin, isAdmin = false, openEventId
 // design and the thumbnail is fitted into it: no reserved box, no placeholder,
 // no skeleton that never resolves. A card without a poster is byte for byte
 // the card that was here before posters existed.
-function EventCard({ e, isAdmin, onEdit, onOpen, past = false }) {
-  const d = fromISODate(e.event_date);
-  const off = e.cancelled;
+// ── One row, either source ──────────────────────────────────────────────────
+// A match and a social are the same shape so the day reads as one list, and
+// differ only in the badge, the accent colour and what tapping does. Fixtures
+// are read-only here: no pencil, and no detail sheet, because the diary does
+// not own them.
+function DiaryCard({ item, isAdmin, onEdit, onOpen, past = false }) {
+  const d = fromISODate(item.date);
+  const off = item.cancelled;
+  const isFixture = item.kind === KIND_FIXTURE;
+  const accent = off ? LOSS_RED : past ? BORDER : isFixture ? GREEN : GOLD;
+
+  const body = (
+    <>
+      <div style={{ minWidth: "38px", flexShrink: 0, textAlign: "center" }}>
+        <div style={{ fontFamily: F_SANS, fontSize: "21px", fontWeight: "700", color: off ? TEXT3 : GREEN, lineHeight: 1 }}>{d.getDate()}</div>
+        <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, textTransform: "uppercase", fontWeight: "600", marginTop: "2px" }}>{DAY_NAMES[d.getDay()]}</div>
+      </div>
+
+      {/* alt="" on purpose: the title is the next thing in the reading order,
+          and a screen reader announcing it twice is worse than not at all. */}
+      {item.posterPath && (
+        <img src={posterThumbUrl(item.posterPath, 128)} alt="" aria-hidden="true" loading="lazy"
+          onError={ev => {
+            const full = posterUrl(item.posterPath);
+            if (ev.currentTarget.src !== full) ev.currentTarget.src = full;
+            else ev.currentTarget.style.display = "none";
+          }}
+          style={{ width: "64px", height: "64px", objectFit: "cover", borderRadius: "10px",
+                   flexShrink: 0, border: `1px solid ${BORDER}`, background: SURFACE2,
+                   filter: off ? "grayscale(1)" : "none", opacity: off ? 0.65 : 1 }} />
+      )}
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: F_SANS, fontSize: "17px", fontWeight: "700", lineHeight: 1.25,
+          color: off ? TEXT3 : TEXT,
+          textDecoration: off ? "line-through" : "none",
+        }}>
+          {item.title}
+        </div>
+        {item.detail && (
+          <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginTop: "3px", lineHeight: 1.45, textDecoration: off ? "line-through" : "none" }}>
+            {item.detail}
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "5px", flexWrap: "wrap" }}>
+          {item.timeLabel && (
+            <span style={{ fontFamily: F_UI, fontSize: "12px", color: off ? TEXT3 : TEXT2, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <Clock size={11} strokeWidth={1.75} />{item.timeLabel}
+            </span>
+          )}
+
+          {/* A fixture keeps the Home/Away vocabulary the Fixtures tab already
+              uses, rather than inventing a second one for the same fact. */}
+          {isFixture ? (
+            <>
+              <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", padding: "2px 9px", borderRadius: "20px",
+                             background: item.venue === "home" ? GREEN : GOLD,
+                             color: item.venue === "home" ? "#fff" : "#4a0e1f" }}>
+                {item.venue === "home" ? "Home" : "Away"}
+              </span>
+              {item.rinks ? <span style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3 }}>{item.rinks} rinks</span> : null}
+            </>
+          ) : (
+            <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD_MUTED, background: `${GOLD}18`,
+                           border: `1px solid ${GOLD}44`, borderRadius: "20px", padding: "2px 9px",
+                           textTransform: "uppercase", letterSpacing: "0.08em", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <PartyPopper size={10} strokeWidth={2} />Social
+            </span>
+          )}
+
+          {/* Christine cancels rather than deletes on purpose: a member who
+              planned around a band night needs to see it is off, not find it
+              missing. */}
+          {off && (
+            <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: LOSS_RED, background: `${LOSS_RED}12`, border: `1px solid ${LOSS_RED}44`, borderRadius: "20px", padding: "2px 9px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              Cancelled
+            </span>
+          )}
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: "12px",
       background: SURFACE, border: `1px solid ${off ? `${LOSS_RED}44` : BORDER}`,
-      borderLeft: `4px solid ${off ? LOSS_RED : past ? BORDER : GOLD}`,
-      // Kept in the month, but plainly over with.
+      borderLeft: `4px solid ${accent}`,
       opacity: past ? 0.55 : 1,
       borderRadius: "12px", padding: "13px 14px", marginBottom: "8px",
       boxShadow: "0 1px 3px rgba(74,14,31,0.06)",
     }}>
-      {/* The whole card opens the night. The pencil is a separate button beside
-          it rather than inside it — nesting one would be invalid, and tapping
-          "edit" would also fire "open". */}
-      <button onClick={onOpen} aria-label={`${e.title}, ${fmtDateLong(e.event_date)}`}
-        style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px",
-                 background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", font: "inherit" }}>
-
-        <div style={{ minWidth: "38px", flexShrink: 0, textAlign: "center" }}>
-          <div style={{ fontFamily: F_SANS, fontSize: "21px", fontWeight: "700", color: off ? TEXT3 : GREEN, lineHeight: 1 }}>{d.getDate()}</div>
-          <div style={{ fontFamily: F_UI, fontSize: "9px", color: TEXT3, textTransform: "uppercase", fontWeight: "600", marginTop: "2px" }}>{DAY_NAMES[d.getDay()]}</div>
+      {onOpen ? (
+        // The whole card opens the night. The pencil is a separate button
+        // beside it rather than inside it — nesting one would be invalid, and
+        // tapping "edit" would also fire "open".
+        <button onClick={onOpen} aria-label={`${item.title}, ${fmtDateLong(item.date)}`}
+          style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px",
+                   background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", font: "inherit" }}>
+          {body}
+        </button>
+      ) : (
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px" }}>
+          {body}
         </div>
+      )}
 
-        {/* alt="" on purpose: the title is the next thing in the reading order,
-            and a screen reader announcing it twice is worse than not at all.
-            The poster carries its own alt where it is the content — full width
-            in the detail sheet, and full screen. */}
-        {e.poster_path && (
-          <img src={posterThumbUrl(e.poster_path, 128)} alt="" aria-hidden="true" loading="lazy"
-            onError={ev => {
-              // The render endpoint is a paid add-on. If it is off, or ever
-              // goes off, fall back to the object itself rather than showing a
-              // broken image on the club's diary.
-              const full = posterUrl(e.poster_path);
-              if (ev.currentTarget.src !== full) ev.currentTarget.src = full;
-              else ev.currentTarget.style.display = "none";
-            }}
-            style={{ width: "64px", height: "64px", objectFit: "cover", borderRadius: "10px",
-                     flexShrink: 0, border: `1px solid ${BORDER}`, background: SURFACE2,
-                     filter: off ? "grayscale(1)" : "none", opacity: off ? 0.65 : 1 }} />
-        )}
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontFamily: F_SANS, fontSize: "17px", fontWeight: "700", lineHeight: 1.25,
-            color: off ? TEXT3 : TEXT,
-            textDecoration: off ? "line-through" : "none",
-          }}>
-            {e.title}
-          </div>
-          {e.detail && (
-            <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginTop: "3px", lineHeight: 1.45, textDecoration: off ? "line-through" : "none" }}>
-              {e.detail}
-            </div>
-          )}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "5px", flexWrap: "wrap" }}>
-            {(e.start_time || e.end_time) && (
-              <span style={{ fontFamily: F_UI, fontSize: "12px", color: off ? TEXT3 : TEXT2, display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                <Clock size={11} strokeWidth={1.75} />{fmtWhen(e.start_time, e.end_time)}
-              </span>
-            )}
-            {off && (
-              <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: LOSS_RED, background: `${LOSS_RED}12`, border: `1px solid ${LOSS_RED}44`, borderRadius: "20px", padding: "2px 9px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                Cancelled
-              </span>
-            )}
-          </div>
-        </div>
-      </button>
-
-      {isAdmin && (
-        <button onClick={onEdit} aria-label={`Edit ${e.title}`}
+      {isAdmin && onEdit && (
+        <button onClick={onEdit} aria-label={`Edit ${item.title}`}
           style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT3, cursor: "pointer", padding: "11px 12px", flexShrink: 0, display: "inline-flex", alignItems: "center", minHeight: "44px" }}>
           <Pencil size={13} strokeWidth={1.75} />
         </button>
