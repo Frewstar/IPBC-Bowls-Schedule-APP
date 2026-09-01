@@ -45,10 +45,13 @@ Run them in filename order. Every one is idempotent.
 | 13 | `20260902_event_posters.sql` | Posters on What's On — `club_events.poster_path`, the `event-posters` bucket, ticketed writes, the Open Graph share link | Applied 31 Aug, 20:20 UTC as `event_posters`, plus `20260831205042 event_posters_revoke_ticket_grants` at 20:50 — verified live: the column, the bucket with its limits, an upload round-trip, and an upload without a ticket refused |
 | 14 | `20260903_live_games_creator_member_id.sql` | The sign-in PIN comes out of `live_games` — `creator_member_id`, backfilled, and `creator_cloudkey` cleared on finished games | Applied 31 Aug, 21:59 UTC as `live_games_creator_member_id` — ledger 43 rows before, 44 after |
 | 15 | `20260904_poster_path_club_prefix.sql` | Poster objects get the club in front — `<club_id>/<event_id>/<file>.jpg`, club derived from the account; `bowls_poster_remove_ticket` taught both shapes | Applied 1 Sep, 09:31 UTC as `poster_path_club_prefix` — ledger 44 rows before, 45 after. Storage policies deliberately unchanged |
-| 16 | `20260906_bowls_sessions.sql` | **Track 2, Step 2** — `bowls_sessions`, `bowls_session_issue`, `bowls_session_player`, `bowls_sign_out`; `bowls_sign_in` gains `token`, `club_id`, `member_id`, `member_name` | Applied 1 Sep — verified live: token resolves to the right account, bogus/empty/null/expired tokens resolve to nothing next to a live-token control, `anon` gets 42501 on the table and on both session functions |
-| 17 | `20260906_register_without_pin_in_player_name.sql` | **Track 2** — `bowls_register` stops building NAME-PIN. New accounts get the row's uuid as `player_name` | Applied 1 Sep — verified live: a registered probe carried no PIN in `player_name`, signed in afterwards, and registering twice produced one row not two. Probe rolled back |
-| 18 | `20260906_request_unlock.sql` | **Track 2, Step 3c's server half** — `bowls_request_unlock(p_name)`: the locked-out screen's button without the row id and without the PIN | Applied 1 Sep — verified live: sets the flag on a locked row, leaves `attempts` and `locked_until` alone, creates nothing for an unknown name |
-| 19 | `20260906_reset_pin_refuses_non_legacy_keys.sql` | **Track 2** — `bowls_admin_reset_pin` refuses an account whose key does not end in a PIN, instead of quietly rebuilding it and putting the PIN back | Applied 1 Sep — verified live inside a rolled-back transaction: a uuid-named account is refused with `bad_account` and its `player_name` is untouched, while a legacy account still resets to `-8888` |
+| 16 | `20260901163342_bowls_sessions.sql` | **Track 2, Step 2** — `bowls_sessions`, `bowls_session_issue`, `bowls_session_player`, `bowls_sign_out`; `bowls_sign_in` gains `token`, `club_id`, `member_id`, `member_name` | Applied 1 Sep — verified live: token resolves to the right account, bogus/empty/null/expired tokens resolve to nothing next to a live-token control, `anon` gets 42501 on the table and on both session functions |
+| 17 | `20260901163622_register_without_pin_in_player_name.sql` | **Track 2** — `bowls_register` stops building NAME-PIN. New accounts get the row's uuid as `player_name` | Applied 1 Sep — verified live: a registered probe carried no PIN in `player_name`, signed in afterwards, and registering twice produced one row not two. Probe rolled back |
+| 18 | `20260901163739_request_unlock.sql` | **Track 2, Step 3c's server half** — `bowls_request_unlock(p_name)`: the locked-out screen's button without the row id and without the PIN | Applied 1 Sep — verified live: sets the flag on a locked row, leaves `attempts` and `locked_until` alone, creates nothing for an unknown name |
+| 19 | `20260901164740_reset_pin_refuses_non_legacy_keys.sql` | **Track 2** — `bowls_admin_reset_pin` refuses an account whose key does not end in a PIN, instead of quietly rebuilding it and putting the PIN back | Applied 1 Sep — verified live inside a rolled-back transaction: a uuid-named account is refused with `bad_account` and its `player_name` is untouched, while a legacy account still resets to `-8888` |
+| 20 | `20260901181006_sessions_can_be_ended.sql` | **Track 2, Step 3a** — a session can be ended: reset-PIN changes `pin_hash` and only that, and kills the account's sessions; a trigger kills them on lock; `bowls_session_state`; `bowls_sign_out_all` | Applied 1 Sep — verified live in a rolled-back transaction: the token resolves BEFORE the reset and not after, the old PIN stops working and the new one starts, `player_name` does not move |
+| 21 | `20260901181151_lockout_lookup_shape_tolerant.sql` | **Track 2** — a lock locks whichever way it was written. `bowls_sign_in` and `bowls_request_unlock` match on `bowls_name_key(name)` | Applied 1 Sep — found by the lock test, not by looking: an admin-written raw-name lock did not lock. Verified live: a raw-name lock now refuses sign-in and the unlock button reaches the row |
+| 22 | `20260901181531_account_name_in_payload.sql` | **Track 2** — `account_name` on all three payloads: the name an account signs in under | Applied 1 Sep — verified live: `bowls_account_name` equals the old client's `keyName(player_name)` on 92 of 92 accounts, so no member's `myName` changes |
 
 Status is no longer "my best understanding from our sessions". Every row above was
 checked against `information_schema`, `pg_constraint`, `pg_indexes`, `pg_policies`,
@@ -2515,7 +2518,7 @@ and hands `poster_path` back on removal, and `api/share.js` splits the path on
 
 ## 13. Sessions — sign-in issues a token
 
-**File:** `supabase/migrations/20260906_bowls_sessions.sql`
+**File:** `supabase/migrations/20260901163342_bowls_sessions.sql`
 **Status:** Applied 1 Sep
 
 The app has no Supabase auth session, so `auth.uid()` is null on every
@@ -2558,7 +2561,7 @@ and 4 possible; on its own the schema is exactly as open as it was.
 
 ## 14. Registration stops storing the PIN
 
-**File:** `supabase/migrations/20260906_register_without_pin_in_player_name.sql`
+**File:** `supabase/migrations/20260901163622_register_without_pin_in_player_name.sql`
 **Status:** Applied 1 Sep
 
 `bowls_register` was the function registration was about to move onto, and it
@@ -2597,7 +2600,7 @@ part of the admin-panel commit in Step 3.
 
 ## 15. The locked-out button, without the row id
 
-**File:** `supabase/migrations/20260906_request_unlock.sql`
+**File:** `supabase/migrations/20260901163739_request_unlock.sql`
 **Status:** Applied 1 Sep
 
 The locked-out screen has a button that asks an admin to let the member back
@@ -2617,7 +2620,7 @@ lockout, extend one, clear one, or touch `attempts` or `locked_until`.
 
 ## 16. Reset-PIN refuses a key it would mangle
 
-**File:** `supabase/migrations/20260906_reset_pin_refuses_non_legacy_keys.sql`
+**File:** `supabase/migrations/20260901164740_reset_pin_refuses_non_legacy_keys.sql`
 **Status:** Applied 1 Sep
 
 `bowls_admin_reset_pin` builds the new account key by hand:
@@ -2650,6 +2653,77 @@ under it. It belongs in the same commit as Step 3a.
 Behaviour for all 92 existing accounts is unchanged exactly. The only
 difference is that an account this function cannot handle is refused in words
 rather than quietly corrupted.
+
+---
+
+## 17. A session can be ended
+
+**Files:** `supabase/migrations/20260901181006_sessions_can_be_ended.sql`,
+`20260901181151_lockout_lookup_shape_tolerant.sql`,
+`20260901181531_account_name_in_payload.sql`
+**Status:** Applied 1 Sep
+
+`bowls_session_player` slides `expires_at` to `now() + 90 days` on every use,
+so an active session never expires — and until these files there was no way to
+end one.
+
+That broke the one thing PIN reset exists for. A member says "someone knows my
+PIN", an admin resets it, the PIN changes, and the other person's session keeps
+working indefinitely because it renews itself every time they open the app.
+Locking the account had the same hole: it stopped new sign-ins while the locked
+person carried on using the app.
+
+So: `bowls_admin_reset_pin` now changes `pin_hash` and **nothing else** — no
+`player_name`, no `members.linked_cloudkey`, no `admins.cloud_key` — and ends
+every session for that account, the member's own included. A trigger on
+`login_lockouts` ends them the moment an account becomes locked, whoever wrote
+the lock; that is a trigger rather than a function the admin panel calls
+because the lock is still written straight to the table, so a function would
+leave the hole open until the admin panel moves. Deleting an account needed
+nothing: `bowls_sessions.player_id` cascades.
+
+`bowls_session_state` is what makes any of it visible — the client asks on load
+whether its token is still good. It answers `ok` or `expired`, and **anything
+else is not an answer**: on an error the client must leave the member signed in
+and ask again later, or a wobble on the club wi-fi would sign everybody out.
+
+Two things were found by testing rather than by reading:
+
+**A lock written by the admin panel did not lock.** `login_lockouts.name` holds
+a `name_key` when `bowls_sign_in` writes it and a raw name when the admin panel
+does, and `bowls_sign_in` looked it up with `where name = v_key`. That works
+today only because the client does its own raw-name check; moving sign-in to
+the RPC would have quietly let locked accounts back in, with the lock still
+sitting in the table looking correct. Both readers now squash before matching.
+
+**`display_name` is the wrong name to sign in under.** It differs from the
+stored name part on 6 of the 92 accounts, because the trigger fills it from
+`profile.displayName`. Since `myName` is string-matched against ties, draw
+pairings, personal comps and honours, signing those six in under their display
+name would have orphaned their own data. Hence `account_name`, which is
+byte-for-byte the old client's `keyName(player_name)` on all 92.
+
+---
+
+## A note on filenames
+
+The four Step 2 files and the three above are named for their **exact ledger
+version** (`20260901181006_...` ↔ ledger `20260901181006`). That mapping is now
+mechanical, which is the point: a file and its ledger entry cannot drift.
+
+They therefore sort *before* `20260901_admin_role_layers.sql` and
+`20260902`–`20260905`, which were applied earlier but are named for their
+position in the sequence rather than their ledger date (`20260905_admin_record_winner.sql`
+is ledger `20260901134702`). Filename order still replays correctly: everything
+in these seven files depends only on the baseline and on
+`20260830_reset_pin_keeps_admin_row_in_step.sql`, all of which sort earlier, and
+nothing in `20260902`–`20260905` refers to sessions, registration or lockouts.
+That is a dependency argument, not a test — the folder has not been replayed
+into an empty database since these were added.
+
+Renaming the older files to their ledger versions too would remove the
+inconsistency. That is a change to files this branch does not otherwise touch,
+so it is left for a decision rather than done in passing.
 
 ---
 

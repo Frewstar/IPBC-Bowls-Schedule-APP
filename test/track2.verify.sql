@@ -16,7 +16,8 @@
 --  which side of the Step 4 revoke the database is on and asserts the
 --  matching consequence, so the same file is a real test before and after.
 --
---  Covers: Step 2 (sessions) and the bowls_register fix.
+--  Covers: Step 2 (sessions), the bowls_register fix, and Step 3a's
+--  server half — ending sessions, locking, and the sign-in name.
 --  Does NOT cover: the HTTP layer. These run as a database role, which
 --  exercises grants and RLS — the two things Step 4 changes — but not
 --  PostgREST. For that, run test/anon-pin-dump.mjs from a machine with
@@ -367,6 +368,174 @@ begin
   end if;
 
   raise notice 'check 10 ok — uuid account refused untouched, legacy account still resets';
+end $$;
+
+
+
+-- ── 11. A reset ends the account's sessions ───────────────────────────────
+-- The point of a PIN reset is to lock out whoever knew the old PIN. A session
+-- that renews itself on every use — which is what bowls_session_player does —
+-- would carry on working for them indefinitely, and the reset would do
+-- nothing at all to the one person it is aimed at.
+--
+-- The BEFORE assertion is what makes this a test. Without it, "the token no
+-- longer resolves" is also true of a token that never resolved.
+do $$
+declare
+  v_admin_name text; v_admin_pin text;
+  v_probe jsonb; v_token text; v_member_id text; v_res jsonb;
+begin
+  select regexp_replace(p.player_name,'-[0-9]{4}$',''), right(p.player_name,4)
+    into v_admin_name, v_admin_pin
+    from public.admins a join public.player_data p on p.id = a.player_id
+   where p.player_name ~ '-[0-9]{4}$' limit 1;
+  if v_admin_name is null then
+    raise exception 'check 11: no admin with a legacy key — this check cannot run, do not read it as a pass';
+  end if;
+
+  v_probe := public.bowls_register('ZZ REVOKE PROBE', '4271');
+  v_token := v_probe->>'token';
+  select id into v_member_id from public.members where linked_player_id is null and linked_cloudkey is null limit 1;
+  update public.members set linked_player_id = (v_probe->>'id')::uuid where id = v_member_id;
+
+  -- BEFORE
+  if (select count(*) from public.bowls_session_player(v_token)) <> 1 then
+    raise exception 'check 11 SETUP: the token did not resolve before the reset';
+  end if;
+  if public.bowls_session_state(v_token)->>'status' <> 'ok' then
+    raise exception 'check 11 SETUP: session_state was not ok before the reset';
+  end if;
+
+  v_res := public.bowls_admin_reset_pin(v_admin_name, v_admin_pin, v_member_id, '8888');
+  if v_res->>'status' <> 'ok' then raise exception 'check 11 FAILED: reset said %', v_res->>'status'; end if;
+  if (v_res->>'sessions_ended')::int < 1 then
+    raise exception 'check 11 FAILED: reset reported % sessions ended', v_res->>'sessions_ended';
+  end if;
+
+  -- AFTER
+  if (select count(*) from public.bowls_session_player(v_token)) <> 0 then
+    raise exception 'check 11 FAILED: the old token still resolves after the reset';
+  end if;
+  if public.bowls_session_state(v_token)->>'status' <> 'expired' then
+    raise exception 'check 11 FAILED: session_state does not report the session as expired';
+  end if;
+
+  -- and the reset did what it said, without moving anything else
+  if (select player_name from public.player_data where id=(v_probe->>'id')::uuid) <> (v_probe->>'id') then
+    raise exception 'check 11 FAILED: the reset moved player_name';
+  end if;
+  if public.bowls_sign_in('ZZ REVOKE PROBE','8888')->>'status' <> 'ok' then
+    raise exception 'check 11 FAILED: the new PIN does not sign in';
+  end if;
+  if public.bowls_sign_in('ZZ REVOKE PROBE','4271')->>'status' <> 'wrong_pin' then
+    raise exception 'check 11 FAILED: the OLD PIN still signs in';
+  end if;
+
+  raise notice 'check 11 ok — reset ends sessions, old PIN dead, player_name unmoved';
+end $$;
+
+
+-- ── 12. Locking ends sessions, and a raw-name lock still locks ────────────
+-- The lock is written here exactly as App.jsx writes it today: a RAW name,
+-- not a name_key. bowls_sign_in looks up by name_key, so before the
+-- shape-tolerant fix this passed the session half and failed the sign-in
+-- half — an account an admin had locked signed straight back in.
+do $$
+declare v_probe jsonb; v_token text;
+begin
+  v_probe := public.bowls_register('ZZ LOCK PROBE', '4271');
+  v_token := v_probe->>'token';
+  if (select count(*) from public.bowls_session_player(v_token)) <> 1 then
+    raise exception 'check 12 SETUP: token dead before the lock';
+  end if;
+  if public.bowls_sign_in('ZZ LOCK PROBE','4271')->>'status' <> 'ok' then
+    raise exception 'check 12 SETUP: cannot sign in before the lock, so the lock proves nothing';
+  end if;
+
+  insert into public.login_lockouts (name, attempts, locked_until, updated_at)
+  values ('ZZ LOCK PROBE', 0, '2099-01-01T00:00:00Z', now())
+  on conflict (name) do update set locked_until = excluded.locked_until;
+
+  if (select count(*) from public.bowls_session_player(v_token)) <> 0 then
+    raise exception 'check 12 FAILED: the session survived the lock';
+  end if;
+  if public.bowls_sign_in('ZZ LOCK PROBE','4271')->>'status' <> 'locked' then
+    raise exception 'check 12 FAILED: a raw-name admin lock does not lock';
+  end if;
+  perform public.bowls_request_unlock('ZZ.LOCK  PROBE');
+  if not exists (select 1 from public.login_lockouts where name='ZZ LOCK PROBE' and unlock_requested) then
+    raise exception 'check 12 FAILED: the unlock button cannot reach a raw-name row';
+  end if;
+
+  raise notice 'check 12 ok — lock ends sessions and refuses sign-in, whichever shape it was written in';
+end $$;
+
+
+-- ── 13. Deleting an account, and signing out ──────────────────────────────
+do $$
+declare v_probe jsonb; v_token text; v_id uuid; v_t1 text; v_t2 text;
+begin
+  -- delete cascades. The admin panel deletes player_data directly, so this
+  -- has to hold without anybody remembering to tidy up sessions.
+  v_probe := public.bowls_register('ZZ DELETE PROBE', '4271');
+  v_token := v_probe->>'token';
+  v_id    := (v_probe->>'id')::uuid;
+  if (select count(*) from public.bowls_sessions where player_id=v_id) < 1 then
+    raise exception 'check 13 SETUP: no session to delete';
+  end if;
+  delete from public.player_data where id = v_id;
+  if (select count(*) from public.bowls_session_player(v_token)) <> 0 then
+    raise exception 'check 13 FAILED: the token survived the account';
+  end if;
+
+  -- sign out everywhere ends both devices; plain sign-out ends only one
+  v_probe := public.bowls_register('ZZ SIGNOUT PROBE', '4271');
+  v_t1 := v_probe->>'token';
+  v_t2 := public.bowls_sign_in('ZZ SIGNOUT PROBE','4271')->>'token';
+  if (select count(*) from public.bowls_session_player(v_t1)) <> 1
+  or (select count(*) from public.bowls_session_player(v_t2)) <> 1 then
+    raise exception 'check 13 SETUP: two tokens expected, both live';
+  end if;
+  perform public.bowls_sign_out_all(v_t2);
+  if (select count(*) from public.bowls_session_player(v_t1)) <> 0
+  or (select count(*) from public.bowls_session_player(v_t2)) <> 0 then
+    raise exception 'check 13 FAILED: sign_out_all left a device signed in';
+  end if;
+
+  v_t1 := public.bowls_sign_in('ZZ SIGNOUT PROBE','4271')->>'token';
+  v_t2 := public.bowls_sign_in('ZZ SIGNOUT PROBE','4271')->>'token';
+  perform public.bowls_sign_out(v_t2);
+  if (select count(*) from public.bowls_session_player(v_t1)) <> 1 then
+    raise exception 'check 13 FAILED: plain sign-out ended the other device too';
+  end if;
+  if (select count(*) from public.bowls_session_player(v_t2)) <> 0 then
+    raise exception 'check 13 FAILED: plain sign-out left this device signed in';
+  end if;
+
+  raise notice 'check 13 ok — delete cascades; sign-out ends one, sign-out-all ends all';
+end $$;
+
+
+-- ── 14. The name an account signs in under does not change ────────────────
+-- myName is string-matched against ties, draw pairings, personal comps and
+-- honours, so this is not cosmetic: if account_name disagreed with what the
+-- old client stored, those members would lose their own data behind a name
+-- they never chose. display_name is NOT that value — it differs on 6 of 92.
+do $$
+declare v_total int; v_same int;
+begin
+  select count(*),
+         count(*) filter (where public.bowls_account_name(p)
+                              = left(p.player_name, length(p.player_name) - position('-' in reverse(p.player_name))))
+    into v_total, v_same
+    from public.player_data p
+   where p.player_name ~ '-[0-9]{4}$';
+
+  if v_total = 0 then raise exception 'check 14: no legacy accounts to compare — vacuous, fix it'; end if;
+  if v_same <> v_total then
+    raise exception 'check 14 FAILED: account_name differs from the old client keyName on % of % accounts', v_total - v_same, v_total;
+  end if;
+  raise notice 'check 14 ok — account_name matches the old client on %/%', v_same, v_total;
 end $$;
 
 
