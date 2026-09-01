@@ -320,6 +320,57 @@ begin
 end $$;
 
 
+-- ── 10. Reset-PIN refuses an account it would otherwise mangle ────────────
+-- bowls_admin_reset_pin rebuilds player_name from the new PIN with
+-- `-[^-]*$`, which is right for NAME-PIN and wrong for a uuid: it would
+-- strip the last hyphen group and write back <uuid-prefix>-<new PIN>,
+-- putting the PIN back into player_name. The guard must refuse instead.
+--
+-- The control is the point of this block. Refusing everything would also
+-- satisfy the first half, so a legacy account must still reset normally.
+do $$
+declare
+  v_admin_name text; v_admin_pin text;
+  v_probe jsonb; v_member_id text; v_legacy_member_id text;
+  v_res_uuid jsonb; v_res_legacy jsonb;
+begin
+  select regexp_replace(p.player_name, '-[0-9]{4}$', ''), right(p.player_name, 4)
+    into v_admin_name, v_admin_pin
+    from public.admins a join public.player_data p on p.id = a.player_id
+   where p.player_name ~ '-[0-9]{4}$' limit 1;
+  if v_admin_name is null then
+    raise exception 'check 10: no admin with a legacy key — this check cannot run, do not read it as a pass';
+  end if;
+
+  v_probe := public.bowls_register('ZZ RESET PROBE', '4271');
+  select id into v_member_id from public.members where linked_player_id is null and linked_cloudkey is null limit 1;
+  update public.members set linked_player_id = (v_probe->>'id')::uuid where id = v_member_id;
+
+  v_res_uuid := public.bowls_admin_reset_pin(v_admin_name, v_admin_pin, v_member_id, '8888');
+  if v_res_uuid->>'status' <> 'bad_account' then
+    raise exception 'check 10 FAILED: reset on a uuid-named account returned %, player_name is now %',
+      v_res_uuid->>'status', (select player_name from public.player_data where id = (v_probe->>'id')::uuid);
+  end if;
+  if (select player_name from public.player_data where id = (v_probe->>'id')::uuid) <> (v_probe->>'id') then
+    raise exception 'check 10 FAILED: it refused but modified player_name anyway';
+  end if;
+
+  select m.id into v_legacy_member_id
+    from public.members m join public.player_data p on p.id = m.linked_player_id
+   where p.player_name ~ '-[0-9]{4}$' limit 1;
+  v_res_legacy := public.bowls_admin_reset_pin(v_admin_name, v_admin_pin, v_legacy_member_id, '8888');
+  if v_res_legacy->>'status' <> 'ok' then
+    raise exception 'check 10 FAILED (control): a legacy account no longer resets: %', v_res_legacy->>'status';
+  end if;
+  if (v_res_legacy->>'new_key') !~ '-8888$' then
+    raise exception 'check 10 FAILED (control): legacy new_key has the wrong shape';
+  end if;
+
+  raise notice 'check 10 ok — uuid account refused untouched, legacy account still resets';
+end $$;
+
+
+
 rollback;
 
 -- Everything above is undone. If you want to keep a change, this is not the

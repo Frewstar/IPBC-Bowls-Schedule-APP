@@ -48,6 +48,7 @@ Run them in filename order. Every one is idempotent.
 | 16 | `20260906_bowls_sessions.sql` | **Track 2, Step 2** — `bowls_sessions`, `bowls_session_issue`, `bowls_session_player`, `bowls_sign_out`; `bowls_sign_in` gains `token`, `club_id`, `member_id`, `member_name` | Applied 1 Sep — verified live: token resolves to the right account, bogus/empty/null/expired tokens resolve to nothing next to a live-token control, `anon` gets 42501 on the table and on both session functions |
 | 17 | `20260906_register_without_pin_in_player_name.sql` | **Track 2** — `bowls_register` stops building NAME-PIN. New accounts get the row's uuid as `player_name` | Applied 1 Sep — verified live: a registered probe carried no PIN in `player_name`, signed in afterwards, and registering twice produced one row not two. Probe rolled back |
 | 18 | `20260906_request_unlock.sql` | **Track 2, Step 3c's server half** — `bowls_request_unlock(p_name)`: the locked-out screen's button without the row id and without the PIN | Applied 1 Sep — verified live: sets the flag on a locked row, leaves `attempts` and `locked_until` alone, creates nothing for an unknown name |
+| 19 | `20260906_reset_pin_refuses_non_legacy_keys.sql` | **Track 2** — `bowls_admin_reset_pin` refuses an account whose key does not end in a PIN, instead of quietly rebuilding it and putting the PIN back | Applied 1 Sep — verified live inside a rolled-back transaction: a uuid-named account is refused with `bad_account` and its `player_name` is untouched, while a legacy account still resets to `-8888` |
 
 Status is no longer "my best understanding from our sessions". Every row above was
 checked against `information_schema`, `pg_constraint`, `pg_indexes`, `pg_policies`,
@@ -2611,6 +2612,44 @@ out precisely because they do not know it). It returns void whatever happens,
 so a caller cannot use it to ask whether a name has an account, and it only
 ever raises the flag on a row that is currently locked — it cannot create a
 lockout, extend one, clear one, or touch `attempts` or `locked_until`.
+
+---
+
+## 16. Reset-PIN refuses a key it would mangle
+
+**File:** `supabase/migrations/20260906_reset_pin_refuses_non_legacy_keys.sql`
+**Status:** Applied 1 Sep
+
+`bowls_admin_reset_pin` builds the new account key by hand:
+
+```sql
+v_name_part := regexp_replace(v_account.player_name, '-[^-]*$', '');
+v_new_key   := v_name_part || '-' || p_new_pin;
+```
+
+That is right for `NAME-PIN` and wrong for anything else. Now that
+`bowls_register` writes the row's uuid into `player_name`, an account can look
+like `61f82a8a-09cf-4385-874b-1741925bebe7` — and `-[^-]*$` strips the last
+hyphen group rather than a PIN, so the function would write back
+`61f82a8a-09cf-4385-874b-1234`. That puts the PIN straight back into
+`player_name`, undoing the change it is meant to support, and breaks the
+`player_name = id` invariant. Silently: the existing `bad_account` guard never
+fires, because `v_name_part` is neither empty nor equal to `player_name`.
+
+Nothing can reach this today — all 92 live rows are `NAME-PIN` and nothing
+calls `bowls_register` yet — but the first uuid-named account appears the
+moment Step 3a lands, which is why the guard goes in now rather than then.
+
+This is the small, safe half. The real fix is for reset-PIN to change
+`pin_hash` and **nothing else**: never `player_name`, never
+`members.linked_cloudkey`, never `admins.cloud_key`. That cannot land yet,
+because the client still keys its cloud sync on `NAME-PIN` — an account whose
+`player_name` stopped moving with its PIN would have its data vanish from
+under it. It belongs in the same commit as Step 3a.
+
+Behaviour for all 92 existing accounts is unchanged exactly. The only
+difference is that an account this function cannot handle is refused in words
+rather than quietly corrupted.
 
 ---
 
