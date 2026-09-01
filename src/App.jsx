@@ -3951,6 +3951,9 @@ export default function BowlsTracker() {
         ══════════════════════════════════════════ */}
         {activeTab === "whatson" && (
           <WhatsOnTab
+            // Read-only. What's On owns club_events; the fixture card is the
+            // match secretary's and is still edited on the Fixtures tab.
+            fixtures={fixtures}
             myName={myName}
             myPin={myPin}
             isAdmin={canEditEvents}
