@@ -52,6 +52,10 @@ checked against `information_schema`, `pg_constraint`, `pg_indexes`, `pg_policie
 31 August 2026, and the whole folder was replayed into an empty database and
 diffed against production object by object.
 
+Section 13 below has no row here on purpose: it is a change to what the client
+writes into columns that already exist, with no SQL to run. It is written up
+anyway, because "no migration needed" is a claim worth being able to check.
+
 ---
 
 ## 1. Live games
@@ -2508,6 +2512,69 @@ still matches it) and takes the new shape whenever it is next replaced.
 The client needed no change: it round-trips `ticket.path` into `poster_path`
 and hands `poster_path` back on removal, and `api/share.js` splits the path on
 `/` and re-encodes per segment, so any depth works.
+
+## 13. Line-ups on a team match — no migration
+
+**File:** none. **Status:** Applied by deploying the client; nothing to run.
+
+The club asked to be able to pick the players for pairs, triples and rinks. The
+first two already worked and had since `20260723`: the create form caps the
+picker at the discipline's size, so a triples game takes three a side, and it
+was on the "Two of our own" branch of the form rather than the "Another club"
+one — which is where the report of "it won't let me pick six" came from, since
+that branch offers one side only and the opponent's names are free text.
+
+What genuinely did not exist was players on a **team match**. A `format:'rinks'`
+row scored several rinks and totalled them, but `home_players` and
+`away_players` were empty on every one and the `rinks` array held only scores,
+so the row could not answer who played in the tie.
+
+Nothing here needs SQL. `rinks`, `home_players` and `away_players` are all
+`jsonb not null default '[]'` with no length limit and no CHECK, `discipline`
+is plain `text` with no CHECK, and the only table constraints are the primary
+key, the two foreign keys and `live_games_ends_sane`. The change is entirely in
+what the client writes into columns that already accept it.
+
+**`rinks` gains two optional keys per entry:**
+
+```jsonc
+// before — still valid, and still what pre-existing rows contain
+{ "id": "r1", "label": "Rink 1", "home": 9, "away": 7 }
+
+// now, when the line-up was known at set-up
+{ "id": "r1", "label": "Rink 1", "home": 9, "away": 7,
+  "home_players": ["L BROWN", "C MCCLEAN", "MADGE WILLIAMSON"],
+  "away_players": [] }
+```
+
+Both keys are read as optional everywhere. A rink with neither renders exactly
+the card it rendered before, which is what keeps the Balloted Pairs row from 30
+August — and any team match set up before the draw is made — working untouched.
+`away_players` is filled only for an internal tie; against another club we do
+not hold their roster, so their names stay in the one free-text field they were
+always in.
+
+**`home_players` on a team match is now the squad**, in rink order and without
+repeats — the sum of the per-rink line-ups rather than the empty array it used
+to be. Existing rows keep their empty array; nothing backfills them.
+
+**`discipline` on a team match now records the size the rinks are played at** —
+`'pairs' | 'triples' | 'rinks'` — instead of being left at the `'team'` default.
+A Balloted Pairs night and an Ayrshire fours tie were both stored as `'team'`,
+which is not recoverable from the row afterwards, and any later grouping of
+games by discipline would have put them together. Readers must therefore not
+treat `discipline` alone as the shape of a game: `format` decides that, and
+`discipline` only says how big the sides are. `LiveGames.jsx` does this in one
+place, `shapeLabel()`, and a `'team'` discipline on a `format:'rinks'` row still
+reads as plain "Team match".
+
+`ends_total` is unchanged and still whatever the person setting the game up
+chose, within the 1–30 that `live_games_ends_sane` allows.
+
+The assertions are in `test/liveGameSetup.e2e.mjs`, which creates each shape
+through the real form and then reads the stored row back.
+
+---
 
 ## Verifying what has actually run
 

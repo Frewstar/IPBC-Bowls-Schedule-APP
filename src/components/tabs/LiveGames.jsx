@@ -25,6 +25,38 @@ const DISCIPLINES = [
 ];
 const discLabel = id => (DISCIPLINES.find(d => d.id === id) || {}).label || "";
 
+// A team match is several rinks totalled together, and every rink in it is the
+// same size. That size is the discipline the match is actually played at — a
+// Balloted Pairs night is pairs however the fixture card reads — so it is
+// picked on the form and written to `discipline` instead of being left at the
+// "team" default. Games created before this read back as "team", which is why
+// nothing here treats a missing size as an error: it just says "Team match".
+//
+// Two labels each. `label` is how the club says it and is what the scoreboard
+// shows; `pick` is what the button says, because "Triples" would otherwise
+// appear twice on the form — once as a game of its own and once as the size of
+// a rink inside a team match — and they are not the same choice.
+const RINK_SIZES = [
+  { id: "pairs",   label: "Pairs",   pick: "2 a side", players: 2 },
+  { id: "triples", label: "Triples", pick: "3 a side", players: 3 },
+  { id: "rinks",   label: "Fours",   pick: "4 a side", players: 4 },
+];
+const rinkSizeLabel = id => (RINK_SIZES.find(s => s.id === id) || {}).label || "";
+const rinkSizePlayers = id => (RINK_SIZES.find(s => s.id === id) || {}).players || 0;
+
+// What kind of game this is, in one phrase, for the scoreboard, the cards and
+// the share text. Reading `format` first is deliberate: a multi-rink fixture is
+// a team match whatever its discipline says, and the discipline only adds how
+// big its rinks are.
+function shapeLabel(g) {
+  if (!g) return "";
+  if (g.format === "rinks") {
+    const size = rinkSizeLabel(g.discipline);
+    return size ? `Team match · ${size}` : "Team match";
+  }
+  return g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : "";
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────
 function totalsFor(g) {
   if (!g) return { home: 0, away: 0 };
@@ -232,7 +264,8 @@ export default function LiveGamesTab({ myName, cloudKey, myMemberId = null, isAd
     const t = totalsFor(g);
     let body = `🎳 ${g.home_team} ${t.home}–${t.away} ${g.away_team}`;
     if (g.title) body += ` (${g.title})`;
-    if (g.discipline && g.discipline !== "team") body += `\n${discLabel(g.discipline)}`;
+    const shape = shapeLabel(g);
+    if (shape) body += `\n${shape}`;
     if (g.format === "rinks" && (g.rinks || []).length) {
       body += "\n" + g.rinks.map(r => `${r.label}: ${r.home || 0}–${r.away || 0}`).join("\n");
     }
@@ -300,9 +333,9 @@ export default function LiveGamesTab({ myName, cloudKey, myMemberId = null, isAd
           </div>
 
           <div style={{ textAlign: "center", marginBottom: "10px", display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" }}>
-            {(g.title || g.discipline) && (
+            {[g.title, shapeLabel(g)].filter(Boolean).length > 0 && (
               <div style={{ fontFamily: F_UI, fontSize: "12px", color: GOLD, fontWeight: "600", letterSpacing: "0.04em" }}>
-                {[g.title, g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : (g.format === "rinks" ? "Team match" : "")].filter(Boolean).join(" · ")}
+                {[g.title, shapeLabel(g)].filter(Boolean).join(" · ")}
               </div>
             )}
             {g.location && (
@@ -405,6 +438,10 @@ export default function LiveGamesTab({ myName, cloudKey, myMemberId = null, isAd
               return (
                 <div key={r.id || idx} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "12px", padding: "12px 14px", marginBottom: "8px", boxShadow: "0 1px 3px rgba(74,14,31,0.06)" }}>
                   <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>{r.label || `Rink ${idx + 1}`}</div>
+                  {/* Only when the rink actually carries a line-up. Games set
+                      up before rinks recorded players, and rinks left empty
+                      because the draw wasn't made yet, keep the card they had. */}
+                  <RinkLineUps rink={r} homeShort={homeShort} awayShort={awayShort} />
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                     <ScoreStepper label={homeShort} value={rHome} editable={editable}
                       onDec={() => bumpRink(g, idx, "home", -1)} onInc={() => bumpRink(g, idx, "home", +1)} lead={rHome > rAway} />
@@ -590,7 +627,7 @@ function GameCard({ g, finished, onOpen }) {
   const endsLabel = g.ends_total > 0
     ? (g.ends_played >= g.ends_total ? `${g.ends_total} ends` : `End ${(g.ends_played || 0) + 1} of ${g.ends_total}`)
     : null;
-  const meta = [g.discipline && g.discipline !== "team" ? discLabel(g.discipline) : null, endsLabel, g.location].filter(Boolean).join(" · ");
+  const meta = [shapeLabel(g) || null, endsLabel, g.location].filter(Boolean).join(" · ");
   const stripe = scheduled ? GOLD : finished ? BORDER : LIVE_RED;
   return (
     <button onClick={onOpen} style={{ width: "100%", textAlign: "left", background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${stripe}`, borderRadius: "12px", padding: "13px 15px", marginBottom: "9px", cursor: "pointer", boxShadow: "0 1px 3px rgba(74,14,31,0.06)", opacity: finished ? 0.9 : 1 }}>
@@ -637,6 +674,26 @@ function ScoreStepper({ label, value, editable, onDec, onInc, lead, big }) {
   );
 }
 
+// One rink's line-up, under its label and above its steppers. Names only —
+// the position a player bowls at is not something the app is told.
+function RinkLineUps({ rink, homeShort, awayShort }) {
+  const home = Array.isArray(rink.home_players) ? rink.home_players.filter(Boolean) : [];
+  const away = Array.isArray(rink.away_players) ? rink.away_players.filter(Boolean) : [];
+  if (home.length === 0 && away.length === 0) return null;
+  const line = (label, names) => names.length === 0 ? null : (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "600", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "2px", overflowWrap: "anywhere" }}>{label}</div>
+      <div style={{ fontFamily: F_SANS, fontSize: "13px", fontWeight: "500", color: TEXT2, lineHeight: 1.4, overflowWrap: "anywhere" }}>{names.join(", ")}</div>
+    </div>
+  );
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+      {line(homeShort, home)}
+      {line(awayShort, away)}
+    </div>
+  );
+}
+
 function Toast({ msg }) {
   return (
     <div style={{ position: "fixed", bottom: "80px", left: "50%", transform: "translateX(-50%)", zIndex: 200, background: GREEN, color: "#fff", borderRadius: "10px", padding: "10px 18px", fontSize: "13px", fontFamily: F_UI, fontWeight: "600", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", maxWidth: "90vw", textAlign: "center" }}>
@@ -646,7 +703,7 @@ function Toast({ msg }) {
 }
 
 // ── Member picker ────────────────────────────────────────────────────────────
-function MemberPicker({ members, selected, onChange, max, placeholder }) {
+function MemberPicker({ members, selected, onChange, max, placeholder, ariaLabel }) {
   const [q, setQ] = useState("");
   const results = useMemo(() => {
     if (q.trim().length < 2) return [];
@@ -673,7 +730,8 @@ function MemberPicker({ members, selected, onChange, max, placeholder }) {
       )}
       {!atMax && (
         <>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder={placeholder || "Search members…"} style={inp} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={placeholder || "Search members…"}
+            aria-label={ariaLabel || placeholder || "Search members"} style={inp} />
           {results.length > 0 && (
             <div style={{ border: `1px solid ${BORDER}`, borderRadius: "10px", overflow: "hidden", marginTop: "6px" }}>
               {results.map(m => (
@@ -699,6 +757,12 @@ function CreateGame({ myName, cloudKey, myMemberId = null, members, onCancel, on
   const [venue, setVenue] = useState("home");
   const [location, setLocation] = useState(HOME_GROUND);
   const [numRinks, setNumRinks] = useState(4);
+  // A team match records who played, rink by rink. Everything is held here as
+  // an array per rink so that changing the number of rinks can't leave a
+  // line-up stranded on a rink that no longer exists.
+  const [rinkSize, setRinkSize] = useState("rinks");
+  const [rinkHome, setRinkHome] = useState([]);
+  const [rinkAway, setRinkAway] = useState([]);
   const [homePlayers, setHomePlayers] = useState([]);
   const [awayPlayers, setAwayPlayers] = useState("");
   const [saving, setSaving] = useState(false);
@@ -723,9 +787,42 @@ function CreateGame({ myName, cloudKey, myMemberId = null, members, onCancel, on
   const disc = DISCIPLINES.find(d => d.id === discipline);
   const isTeam = discipline === "team";
   const scheduling = scheduleIt;
-  // On an internal game the two sides are named after who is playing.
-  const homeLabel = internal ? sideName(homePlayers) : (homeTeam.trim() || "IPBC");
-  const awayLabel = internal ? sideName(awayMembers) : awayTeam.trim();
+  // How many a side each rink of a team match is played at. Drives the pickers
+  // and is what gets stored as the discipline, so the size is never a guess
+  // made later from the team names.
+  const perRink = rinkSizePlayers(rinkSize);
+  // Read through these rather than off state directly: the arrays are grown
+  // lazily, so a rink that has had nobody added to it yet has no entry at all.
+  const rinkHomeAt = i => rinkHome[i] || [];
+  const rinkAwayAt = i => rinkAway[i] || [];
+  const setRinkSideAt = (setter, i, names) =>
+    setter(prev => {
+      const next = Array.from({ length: numRinks }, (_, n) => prev[n] || []);
+      next[i] = names;
+      return next;
+    });
+  // The squad is the sum of the line-ups, in rink order and without repeats —
+  // a player who leads on one rink and skips on another is one member of the
+  // squad, not two. This is what keeps home_players meaningful on a team
+  // match, where it used to be an empty array.
+  const squadFrom = sides => {
+    const out = [];
+    for (const side of sides) for (const n of side) if (!out.includes(n)) out.push(n);
+    return out;
+  };
+  const homeSquad = squadFrom(Array.from({ length: numRinks }, (_, i) => rinkHomeAt(i)));
+  const awaySquad = squadFrom(Array.from({ length: numRinks }, (_, i) => rinkAwayAt(i)));
+  // In a team match a member plays one rink, so a name already down anywhere
+  // in the match drops out of every other picker. On an internal tie that
+  // covers both sides at once, which is also what stops anyone being drawn
+  // against themselves.
+  const alreadyPicked = [...homeSquad, ...(internal ? awaySquad : [])];
+  // On an internal game the two sides are named after who is playing. A team
+  // match names itself from the squad, which is the same rule one level up.
+  const homeSide = isTeam ? homeSquad : homePlayers;
+  const awaySide = isTeam ? awaySquad : awayMembers;
+  const homeLabel = internal ? sideName(homeSide) : (homeTeam.trim() || "IPBC");
+  const awayLabel = internal ? sideName(awaySide) : awayTeam.trim();
 
   function toggleSchedule(on) {
     setScheduleIt(on);
@@ -747,7 +844,7 @@ function CreateGame({ myName, cloudKey, myMemberId = null, members, onCancel, on
   // What, if anything, is stopping this game being created. Shown under the
   // button as well as raised as a toast, so it can't be missed.
   const blockedReason =
-    internal && (homePlayers.length === 0 || awayMembers.length === 0)
+    internal && (homeSide.length === 0 || awaySide.length === 0)
       ? "Pick the players on both sides"
       : !internal && !awayTeam.trim()
       ? "Add the opponent's name"
@@ -758,15 +855,28 @@ function CreateGame({ myName, cloudKey, myMemberId = null, members, onCancel, on
   async function create() {
     if (blockedReason) { showToast(blockedReason); return; }
     setSaving(true);
+    // Each rink carries its own line-up alongside its score. The two player
+    // keys are new; every reader treats them as optional, so a game created
+    // before this — or one set up without line-ups, which stays allowed —
+    // still renders and still scores.
     const rinks = disc.format === "rinks"
-      ? Array.from({ length: numRinks }, (_, i) => ({ id: `r${i + 1}`, label: `Rink ${i + 1}`, home: 0, away: 0 }))
+      ? Array.from({ length: numRinks }, (_, i) => ({
+          id: `r${i + 1}`, label: `Rink ${i + 1}`, home: 0, away: 0,
+          home_players: rinkHomeAt(i),
+          away_players: internal ? rinkAwayAt(i) : [],
+        }))
       : [];
-    const away = internal
+    const away = isTeam
+      ? (internal ? awaySquad : awayPlayers.split(",").map(s => s.trim()).filter(Boolean))
+      : internal
       ? awayMembers
       : awayPlayers.split(",").map(s => s.trim()).filter(Boolean);
     const row = {
       title: title.trim() || null,
-      discipline,
+      // A team match stores the size its rinks are played at, not the "team"
+      // placeholder. That is the difference between a Balloted Pairs night and
+      // an Ayrshire fours tie, and it is not recoverable from the row later.
+      discipline: isTeam ? rinkSize : discipline,
       home_team: homeLabel,
       away_team: awayLabel,
       venue,
@@ -777,7 +887,7 @@ function CreateGame({ myName, cloudKey, myMemberId = null, members, onCancel, on
       rinks,
       home_score: 0,
       away_score: 0,
-      home_players: homePlayers,
+      home_players: homeSide,
       away_players: away,
       ends_total: byEnds ? numEnds : null,
       ends_played: 0,
@@ -860,35 +970,115 @@ function CreateGame({ myName, cloudKey, myMemberId = null, members, onCancel, on
         </div>
       )}
 
-      <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />{
-        internal ? `First side${disc.players ? ` — pick ${disc.players}` : ""}`
-                 : isTeam ? "IPBC squad (optional)"
-                 : `IPBC players${disc.players ? ` — pick ${disc.players}` : ""}`}</span>}>
-        <MemberPicker members={members} selected={homePlayers} onChange={setHomePlayers}
-          max={isTeam ? 0 : disc.players}
-          placeholder={isTeam ? "Add a player…" : "Search members…"} />
-        {internal && homePlayers.length > 0 && (
-          <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, marginTop: "6px", fontWeight: "600" }}>
-            Shown as: {sideName(homePlayers)}
-          </div>
-        )}
-      </Field>
-
-      {internal ? (
-        <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />Second side{disc.players ? ` — pick ${disc.players}` : ""}</span>}>
-          <MemberPicker members={members.filter(m => !homePlayers.includes(m.name))}
-            selected={awayMembers} onChange={setAwayMembers}
-            max={isTeam ? 0 : disc.players} placeholder="Search members…" />
-          {awayMembers.length > 0 && (
-            <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, marginTop: "6px", fontWeight: "600" }}>
-              Shown as: {sideName(awayMembers)}
+      {isTeam ? (
+        <>
+          <Field label="How many rinks?">
+            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+              <button onClick={() => setNumRinks(n => Math.max(1, n - 1))} style={stepBtn} aria-label="One rink fewer"><Minus size={16} strokeWidth={2.5} /></button>
+              <span style={{ fontFamily: F_SANS, fontSize: "26px", fontWeight: "700", color: TEXT, minWidth: "34px", textAlign: "center" }}>{numRinks}</span>
+              <button onClick={() => setNumRinks(n => Math.min(12, n + 1))} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }} aria-label="One rink more"><Plus size={16} strokeWidth={2.5} /></button>
             </div>
+          </Field>
+
+          <Field label="Each rink is played as">
+            <div style={{ display: "flex", gap: "8px" }}>
+              {RINK_SIZES.map(sz => (
+                <button key={sz.id} onClick={() => setRinkSize(sz.id)} style={toggleBtn(rinkSize === sz.id)}>{sz.pick}</button>
+              ))}
+            </div>
+            <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "6px", lineHeight: 1.5 }}>
+              Recorded on the game, so a Balloted Pairs night isn't filed as the same thing as a fours tie.
+            </div>
+          </Field>
+
+          {/* Optional against another club, on purpose: a team match could
+              always be set up with no players at all and often is — somebody
+              puts the fixture on the moment it is known and the rinks are
+              drawn later — and taking that away to gain the line-ups would be
+              a bad trade. Between two of our own it is not optional, because
+              there the line-ups are what the two sides are called. */}
+          <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />Line-ups{internal ? "" : " (optional)"}</span>}>
+            <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginBottom: "8px", lineHeight: 1.5 }}>
+              {perRink} a side on each rink.{internal ? "" : " Leave a rink empty if it isn't settled yet."}
+            </div>
+            {Array.from({ length: numRinks }, (_, i) => (
+              <div key={i} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "10px 12px", marginBottom: "8px" }}>
+                <div style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", color: GOLD_MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>Rink {i + 1}</div>
+                <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: TEXT2, marginBottom: "5px" }}>
+                  {internal ? "First side" : `${homeTeam.trim() || "IPBC"} — pick ${perRink}`}
+                </div>
+                <MemberPicker members={members.filter(m => !alreadyPicked.includes(m.name))}
+                  selected={rinkHomeAt(i)} onChange={names => setRinkSideAt(setRinkHome, i, names)}
+                  max={perRink} placeholder="Search members…"
+                  ariaLabel={`Rink ${i + 1} ${internal ? "first side" : "IPBC players"}`} />
+                {internal && (
+                  <>
+                    <div style={{ fontFamily: F_UI, fontSize: "11px", fontWeight: "600", color: TEXT2, margin: "9px 0 5px" }}>Second side</div>
+                    <MemberPicker members={members.filter(m => !alreadyPicked.includes(m.name))}
+                      selected={rinkAwayAt(i)} onChange={names => setRinkSideAt(setRinkAway, i, names)}
+                      max={perRink} placeholder="Search members…"
+                      ariaLabel={`Rink ${i + 1} second side`} />
+                  </>
+                )}
+              </div>
+            ))}
+            {homeSquad.length > 0 && (
+              <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, marginTop: "2px", fontWeight: "600", lineHeight: 1.5 }}>
+                Squad: {homeSquad.join(", ")}
+              </div>
+            )}
+          </Field>
+
+          {!internal && (
+            <Field label="Opponent players (optional)">
+              <input value={awayPlayers} onChange={e => setAwayPlayers(e.target.value)} placeholder="Names, separated by commas" style={inp} />
+            </Field>
           )}
-        </Field>
+        </>
       ) : (
-        <Field label="Opponent players (optional)">
-          <input value={awayPlayers} onChange={e => setAwayPlayers(e.target.value)} placeholder="Names, separated by commas" style={inp} />
-        </Field>
+        <>
+          <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />{
+            internal ? `First side${disc.players ? ` — pick ${disc.players}` : ""}`
+                     : `IPBC players${disc.players ? ` — pick ${disc.players}` : ""}`}</span>}>
+            <MemberPicker members={members} selected={homePlayers} onChange={setHomePlayers}
+              max={disc.players} placeholder="Search members…"
+              ariaLabel={internal ? "First side" : "IPBC players"} />
+            {internal && homePlayers.length > 0 && (
+              <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, marginTop: "6px", fontWeight: "600" }}>
+                Shown as: {sideName(homePlayers)}
+              </div>
+            )}
+            {/* The picker stops at the discipline's size, which is right — and
+                was read as the form refusing to take a full club tie, because
+                the other three names go in the side below and that side is
+                only offered once "Two of our own" is on. Say so where the
+                picker fills up, not in the release notes. */}
+            {!internal && disc.players > 0 && homePlayers.length >= disc.players && (
+              <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "6px", lineHeight: 1.5 }}>
+                That's {disc.players} — a full side. Both sides ours? Switch "Who's playing?" to
+                "Two of our own" and you can pick all {disc.players * 2}.
+              </div>
+            )}
+          </Field>
+
+          {internal ? (
+            <Field label={<span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}><Users size={13} strokeWidth={2} />Second side{disc.players ? ` — pick ${disc.players}` : ""}</span>}>
+              <MemberPicker members={members.filter(m => !homePlayers.includes(m.name))}
+                selected={awayMembers} onChange={setAwayMembers}
+                max={disc.players} placeholder="Search members…"
+                ariaLabel="Second side" />
+              {awayMembers.length > 0 && (
+                <div style={{ fontFamily: F_UI, fontSize: "11px", color: GOLD_MUTED, marginTop: "6px", fontWeight: "600" }}>
+                  Shown as: {sideName(awayMembers)}
+                </div>
+              )}
+            </Field>
+          ) : (
+            <Field label="Opponent players (optional)">
+              <input value={awayPlayers} onChange={e => setAwayPlayers(e.target.value)} placeholder="Names, separated by commas" style={inp} />
+            </Field>
+          )}
+        </>
       )}
 
       <Field label="How is it played?">
@@ -898,12 +1088,12 @@ function CreateGame({ myName, cloudKey, myMemberId = null, members, onCancel, on
         </div>
         {byEnds && (
           <div style={{ display: "flex", alignItems: "center", gap: "14px", marginTop: "10px" }}>
-            <button onClick={() => setNumEnds(n => Math.max(1, n - 1))} style={stepBtn}><Minus size={16} strokeWidth={2.5} /></button>
+            <button onClick={() => setNumEnds(n => Math.max(1, n - 1))} style={stepBtn} aria-label="One end fewer"><Minus size={16} strokeWidth={2.5} /></button>
             <div style={{ textAlign: "center", minWidth: "84px" }}>
               <div style={{ fontFamily: F_SANS, fontSize: "26px", fontWeight: "700", color: TEXT, lineHeight: 1 }}>{numEnds}</div>
               <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "3px" }}>ends</div>
             </div>
-            <button onClick={() => setNumEnds(n => Math.min(30, n + 1))} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }}><Plus size={16} strokeWidth={2.5} /></button>
+            <button onClick={() => setNumEnds(n => Math.min(30, n + 1))} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }} aria-label="One end more"><Plus size={16} strokeWidth={2.5} /></button>
           </div>
         )}
       </Field>
@@ -917,16 +1107,6 @@ function CreateGame({ myName, cloudKey, myMemberId = null, members, onCancel, on
         <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Green / address so supporters can find it" style={inp} />
         <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "5px" }}>Shown as a tappable map link on the scoreboard.</div>
       </Field>
-
-      {isTeam && (
-        <Field label="How many rinks?">
-          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-            <button onClick={() => setNumRinks(n => Math.max(1, n - 1))} style={stepBtn}><Minus size={16} strokeWidth={2.5} /></button>
-            <span style={{ fontFamily: F_SANS, fontSize: "26px", fontWeight: "700", color: TEXT, minWidth: "34px", textAlign: "center" }}>{numRinks}</span>
-            <button onClick={() => setNumRinks(n => Math.min(12, n + 1))} style={{ ...stepBtn, background: GREEN, color: "#fff", borderColor: GREEN }}><Plus size={16} strokeWidth={2.5} /></button>
-          </div>
-        </Field>
-      )}
 
       {blockedReason && (
         <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "9px", padding: "10px 13px", marginTop: "4px", marginBottom: "10px", fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.5 }}>
