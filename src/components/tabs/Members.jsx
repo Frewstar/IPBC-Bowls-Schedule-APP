@@ -66,8 +66,8 @@ export default function MembersTab({
   }
 
   function getMemberProfile(m) {
-    if (!m.linked_cloudkey) return null;
-    return memberProfiles[m.linked_cloudkey] || null;
+    if (!m.is_linked) return null;
+    return memberProfiles[m.id] || null;
   }
 
   return (

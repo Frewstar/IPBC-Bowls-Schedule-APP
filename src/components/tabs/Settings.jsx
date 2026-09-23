@@ -3,9 +3,8 @@ import { Settings, User, Shield, Info, Type, Download, Upload, Check, Trophy, Pl
 import { matchesSectionFilter } from "../../lib/sections.js";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, F_DISPLAY, F_SANS, F_UI } from "../../lib/theme.js";
 import { save } from "../../lib/storage.js";
-import { supabase } from "../../lib/supabase.js";
 
-export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, activeSection = "gents", exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, isSuperAdmin = false, isAdmin = false, tournamentsLoad, cloudKey = null, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack, linkedMemberName = "", onLinkName, onUnlinkName }) {
+export default function SettingsTab({ settings, updateSetting, myName, setMyName, nameInput, setNameInput, setActiveSection, activeSection = "gents", exportBackup, backupFileRef, handleBackupImport, backupMsg, tournaments = [], onAddComp, onAddPersonalComp, onEditComp, onEditCompDates, isSuperAdmin = false, isAdmin = false, tournamentsLoad, cloudKey = null, requestAdmin, superAdminName = "", makeMeSuperAdmin, claimSuperAdmin, adminClaimMsg, onBack, linkedMemberName = "", onLinkName, onUnlinkName }) {
   const [compSectionFilter, setCompSectionFilter] = useState("all");
 
   // Admin request state (non-admins only)
@@ -14,26 +13,12 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
 
   async function submitAdminRequest() {
     const name = myName?.toUpperCase().trim();
-    if (!name || !requestRoleInput.trim()) return;
+    if (!name || !requestRoleInput.trim() || !requestAdmin) return;
 
-    // Send the account's id, not its cloud key. cloud_key is NAME-PIN — the
-    // sign-in credential — and this queue is readable by anyone with the
-    // publishable key out of the bundle. The id identifies the account
-    // without being usable to sign in as it.
-    //
-    // Looked up by cloud key rather than by name: an exact key on the row
-    // that is already this member's, no name matching anywhere.
-    const { data: account } = await supabase.from("player_data")
-      .select("id").eq("player_name", cloudKey).maybeSingle();
-    if (!account?.id) {
-      setRequestMsg("Couldn't find your account — sign out and back in, then try again.");
-      setTimeout(() => setRequestMsg(null), 5000);
-      return;
-    }
-
-    const { error } = await supabase.from("admin_requests")
-      .upsert({ player_name: name, player_id: account.id, requested_role: requestRoleInput.trim(), requested_at: new Date().toISOString() }, { onConflict: "player_id" });
-    if (!error) {
+    // The server takes the account from the session token and files the
+    // request under its id — never its cloud key.
+    const { data, error } = await requestAdmin(requestRoleInput.trim());
+    if (!error && data?.status === "ok") {
       setRequestMsg("Request sent — the super admin will review it shortly.");
       setRequestRoleInput("");
     } else {
@@ -301,6 +286,13 @@ export default function SettingsTab({ settings, updateSetting, myName, setMyName
           <div style={{ fontFamily: F_DISPLAY, fontSize: "18px", fontWeight: "700", color: GREEN, marginBottom: "4px" }}>Irvine Park Bowling Club</div>
           <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, marginBottom: "8px" }}>Tournament Tracker · {settings.seasonYear || new Date().getFullYear()} Season</div>
           <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, lineHeight: 1.6 }}>Built by <strong style={{ color: TEXT2 }}>Frewstar</strong> for the members of IPBC. All data stays on your device.</div>
+          {/* Which build this actually is. The service worker keeps serving
+              the old one until the tab is hidden, so "I reloaded" is not the
+              same as "I am on the new build" — and without this there is no
+              way to tell them apart from inside the app. */}
+          <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, marginTop: "10px", letterSpacing: "0.04em" }}>
+            Build <strong style={{ color: TEXT2 }}>{__BUILD_ID__}</strong>
+          </div>
         </div>
       </div>
 

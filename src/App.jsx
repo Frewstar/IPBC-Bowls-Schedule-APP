@@ -30,6 +30,8 @@ import {
 // ── lib imports ──────────────────────────────────────────────────────────────
 import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_SANS, F_UI } from "./lib/theme.js";
 import { TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
+import { signInOutcome, registerOutcome } from "./lib/signIn.js";
+import { endServerSession, flushPendingSignouts, queuePendingSignout, PENDING_SIGNOUT_KEY } from "./lib/session.js";
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
 import { supabase } from "./lib/supabase.js";
 import { useRemoteData } from "./lib/useRemoteData.js";
@@ -37,6 +39,7 @@ import { tournamentVisibleToMember } from "./lib/sections.js";
 
 // ── component imports ─────────────────────────────────────────────────────────
 import BottomSheet from "./components/BottomSheet.jsx";
+import ChangePinSheet from "./components/ChangePinSheet.jsx";
 import AvatarBubble from "./components/AvatarBubble.jsx";
 import ProfileSheet from "./components/ProfileSheet.jsx";
 import SettingsTab from "./components/tabs/Settings.jsx";
@@ -246,13 +249,94 @@ export default function BowlsTracker() {
   // ── My Ties state ──
   const [myName, setMyName]       = useState(() => load("bowls_myname", "") || "");
   const [myPin, setMyPin]         = useState(() => load("bowls_mypin", "") || "");
-  // Anyone who has been through sign-in. A visitor following a shared game link
-  // has no name, and must not see the roster or anyone's phone number.
+
+  // The session token, stored where the rest of the sign-in state lives.
   //
-  // This is a UI gate and nothing more. Every policy on `members` is
-  // using (true) and the anon key ships in the bundle, so the table is still
-  // readable by anyone who knows how. 002b is the actual fix; this stops the
-  // roster being handed to a visitor who simply backs out of a shared game.
+  // This is the identity the server can actually check. The name and PIN
+  // above cannot be: there is no Supabase auth session, so every request
+  // arrives anonymous and a policy has nothing to compare a row against.
+  // The token is what lets a SECURITY DEFINER function work out who is
+  // asking, which is what has to exist before anon can lose table access.
+  //
+  // myPin has to stay for now. bowls_admin_role, bowls_grant_admin and the
+  // poster ticket still authorise by name and PIN, and they move to the
+  // token with the admin panel. Until then the PIN is still on the device.
+  const [sessionToken, setSessionToken] = useState(() => load("bowls_session_token", "") || "");
+
+  // The account's key, as the SERVER gave it to us, rather than rebuilt here
+  // from the name and PIN.
+  //
+  // It used to be `${myName}-${myPin}`, which only worked because the PIN was
+  // stored in player_name. Two things have made that wrong: a new account's
+  // player_name is now a uuid, and a PIN reset no longer moves player_name.
+  // Rebuilding the key locally would miss on both.
+  //
+  // The fallback is for devices that were signed in before this deploy: they
+  // have a name and a PIN and no stored key, and must not be signed out. The
+  // effect below trades their credentials for a token on the next load, and
+  // once it lands this falls through to the stored value like everyone else.
+  const [storedCloudKey, setStoredCloudKey] = useState(() => load("bowls_cloud_key", "") || "");
+
+  // The account's uuid. Needed so that linking a roster entry can fill in
+  // members.linked_player_id, which is what bowls_sign_in reads to restore
+  // the link on the next sign-in. Linking used to write only
+  // linked_cloudkey — the column that holds 69 live PINs — and that column
+  // goes in Phase D.
+  const [myPlayerId, setMyPlayerId] = useState(() => load("bowls_player_id", "") || "");
+
+  // "This member asked to leave", as a fact in its own right rather than
+  // something inferred from the absence of a token.
+  //
+  // The upgrade effect below signs a device in from a stored name and PIN
+  // when it finds no token. It cannot be allowed to do that to somebody who
+  // has just signed out — and "no token" alone does not tell those two apart.
+  // Clearing the name and PIN happens to stop it today, which is precisely
+  // the kind of accident that stops being true the first time somebody keeps
+  // the name around to prefill the sign-in box.
+  const [signedOut, setSignedOut] = useState(() => load("bowls_signed_out", false) === true);
+
+  // Tokens a sign-out failed to revoke, retried on the next load. See
+  // src/lib/session.js — a sign-out with no signal must not abandon a live
+  // credential.
+  const [pendingSignouts, setPendingSignouts] = useState(() => {
+    const v = load(PENDING_SIGNOUT_KEY, []);
+    return Array.isArray(v) ? v : [];
+  });
+  // Set when the server says this account must choose a new PIN before
+  // anything else works: { name, pin, fromSignIn }. See ChangePinSheet.
+  const [pinChange, setPinChange] = useState(null);
+  // Why this device was signed out, for the sign-in card: "expired".
+  const [credentialNotice, setCredentialNotice] = useState(null);
+  const sessionTokenRef = useRef(sessionToken); sessionTokenRef.current = sessionToken;
+
+  // ── Calls that carry the session token (Track 2, Steps 3b–3e) ────────────
+  // Everything that reads or writes a member's own data, the directory, the
+  // roster links and the admin panel's member/account/lockout/request
+  // sections goes through a SECURITY DEFINER function that turns the token
+  // into a player on the server. The tables themselves are closed by
+  // 20260923_directory_lockdown_2.
+  //
+  // 'expired' is the word bowls_session_state already uses for a dead
+  // token, and it means the same here: sign out on this device. An answer
+  // for a token this device no longer holds (it changed while the call was
+  // in flight) is ignored. Admin calls also answer 'denied' — a live session
+  // without the role — which is not a reason to sign anyone out.
+  async function tokenRpc(fn, args = {}) {
+    const token = sessionTokenRef.current;
+    if (!token) return { data: { status: "expired" }, error: null };
+    const res = await supabase.rpc(fn, { p_token: token, ...args });
+    if (!res.error && res.data?.status === "expired" && token === sessionTokenRef.current) {
+      signOutLocally();
+      setCredentialNotice("expired");
+    }
+    return res;
+  }
+
+  // Anyone who has been through sign-in. A visitor following a shared game link
+  // has no name, and must not see the roster or anyone's phone number. The
+  // phone numbers themselves only come from bowls_member_directory, which
+  // checks the session on the server; the members table does not give them
+  // out to the publishable key.
   const signedIn = !!myName;
 
   // ── The roster (Supabase only) ──
@@ -265,20 +349,37 @@ export default function BowlsTracker() {
   // Now the list starts empty and only the server fills it. An empty result is
   // an empty roster and says so; a failed request says that instead.
   //
-  // A signed-out visitor still gets the columns the public tabs need and
-  // nothing else, so phone numbers never reach the device rather than merely
-  // being hidden on it. Signing in refetches the full row.
+  // A visitor without a session gets the columns the public tabs need and
+  // nothing else — the only columns the table gives the publishable key. A
+  // signed-in member gets the directory from bowls_member_directory. Its
+  // rows carry is_linked / is_me / linked_player_id, never linked_cloudkey.
   const [members, setMembers, membersLoad] = useRemoteData(
-    () => supabase
-      .from("members")
-      .select(signedIn ? "*" : "id, name, section, position, sort_order")
-      .order("sort_order").order("name"),
-    [signedIn],
+    async () => {
+      if (!sessionToken) {
+        return supabase
+          .from("members")
+          .select("id, name, section, position, sort_order")
+          .order("sort_order").order("name");
+      }
+      const { data, error } = await tokenRpc("bowls_member_directory");
+      if (error) return { data: null, error };
+      if (data?.status !== "ok") return { data: null, error: { message: data?.status || "no response" } };
+      return { data: data.members, error: null };
+    },
+    [sessionToken],
     { transform: rows => (rows || []).map(m => ({ ...m, section: m.section || "gents" })) },
   );
+  // The full directory, as opposed to the public columns. Only it says which
+  // entry, if any, is this member's.
+  const haveDirectory = members.length > 0 && members[0].is_me !== undefined;
 
 
-  const cloudKey = myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null;
+  const cloudKey = storedCloudKey || (myName && myPin ? `${myName.toUpperCase()}-${myPin}` : null);
+  // What a live game records as its creator when the creator has no roster
+  // entry. It used to be cloudKey — NAME-PIN, or since 1 Sep a bare uuid —
+  // in a table anyone can read. 20260923_directory_lockdown_2 converts the
+  // stored ones to this shape and refuses any other.
+  const liveGameCreatorKey = sessionToken && myPlayerId ? `id:${myPlayerId}` : null;
   // Linked member: canonical name from members list (used for draw lookups)
   const [linkedMemberName, setLinkedMemberName] = useState(() => load("bowls_linked_member", "") || "");
   // The roster id of the signed-in member, resolved once and held here. It is
@@ -304,6 +405,8 @@ export default function BowlsTracker() {
   // without it — see the effect below.
   const [adminVerified, setAdminVerified] = useState(false);
   const [adminClaimMsg, setAdminClaimMsg] = useState(null);
+  // Bumped to ask the server for the role again without a change of PIN.
+  const [roleCheck, setRoleCheck] = useState(0);
 
   // Admin rights are decided by the server, not by matching strings here.
   //
@@ -358,7 +461,7 @@ export default function BowlsTracker() {
 
     // Credentials changed while a check was in flight — drop the stale answer.
     return () => { cancelled = true; };
-  }, [myName, myPin]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [myName, myPin, roleCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Gates are by capability, not by "is an admin". The role is one value; what
   // it lets you do is the list below, and every screen asks the question it
@@ -385,27 +488,18 @@ export default function BowlsTracker() {
   // so they get no padlock rather than a padlock onto an empty room.
   const hasAdminPanel  = isAdmin || canRunDraws;
 
+  // The very first super admin of a club. The server checks the session,
+  // refuses if the club already has one, and records the claim by account id.
+  // The role is then read back the usual way rather than assumed here.
   async function claimSuperAdmin() {
-    if (!cloudKey || !myName) return;
-    const nameUpper = myName.toUpperCase();
-    const { data: existing } = await supabase.from("admins").select("cloud_key, player_name").eq("role", "super_admin");
-    // If the existing super admin record belongs to this user, just restore the role locally
-    const alreadyMe = existing?.some(r => r.cloud_key === cloudKey || r.player_name === nameUpper);
-    if (alreadyMe) {
-      setAdminRole("super_admin");
-      setAdminClaimMsg("Super admin restored!");
-      setTimeout(() => setAdminClaimMsg(null), 4000);
-      return;
-    }
-    if (existing && existing.length > 0) {
+    if (!sessionToken) return;
+    const { data, error } = await tokenRpc("bowls_claim_super_admin");
+    const status = error ? "error" : data?.status;
+    if (status === "claimed" || status === "restored") {
+      setRoleCheck(n => n + 1);
+      setAdminClaimMsg(status === "claimed" ? "You are now super admin!" : "Super admin restored!");
+    } else if (status === "exists") {
       setAdminClaimMsg("A super admin already exists.");
-      setTimeout(() => setAdminClaimMsg(null), 4000);
-      return;
-    }
-    const { error } = await supabase.from("admins").upsert({ cloud_key: cloudKey, player_name: nameUpper, role: "super_admin", display_name: nameUpper }, { onConflict: "cloud_key" });
-    if (!error) {
-      setAdminRole("super_admin");
-      setAdminClaimMsg("You are now super admin!");
     } else {
       setAdminClaimMsg("Error claiming super admin.");
     }
@@ -912,6 +1006,11 @@ export default function BowlsTracker() {
   useEffect(() => { save(TIES_KEY, ties); },       [ties]);
   useEffect(() => { save("bowls_myname", myName); }, [myName]);
   useEffect(() => { save("bowls_mypin", myPin); }, [myPin]);
+  useEffect(() => { save("bowls_session_token", sessionToken); }, [sessionToken]);
+  useEffect(() => { save("bowls_cloud_key", storedCloudKey); }, [storedCloudKey]);
+  useEffect(() => { save("bowls_player_id", myPlayerId); }, [myPlayerId]);
+  useEffect(() => { save("bowls_signed_out", signedOut); }, [signedOut]);
+  useEffect(() => { save(PENDING_SIGNOUT_KEY, pendingSignouts); }, [pendingSignouts]);
   useEffect(() => { save("bowls_linked_member", linkedMemberName); }, [linkedMemberName]);
   useEffect(() => { save("bowls_linked_member_id", linkedMemberId || ""); }, [linkedMemberId]);
   useEffect(() => { save("bowls_profile", profile); }, [profile]);
@@ -928,25 +1027,29 @@ export default function BowlsTracker() {
   // On load: pull entries + ties + profile from cloud. Keeps retrying while it fails —
   // uploads stay parked until it lands, so a phone that opened offline can't overwrite
   // the cloud copy with an empty one.
+  //
+  // Keyed on the session token: bowls_my_data reads the account the token
+  // belongs to. This used to select player_data by cloud key, which only
+  // worked while the key was NAME-PIN and the table was open.
   useEffect(() => {
-    if (!cloudKey || hydratedKey === cloudKey) return;
+    if (!sessionToken || hydratedKey === sessionToken) return;
     let cancelled = false;
     let timer = null;
 
     async function hydrate(attempt = 0) {
       if (cancelled) return;
       setSyncStatus("syncing");
-      const { data, error } = await supabase
-        .from("player_data")
-        .select("entries, ties, profile")
-        .eq("player_name", cloudKey)
-        .maybeSingle();
+      const { data: res, error } = await tokenRpc("bowls_my_data");
       if (cancelled) return;
       if (error) {
         setSyncStatus("error");
         timer = setTimeout(() => hydrate(attempt + 1), Math.min(30000, 3000 * 2 ** attempt));
         return;
       }
+      // 'expired' has already signed this device out (tokenRpc). Anything
+      // else that is not an answer is left for the next load.
+      if (res?.status !== "ok") { setSyncStatus("error"); return; }
+      const data = res;
       if (data?.entries?.length > 0) {
         setEntries(prev => {
           const localIds = new Set(prev.map(e => e.id));
@@ -960,7 +1063,7 @@ export default function BowlsTracker() {
       if (data?.profile && Object.keys(data.profile).length > 0) {
         setProfile(data.profile);
       }
-      setHydratedKey(cloudKey);
+      setHydratedKey(sessionToken);
       setSyncStatus("synced");
     }
 
@@ -968,25 +1071,22 @@ export default function BowlsTracker() {
     const onOnline = () => { clearTimeout(timer); hydrate(); };
     window.addEventListener("online", onOnline);
     return () => { cancelled = true; clearTimeout(timer); window.removeEventListener("online", onOnline); };
-  }, [cloudKey, hydratedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionToken, hydratedKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Restore the member link from the cloud so a device that lost its local storage
-  // isn't asked to link a name that is already linked to this account.
+  // The member link, from the directory: the entry marked is_me is this
+  // account's. bowls_sign_in and bowls_session_state already hand it back;
+  // this also catches a link an admin has moved elsewhere since.
   useEffect(() => {
-    if (!cloudKey || (linkedMemberName && linkedMemberId)) return;
-    let cancelled = false;
-    // Selects id as well as name: this is the once-at-sign-in resolution the
-    // live-games creator key needs, and it is the same round trip that was
-    // already being made. After 002b, bowls_sign_in returns both and this
-    // query goes away entirely.
-    supabase.from("members").select("id, name").eq("linked_cloudkey", cloudKey).maybeSingle()
-      .then(({ data }) => {
-        if (cancelled || !data) return;
-        if (data.name) setLinkedMemberName(data.name);
-        if (data.id) setLinkedMemberId(data.id);
-      });
-    return () => { cancelled = true; };
-  }, [cloudKey, linkedMemberName, linkedMemberId]);
+    if (!haveDirectory) return;
+    const me = members.find(m => m.is_me);
+    if (me) {
+      if (me.name !== linkedMemberName) setLinkedMemberName(me.name);
+      if (me.id !== linkedMemberId) setLinkedMemberId(me.id);
+    } else if (linkedMemberName || linkedMemberId) {
+      setLinkedMemberName("");
+      setLinkedMemberId(null);
+    }
+  }, [members, haveDirectory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ask the browser to keep our storage. Without this iOS evicts localStorage after
   // about a week of not opening the app, which signs the member out again.
@@ -995,35 +1095,37 @@ export default function BowlsTracker() {
   }, [myName]);
 
   // On entries, ties or profile change: debounced upsert to cloud
+  // bowls_save_my_data, not an upsert keyed on player_name: that upsert only
+  // worked for a NAME-PIN key (the player_data trigger refuses a new row
+  // with any other key, so a bowls_register account never synced), and it
+  // needed the table open.
   useEffect(() => {
-    if (!cloudKey || hydratedKey !== cloudKey) return;
+    if (!sessionToken || hydratedKey !== sessionToken) return;
     const timer = setTimeout(() => {
       setSyncStatus("syncing");
-      supabase
-        .from("player_data")
-        .upsert({ player_name: cloudKey, entries, ties, profile, updated_at: new Date().toISOString() }, { onConflict: "player_name" })
-        .then(({ error }) => setSyncStatus(error ? "error" : "synced"));
+      tokenRpc("bowls_save_my_data", { p_entries: entries, p_ties: ties, p_profile: profile })
+        .then(({ data, error }) => setSyncStatus(!error && data?.status === "ok" ? "synced" : "error"));
     }, 2500);
     return () => clearTimeout(timer);
-  }, [entries, ties, profile, cloudKey, hydratedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entries, ties, profile, sessionToken, hydratedKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch profiles + entries for all members who have linked their account
+  // Profiles + entries of linked members, keyed by roster id. Only once the
+  // directory has loaded — it is the same session, checked again.
   useEffect(() => {
-    const cloudKeys = members.filter(m => m.linked_cloudkey).map(m => m.linked_cloudkey);
-    if (cloudKeys.length === 0) return;
-    supabase.from("player_data").select("player_name, profile, entries")
-      .in("player_name", cloudKeys)
-      .then(({ data }) => {
-        if (!data) return;
-        const map = {};
-        data.forEach(row => {
-          if (row.profile && Object.keys(row.profile).length > 0) {
-            map[row.player_name] = { ...row.profile, entries: row.entries || [] };
-          }
-        });
-        setMemberProfiles(map);
+    if (!haveDirectory || !members.some(m => m.is_linked)) return;
+    let cancelled = false;
+    tokenRpc("bowls_member_profiles").then(({ data }) => {
+      if (cancelled || data?.status !== "ok") return;
+      const map = {};
+      Object.entries(data.profiles || {}).forEach(([memberId, row]) => {
+        if (row.profile && Object.keys(row.profile).length > 0) {
+          map[memberId] = { ...row.profile, entries: row.entries || [] };
+        }
       });
-  }, [members]); // eslint-disable-line react-hooks/exhaustive-deps
+      setMemberProfiles(map);
+    });
+    return () => { cancelled = true; };
+  }, [members, haveDirectory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One-time migration: ensure entries/ties have section for proper Ladies/Gents split
   useEffect(() => {
@@ -1339,113 +1441,270 @@ export default function BowlsTracker() {
   const [signInState, setSignInState] = useState("idle"); // "idle"|"checking"|"confirm-new"|"wrong-pin"|"offline"|"locked"
   const [lockoutInfo, setLockoutInfo] = useState(null); // { id, attempts, locked_until, unlock_requested }
 
-  // Account keys are "<NAME>-<PIN>". Members retype their name slightly differently
-  // between sign-ins ("J FREW" / "J.FREW" / "J  FREW"), so compare on a squashed form.
-  const normName = n => (n || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const keyName  = k => k.slice(0, k.lastIndexOf("-"));
-  const keyPin   = k => k.slice(k.lastIndexOf("-") + 1);
+  // ── Sign-in goes through the server ──────────────────────────────────────
+  //
+  // What used to happen here: the client SELECTed every row of player_data,
+  // filtered them in JavaScript for one whose name matched, and compared the
+  // last four characters of player_name against the PIN that had just been
+  // typed. Signing in meant downloading all 92 members' names and PINs to the
+  // device doing it, and the publishable key that made that request ships in
+  // the bundle — so it was not only members who could make it.
+  //
+  // Now one RPC does the whole thing. bowls_sign_in matches on name_key and
+  // a bcrypt comparison, counts failed attempts, applies the lockout, and
+  // hands back a session token. The client learns whether it worked and
+  // nothing else. findAccounts is gone, and with it the only reason this app
+  // ever had to read the account table.
+  //
+  // ensureAccountRow is gone too. It wrote { player_name: "NAME-PIN" }
+  // straight into player_data and let a trigger derive the hash from the
+  // name — which is how every account came to have its PIN in a readable
+  // column. Registration is bowls_register's job now.
 
-  // Every account already in the cloud for this name, whatever punctuation was used.
-  // Returns null if the cloud couldn't be reached — never an empty list, so an
-  // offline device can't mistake "can't check" for "not registered".
-  async function findAccounts(nameUpper) {
-    const { data, error } = await supabase.from("player_data").select("player_name");
-    if (error || !data) return null;
-    return data.filter(r => r.player_name?.includes("-") && normName(keyName(r.player_name)) === normName(nameUpper));
-  }
+  // One shape for "we are signed in as this account", used by sign-in,
+  // registration and the token check on load, so the four pieces of state
+  // cannot get out of step with each other.
+  // `background: true` is the token refresh for a device that was already
+  // signed in. It updates who the server says we are and touches nothing the
+  // member can see: no rename, no link sheet, and none of the form resets —
+  // those belong to an actual sign-in, and doing them on a load would close
+  // a sheet the member had just opened.
+  function applySession(payload, pin, { background = false } = {}) {
+    // The name the account is STORED under, not the one that was typed.
+    // myName is matched as a string — `t.myName === myName` for ties, and
+    // against draw pairings, personal-comp owners and honours — so a member
+    // who types "J.FREW" today when they typed "J FREW" last time has to end
+    // up with the same value or their own data stops being theirs.
+    // account_name is the server's answer to that, and it is byte-for-byte
+    // what the old client stored for all 92 accounts. A background refresh
+    // renames nobody: it runs on load, and a rename there is one the member
+    // did not ask for and would hide their own ties from them.
+    if (!background && payload.account_name) setMyName(payload.account_name);
+    if (typeof pin === "string") setMyPin(pin);
+    setSessionToken(payload.token || "");
+    setStoredCloudKey(payload.cloud_key || "");
+    setMyPlayerId(payload.id || "");
+    setSignedOut(false);
 
-  // Create the account row up front. This used to be left to the debounced sync
-  // effect below, so anyone who closed the app in the first few seconds after
-  // registering had no account to come back to — and was sent through registration
-  // again on their next visit. Only player_name/updated_at are sent so signing in
-  // on a fresh device can never clobber the entries already stored in the cloud.
-  async function ensureAccountRow(key) {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const { error } = await supabase
-        .from("player_data")
-        .upsert({ player_name: key, updated_at: new Date().toISOString() }, { onConflict: "player_name" });
-      if (!error) return true;
-      await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+    if (!background) {
+      setNameInput(""); setPinInput(""); setPinConfirm("");
+      setSignInState("idle"); setLockoutInfo(null);
+      setSettingName(false);
+      setCredentialNotice(null);
     }
-    return false;
+
+    // The member link comes back with the sign-in, so the separate members
+    // lookup that used to run here is gone. It is resolved through
+    // members.linked_player_id — the uuid — rather than linked_cloudkey,
+    // which is the column holding 69 live PINs and is dropped in Phase D.
+    if (payload.member_name) setLinkedMemberName(payload.member_name);
+    if (payload.member_id)   setLinkedMemberId(payload.member_id);
+    if (!background && !payload.member_name && !linkedMemberName) setShowLinkSheet(true);
   }
+
+  // Forget the account on this device. Used when the server has told us the
+  // session is gone — a PIN reset, an admin lock, a deleted account — and by
+  // "switch account". Local entries and ties stay in localStorage; they come
+  // back when they sign in again.
+  function signOutLocally() {
+    setSessionToken("");
+    setStoredCloudKey("");
+    setMyPlayerId("");
+    setMyPin("");
+    setMyName("");
+    setLinkedMemberName("");
+    setLinkedMemberId(null);
+    // The explicit part. Without it the upgrade effect would see a device
+    // with no token and sign it straight back in from what it could still
+    // find.
+    setSignedOut(true);
+    setSettingName(true);
+    setNameStep("name");
+    setSignInState("idle");
+  }
+
+  // Signing out, both halves, in this order.
+  //
+  // The server is told FIRST, while the token is still in hand. The previous
+  // version cleared local state and then tried to call bowls_sign_out — and
+  // the call it made was `supabase.rpc(...).catch(...)`, which throws, because
+  // rpc() returns a PostgrestFilterBuilder and a builder has no .catch. The
+  // request was never dispatched, and the throw skipped the local sign-out
+  // that came after it — so every tap minted a session, abandoned it, and
+  // left the member signed in as themselves. See src/lib/session.js.
+  //
+  // If the server cannot be reached the member is still signed out here —
+  // they asked to leave this device, and a bad signal is not a reason to
+  // refuse — but the token is queued so the next load can revoke it, rather
+  // than being forgotten while it is still valid for 90 days.
+  async function endSession() {
+    const token = sessionToken;
+    const { ok } = await endServerSession(supabase, token);
+    if (!ok) setPendingSignouts(p => queuePendingSignout(p, token));
+    signOutLocally();
+    return ok;
+  }
+
+  // ── Sign-outs that never reached the server ──────────────────────────────
+  // A token queued here is live: 90 days, and bowls_session_player slides
+  // that forward on every use, so an abandoned one outlives the member's
+  // interest in it by a wide margin. Retry until the server confirms, and
+  // only drop a token once it has.
+  useEffect(() => {
+    if (pendingSignouts.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const left = await flushPendingSignouts(supabase, pendingSignouts);
+      if (cancelled || left.length === pendingSignouts.length) return;
+      setPendingSignouts(left);
+    })();
+    return () => { cancelled = true; };
+  }, [pendingSignouts]);
+
+  // ── Is this device still signed in? ──────────────────────────────────────
+  // Ending a session is invisible until something asks. This is the asking.
+  //
+  // Three answers, and they are not the same thing:
+  //   "ok"      — still signed in; refresh who we are from the server
+  //   "expired" — this token is definitively dead. Sign out.
+  //   anything else (an error, a null) — NOT an answer. Leave the member
+  //   signed in and ask again next time. Treating a dropped connection as a
+  //   dead session would sign the whole club out the next time the club
+  //   wi-fi wobbled.
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("bowls_session_state", { p_token: sessionToken });
+      if (cancelled || error || !data) return;
+      if (data.status === "expired") { signOutLocally(); setCredentialNotice("expired"); return; }
+      if (data.status !== "ok") return;
+      // Deliberately does not touch myName: see applySession. This effect
+      // runs on every load, and a rename here would be a rename nobody asked
+      // for.
+      if (data.cloud_key)    setStoredCloudKey(data.cloud_key);
+      if (data.id)           setMyPlayerId(data.id);
+      if (data.member_name)  setLinkedMemberName(data.member_name);
+      if (data.member_id)    setLinkedMemberId(data.member_id);
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Devices that were signed in before sessions existed ──────────────────
+  // They have a name and a PIN in localStorage and no token. Trade them for
+  // one, quietly, on the next load — so that by the time Step 4 revokes anon
+  // access they are already on the new path rather than being signed out en
+  // masse by it.
+  //
+  // At most one attempt per stale credential: if the PIN no longer works the
+  // device is signed out here rather than retrying on every load and walking
+  // the member into their own lockout. "locked" is left alone — it costs no
+  // attempt and clears itself after 24 hours.
+  useEffect(() => {
+    if (sessionToken || signedOut || !myName || !myPin) return;
+    let cancelled = false;
+    (async () => {
+      const outcome = signInOutcome(await supabase.rpc("bowls_sign_in", { p_name: myName, p_pin: myPin }));
+      if (cancelled) return;
+      if (outcome.action === "signed-in") { applySession(outcome.payload, myPin, { background: true }); return; }
+      // The PIN is right, but it has been readable by anyone: nothing works
+      // until a new one is chosen. The member stays signed in on this device
+      // and is shown the new-PIN screen.
+      if (outcome.action === "change-pin") { setPinChange(p => p || { name: myName, pin: myPin }); return; }
+      if (outcome.action === "wrong-pin" || outcome.action === "register") signOutLocally();
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, signedOut, myName, myPin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSignIn() {
     if (!nameInput.trim() || pinInput.length !== 4) return;
     const nameUpper = nameInput.toUpperCase().trim();
     setSignInState("checking");
 
-    // 1. Check for lockout
-    const { data: lockRow } = await supabase.from("login_lockouts").select("*").eq("name", nameUpper).maybeSingle();
-    if (lockRow?.locked_until && new Date(lockRow.locked_until) > new Date()) {
-      setLockoutInfo(lockRow);
-      setSignInState("locked");
+    const outcome = signInOutcome(await supabase.rpc("bowls_sign_in", { p_name: nameUpper, p_pin: pinInput }));
+
+    if (outcome.action === "signed-in") { applySession(outcome.payload, pinInput); return; }
+    if (outcome.action === "change-pin") { setSignInState("idle"); setPinChange({ name: nameUpper, pin: pinInput, fromSignIn: true }); return; }
+    if (outcome.action === "offline")   { setSignInState("offline"); return; }
+    if (outcome.action === "locked")    { setLockoutInfo({ name: nameUpper, ...outcome.lockout }); setSignInState("locked"); return; }
+    if (outcome.action === "wrong-pin") { setLockoutInfo({ name: nameUpper, ...outcome.lockout }); setSignInState("wrong-pin"); return; }
+    if (outcome.action === "register") {
+      // No account under this name yet. Being on the roster is not evidence
+      // of having registered, so this costs no PIN attempt.
+      setPinConfirm("");
+      setSignInState("confirm-new");
       return;
     }
-
-    // 2. Find their existing account
-    const accounts = await findAccounts(nameUpper);
-    if (accounts === null) { setSignInState("offline"); return; }
-
-    const match = accounts.find(r => keyPin(r.player_name) === pinInput);
-    if (match) {
-      // Clear any failed attempts on success
-      if (lockRow) await supabase.from("login_lockouts").delete().eq("name", nameUpper);
-      // Sign in under the exact name already stored so their data follows them.
-      commitSignIn(keyName(match.player_name), pinInput);
-      return;
-    }
-
-    // 3. Account exists for this name but not with this PIN — a genuine wrong PIN.
-    if (accounts.length > 0) {
-      const attempts = (lockRow?.attempts || 0) + 1;
-      if (attempts >= 3) {
-        const lockedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-        const upsertData = { name: nameUpper, attempts, locked_until: lockedUntil, updated_at: new Date().toISOString() };
-        const { data: newLock } = await supabase.from("login_lockouts").upsert(upsertData, { onConflict: "name" }).select().maybeSingle();
-        setLockoutInfo(newLock || { ...upsertData });
-        setSignInState("locked");
-      } else {
-        await supabase.from("login_lockouts").upsert({ name: nameUpper, attempts, updated_at: new Date().toISOString() }, { onConflict: "name" });
-        setLockoutInfo({ ...(lockRow || {}), attempts });
-        setSignInState("wrong-pin");
-      }
-      return;
-    }
-
-    // 4. No account for this name yet — first-time registration. Being on the members
-    //    roster is not evidence of having registered, so this costs no PIN attempt.
-    setPinConfirm("");
-    setSignInState("confirm-new");
+    // "invalid" — a name that squashes to nothing. The form has already
+    // checked the PIN, so going back to idle leaves their input on screen.
+    setSignInState("idle");
   }
 
-  async function requestUnlock() {
-    if (!lockoutInfo?.id) return;
-    await supabase.from("login_lockouts").update({ unlock_requested: true }).eq("id", lockoutInfo.id);
-    setLockoutInfo(p => ({ ...p, unlock_requested: true }));
-  }
-
-  async function commitSignIn(nameOverride, pinOverride) {
+  // Registration. The confirm-new step calls this once the member has typed
+  // their PIN twice.
+  //
+  // bowls_register creates the row with a player_name that is not built from
+  // the PIN, hashes the PIN itself, and signs them in. "existing" comes back
+  // if they already had an account under this name and PIN. A different PIN
+  // for a name that already has an account is a wrong PIN, counted like one
+  // (20260923_directory_lockdown_1) — the sign-in card says so.
+  async function registerAccount(nameOverride, pinOverride) {
     const name = (typeof nameOverride === "string" ? nameOverride : nameInput).toUpperCase().trim();
     const pin  = typeof pinOverride === "string" ? pinOverride : pinInput;
-    const key  = `${name}-${pin}`;
+    if (!name || !/^\d{4}$/.test(pin)) return;
 
     setSignInState("checking");
-    const stored = await ensureAccountRow(key);
-    if (!stored) { setSignInState("offline"); return; }
-
-    setMyName(name);
-    setMyPin(pin);
-    setNameInput(""); setPinInput(""); setPinConfirm("");
-    setSignInState("idle"); setLockoutInfo(null);
-    setSettingName(false);
-
-    // Their member link lives in the cloud, so restore it rather than asking again —
-    // a device that lost its local storage is still linked.
-    const { data: linked } = await supabase.from("members").select("name").eq("linked_cloudkey", key).maybeSingle();
-    if (linked?.name) setLinkedMemberName(linked.name);
-    else if (!linkedMemberName) setShowLinkSheet(true);
+    const outcome = registerOutcome(await supabase.rpc("bowls_register", { p_name: name, p_pin: pin }));
+    if (outcome.action === "signed-in")  { applySession(outcome.payload, pin); return; }
+    if (outcome.action === "change-pin") { setSignInState("idle"); setPinChange({ name, pin, fromSignIn: true }); return; }
+    // Refused. Show it on the sign-in card, whichever screen asked.
+    setNameInput(name);
+    setSettingName(true);
+    if (outcome.action === "locked")    { setLockoutInfo({ name, ...outcome.lockout }); setSignInState("locked"); return; }
+    if (outcome.action === "wrong-pin") { setLockoutInfo({ name, ...outcome.lockout }); setSignInState("wrong-pin"); return; }
+    setSignInState("offline");
   }
+
+  // ── A new PIN has been chosen (ChangePinSheet) ───────────────────────────
+  // bowls_change_pin answers like bowls_sign_in, token and all, having ended
+  // every other session the account had. From the sign-in card that is a
+  // sign-in; for a device that was already signed in it is a background
+  // refresh, so nothing the member can see is renamed or reset.
+  function pinChanged(payload, newPin) {
+    const from = pinChange;
+    setPinChange(null);
+    applySession(payload, newPin, { background: !from?.fromSignIn });
+    setRoleCheck(n => n + 1);
+  }
+
+  // Leaving the new-PIN screen without choosing one. From the sign-in card
+  // that just goes back to it; a device that was signed in signs out, since
+  // there is nothing left its old PIN can do.
+  function leavePinChange() {
+    const from = pinChange;
+    setPinChange(null);
+    if (from?.fromSignIn) { setSignInState("idle"); setPinInput(""); return; }
+    endSession();
+  }
+
+  // The locked-out screen's "ask an admin to let me back in" button.
+  //
+  // It used to UPDATE login_lockouts by row id, which the client only had
+  // because it had just read the whole row. bowls_sign_in's locked status
+  // carries no id — and after Step 4 there is no row to read — so this goes
+  // through an RPC that takes only the name. Deliberately no PIN: they are
+  // locked out precisely because they do not know it.
+  async function requestUnlock() {
+    const name = lockoutInfo?.name || nameInput.toUpperCase().trim();
+    if (!name) return;
+    await supabase.rpc("bowls_request_unlock", { p_name: name });
+    // The server says nothing back on purpose — an endpoint that confirmed
+    // whether a name exists would be a way to enumerate members without ever
+    // spending a PIN attempt. So the screen reports what was asked for, not
+    // what was found.
+    setLockoutInfo(p => ({ ...(p || {}), name, unlock_requested: true }));
+  }
+
 
   function closeLinkSheet() {
     setShowLinkSheet(false);
@@ -1458,67 +1717,62 @@ export default function BowlsTracker() {
     ? members.filter(m => m.name.toUpperCase().includes(linkSearch.toUpperCase())).slice(0, 8)
     : [];
 
+  // First come, first served, decided on the server: a roster entry someone
+  // else holds is refused, and the member can ask an admin instead. The
+  // server writes both link columns and drops any previous link.
   async function claimMemberLink(member) {
-    if (!cloudKey) return;
+    if (!sessionToken) return;
     setLinkStatus("linking");
-    // Check if already claimed by another account
-    const { data } = await supabase.from("members").select("linked_cloudkey, name").eq("id", member.id).maybeSingle();
-    if (data?.linked_cloudkey && data.linked_cloudkey !== cloudKey) {
-      setLinkStatus({ type: "claimed", member, currentHolder: data.linked_cloudkey });
-      return;
-    }
-    // Unclaimed or already ours — claim it
-    await supabase.from("members").update({ linked_cloudkey: cloudKey }).eq("id", member.id);
-    // Remove any previous link this account held on another member
-    await supabase.from("members").update({ linked_cloudkey: null }).eq("linked_cloudkey", cloudKey).neq("id", member.id);
+    const { data, error } = await tokenRpc("bowls_link_my_member", { p_member_id: String(member.id) });
+    if (error || !data) { setLinkStatus(null); return; }
+    if (data.status === "already_linked") { setLinkStatus({ type: "claimed", member }); return; }
+    if (data.status !== "ok") { setLinkStatus(null); return; }
     setLinkedMemberName(member.name);
     // Same moment, same fact: linking is the point at which this account
     // acquires a roster id, and live_games needs it to record who set a game
-    // up. Without this line a member who links and then immediately creates a
-    // game would still have their sign-in credential written to the row.
+    // up.
     setLinkedMemberId(member.id);
     setLinkStatus("done");
+    membersLoad.reload();
     setTimeout(closeLinkSheet, 1200);
   }
 
-  async function submitClaimRequest(member, currentHolder) {
-    if (!cloudKey) return;
-    await supabase.from("member_claim_requests").insert({
-      requester_cloudkey: cloudKey,
-      requester_display_name: myName,
-      target_member_id: member.id,
-      target_member_name: member.name,
-      current_linked_cloudkey: currentHolder,
-      status: "pending",
-    });
-    setLinkStatus({ type: "requested", member });
-  }
-
-  async function resolveClaimRequest(reqId, approve, req) {
-    if (approve) {
-      // Remove old link, apply new one
-      await supabase.from("members").update({ linked_cloudkey: null }).eq("linked_cloudkey", req.current_linked_cloudkey);
-      await supabase.from("members").update({ linked_cloudkey: req.requester_cloudkey }).eq("id", req.target_member_id);
+  async function submitClaimRequest(member) {
+    if (!sessionToken) return;
+    const { data } = await tokenRpc("bowls_request_member_claim", { p_member_id: String(member.id) });
+    if (data?.status === "ok" || data?.status === "already_requested") {
+      setLinkStatus({ type: "requested", member });
+    } else if (data?.status === "not_needed") {
+      claimMemberLink(member);
     }
-    await supabase.from("member_claim_requests").update({ status: approve ? "approved" : "rejected", resolved_at: new Date().toISOString() }).eq("id", reqId);
-    setClaimRequests(prev => prev.filter(r => r.id !== reqId));
   }
 
-  function unlinkMember() {
-    if (!cloudKey || !linkedMemberName) return;
-    supabase.from("members").update({ linked_cloudkey: null }).eq("linked_cloudkey", cloudKey);
+  async function resolveClaimRequest(reqId, approve) {
+    const { data } = await tokenRpc("bowls_admin_resolve_claim_request", { p_request_id: reqId, p_approve: approve });
+    if (data?.status !== "ok" && data?.status !== "not_found") return;
+    setClaimRequests(prev => prev.filter(r => r.id !== reqId));
+    if (approve) membersLoad.reload();
+  }
+
+  async function unlinkMember() {
+    if (!sessionToken || !linkedMemberName) return;
+    const { data } = await tokenRpc("bowls_unlink_my_member");
+    if (data?.status !== "ok") return;
     setLinkedMemberName("");
     // Both halves of the link go together. Leaving the id behind would let an
     // unlinked account keep scoring games it "created" under a roster entry it
     // no longer holds.
     setLinkedMemberId(null);
+    membersLoad.reload();
   }
+  // A member who has a name from before PINs existed, setting one for the
+  // first time. Same path as registration: bowls_register creates the row if
+  // there isn't one and returns the existing account if there is, and either
+  // way it signs them in properly with a token. It used to write
+  // "NAME-PIN" straight into player_data, which is the whole bug.
   function saveExistingPin() {
     if (!/^\d{4}$/.test(pinInput)) return;
-    const pin = pinInput;
-    setMyPin(pin);
-    setPinInput("");
-    ensureAccountRow(`${myName.toUpperCase()}-${pin}`);
+    registerAccount(myName, pinInput);
   }
 
   // ── Tournament entry handlers ──
@@ -1722,17 +1976,33 @@ export default function BowlsTracker() {
   }
 
   function startEdit(m) { setEditingId(m.id); setEditName(m.name); setEditPhone(m.phone); setEditSection(m.section || "gents"); setEditPosition(m.position || ""); }
+
+  // Add (id null) or edit a roster entry. The server checks the caller is an
+  // admin and hands back the row as saved, or null if it refused.
+  async function adminSaveMember(id, fields) {
+    const { data, error } = await tokenRpc("bowls_admin_save_member", {
+      p_member_id:   id == null ? null : String(id),
+      p_member_name: fields.name || "",
+      p_phone:       fields.phone || "",
+      p_section:     fields.section || "gents",
+      p_position:    fields.position || "",
+      p_sort_order:  fields.sort_order ?? null,
+    });
+    return !error && data?.status === "ok" ? data.member : null;
+  }
   function saveEdit() {
-    const updated = { name: editName.toUpperCase(), phone: editPhone, section: editSection, position: editPosition, updated_at: new Date().toISOString() };
+    const id = editingId;
+    const updated = { name: editName.toUpperCase(), phone: editPhone, section: editSection, position: editPosition };
     const prevMembers = members;
-    setMembers(prev => prev.map(m => m.id === editingId ? { ...m, ...updated } : m));
+    setMembers(prev => prev.map(m => m.id === id ? { ...m, ...updated } : m));
     setEditingId(null);
-    supabase.from("members").update(updated).eq("id", editingId).then(({ error }) => {
-      if (error) setMembers(prevMembers);
+    adminSaveMember(id, updated).then(saved => {
+      if (saved) setMembers(prev => prev.map(m => m.id === id ? { ...m, ...saved } : m));
+      else setMembers(prevMembers);
     });
   }
   async function requestPhoneChange(memberId, memberName, currentPhone, requestedPhone) {
-    await supabase.from("phone_change_requests").insert({ member_id: memberId, member_name: memberName, current_phone: currentPhone, requested_phone: requestedPhone });
+    await tokenRpc("bowls_request_phone_change", { p_member_id: String(memberId), p_requested_phone: requestedPhone });
   }
 
   const [phoneRequests, setPhoneRequests] = useState([]);
@@ -1742,48 +2012,45 @@ export default function BowlsTracker() {
   const [pendingAdminRequests, setPendingAdminRequests] = useState([]);
   const [registeredUsers, setRegisteredUsers] = useState([]);
 
+  // Everything the panel shows, in one call that checks the session belongs
+  // to an admin. Account rows carry no PIN or key, admin rows no cloud key.
+  async function loadAdminPanel() {
+    const { data, error } = await tokenRpc("bowls_admin_panel_data");
+    if (error || data?.status !== "ok") return;
+    setPhoneRequests(data.phone_requests || []);
+    setLockouts(data.lockouts || []);
+    setRegisteredUsers(data.accounts || []);
+    setJoinRequests(data.join_requests || []);
+    setClaimRequests(data.claim_requests || []);
+    if (data.admins) setAdminListState(data.admins);
+    if (data.admin_requests) setPendingAdminRequests(data.admin_requests);
+  }
+
   useEffect(() => {
     if (!isAdmin) return;
-    supabase.from("phone_change_requests").select("*").order("requested_at")
-      .then(({ data }) => { if (data) setPhoneRequests(data); });
-    supabase.from("login_lockouts").select("*").order("updated_at", { ascending: false })
-      .then(({ data }) => { if (data) setLockouts(data); });
-    supabase.from("player_data").select("player_name, updated_at").order("updated_at", { ascending: false })
-      .then(({ data }) => { if (data) setRegisteredUsers(data); });
-    supabase.from("member_join_requests").select("*").eq("status", "pending").order("requested_at")
-      .then(({ data }) => { if (data) setJoinRequests(data); });
-    supabase.from("member_claim_requests").select("*").eq("status", "pending").order("requested_at")
-      .then(({ data }) => { if (data) setClaimRequests(data); });
-    if (isSuperAdmin) {
-      supabase.from("admins").select("*").then(({ data }) => { if (data) setAdminListState(data); });
-      supabase.from("admin_requests").select("*").order("requested_at")
-        .then(({ data }) => { if (data) setPendingAdminRequests(data); });
+    loadAdminPanel();
+  }, [isAdmin, isSuperAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lock or unlock by name: a lockout row's own name, or an account's name
+  // key. Unlocking clears the admin-check counter too.
+  async function setAccountLock(name, locked) {
+    const { data } = await tokenRpc("bowls_admin_set_lockout", { p_account_name: name, p_locked: locked });
+    if (data?.status === "ok") loadAdminPanel();
+  }
+  function clearLockout(row) { return setAccountLock(row.name, false); }
+  function lockAppAccount(name) { return setAccountLock(name, true); }
+  function unlockAppAccount(name) { return setAccountLock(name, false); }
+
+  // Delete an app account by id. Refused for your own account and for an
+  // admin's; the answer comes back for the panel to show.
+  async function deleteAppAccount(account) {
+    const { data, error } = await tokenRpc("bowls_admin_delete_account", { p_player_id: account.id });
+    if (!error && data?.status === "ok") {
+      setRegisteredUsers(u => u.filter(x => x.id !== account.id));
+      loadAdminPanel();
+      membersLoad.reload();
     }
-  }, [isAdmin, isSuperAdmin]);
-
-  async function clearLockout(id) {
-    setLockouts(l => l.filter(x => x.id !== id));
-    await supabase.from("login_lockouts").delete().eq("id", id);
-  }
-
-  async function lockAppAccount(name) {
-    const lockedUntil = "2099-01-01T00:00:00.000Z";
-    const row = { name, attempts: 0, locked_until: lockedUntil, updated_at: new Date().toISOString() };
-    await supabase.from("login_lockouts").upsert(row, { onConflict: "name" });
-    setLockouts(l => { const idx = l.findIndex(x => x.name === name); if (idx >= 0) { const c = [...l]; c[idx] = { ...c[idx], ...row }; return c; } return [{ ...row }, ...l]; });
-  }
-
-  async function unlockAppAccount(name) {
-    await supabase.from("login_lockouts").delete().eq("name", name);
-    setLockouts(l => l.filter(x => x.name !== name));
-  }
-
-  async function deleteAppAccount(playerName) {
-    await supabase.from("player_data").delete().eq("player_name", playerName);
-    setRegisteredUsers(u => u.filter(x => x.player_name !== playerName));
-    // Also clear any lockout
-    const namePart = playerName.split("-").slice(0, -1).join("-");
-    if (namePart) { await supabase.from("login_lockouts").delete().eq("name", namePart); setLockouts(l => l.filter(x => x.name !== namePart)); }
+    return error ? { status: "error", message: error.message } : data;
   }
 
   // Reset a member's PIN. The client never builds the new key or the hash —
@@ -1800,18 +2067,20 @@ export default function BowlsTracker() {
     if (error) return { status: "error", message: error.message };
     if (data?.status !== "ok") return data || { status: "error", message: "No response from the server." };
 
-    // An admin resetting their own PIN would otherwise carry on with a cloudKey
-    // that no longer exists — the sync would then write their data to a fresh
-    // empty row. Follow the account instead.
-    if (data.account_name && myName && data.account_name.toUpperCase() === myName.toUpperCase()) {
-      setMyPin(newPin);
-    }
+    // A reset ends every session for that account — that is the point of it,
+    // and it is what makes the reset actually lock out whoever knew the old
+    // PIN rather than merely changing what they would have to type. If the
+    // admin has just reset their OWN PIN, one of the sessions it ended was
+    // this one, so this device signs out and they come back with the new PIN.
+    // The server works out whose account it was; comparing names here could
+    // not tell two members with the same initials apart.
+    if (data.is_self) signOutLocally();
 
-    // The account list shows the key, which has just changed under it.
-    supabase.from("player_data").select("player_name, updated_at").order("updated_at", { ascending: false })
-      .then(({ data: rows }) => { if (rows) setRegisteredUsers(rows); });
-    setLockouts(l => l.filter(x => x.name?.toUpperCase() !== data.account_name?.toUpperCase()));
-    setMembers(p => p.map(m => String(m.id) === String(memberId) ? { ...m, linked_cloudkey: data.new_key } : m));
+    // The account list is re-read: updated_at has moved and the lockouts for
+    // them are gone.
+    if (!data.is_self) loadAdminPanel();
+    // No members patch any more: the reset changes pin_hash and nothing else,
+    // so linked_cloudkey still points at the same account it did before.
     return data;
   }
 
@@ -1826,8 +2095,7 @@ export default function BowlsTracker() {
   const [accessMsg, setAccessMsg] = useState(null);
 
   async function refreshAdminList() {
-    const { data } = await supabase.from("admins").select("*");
-    if (data) setAdminListState(data);
+    await loadAdminPanel();
   }
 
   async function grantAdmin(member, role = "admin") {
@@ -1885,15 +2153,12 @@ export default function BowlsTracker() {
       return;
     }
     setAccessMsg({ ok: data.status === "granted", text: data.message });
-    const { data: queue } = await supabase.from("admin_requests").select("*").order("requested_at");
-    if (queue) setPendingAdminRequests(queue);
-    if (data.status === "granted") await refreshAdminList();
+    await loadAdminPanel();
   }
 
   async function approveJoinRequest(req) {
     setJoinRequests(j => j.filter(r => r.id !== req.id));
-    await supabase.from("members").insert({ name: req.name, phone: req.phone || null, section: req.section, sort_order: 9999 });
-    await supabase.from("member_join_requests").update({ status: "approved" }).eq("id", req.id);
+    await tokenRpc("bowls_admin_resolve_join_request", { p_request_id: req.id, p_approve: true });
     // Re-read through the same hook that owns the roster, so a failure here is
     // reported the same way as a failure on first load rather than silently
     // leaving a stale list on screen.
@@ -1902,38 +2167,41 @@ export default function BowlsTracker() {
 
   async function declineJoinRequest(reqId) {
     setJoinRequests(j => j.filter(r => r.id !== reqId));
-    await supabase.from("member_join_requests").update({ status: "declined" }).eq("id", reqId);
+    await tokenRpc("bowls_admin_resolve_join_request", { p_request_id: reqId, p_approve: false });
   }
 
   async function approvePhoneRequest(req) {
-    const prev = members;
     setMembers(m => m.map(x => x.id === req.member_id ? { ...x, phone: req.requested_phone } : x));
     setPhoneRequests(p => p.filter(r => r.id !== req.id));
-    await supabase.from("members").update({ phone: req.requested_phone, updated_at: new Date().toISOString() }).eq("id", req.member_id);
-    await supabase.from("phone_change_requests").delete().eq("id", req.id);
+    await tokenRpc("bowls_admin_resolve_phone_request", { p_request_id: req.id, p_approve: true });
   }
 
   async function declinePhoneRequest(reqId) {
     setPhoneRequests(p => p.filter(r => r.id !== reqId));
-    await supabase.from("phone_change_requests").delete().eq("id", reqId);
+    await tokenRpc("bowls_admin_resolve_phone_request", { p_request_id: reqId, p_approve: false });
   }
   function deleteMember(id) {
     const prevMembers = members;
     setMembers(prev => prev.filter(m => m.id !== id));
     setConfirmDelete(null);
-    supabase.from("members").delete().eq("id", id).then(({ error }) => {
-      if (error) setMembers(prevMembers); // revert on error
+    tokenRpc("bowls_admin_delete_member", { p_member_id: String(id) }).then(({ data, error }) => {
+      if (error || data?.status !== "ok") setMembers(prevMembers); // revert on error
+    });
+  }
+  // Adds to the roster and swaps the placeholder for the row the server saved.
+  function addRosterMember(fields) {
+    const tempId = `new-${Date.now()}`;
+    setMembers(prev => [...prev, { id: tempId, ...fields, sort_order: fields.sort_order ?? 999 }]);
+    adminSaveMember(null, fields).then(saved => {
+      setMembers(prev => saved
+        ? prev.map(m => m.id === tempId ? { ...m, ...saved } : m)
+        : prev.filter(m => m.id !== tempId));
     });
   }
   function addMember() {
     if (!newName.trim()) return;
-    const newId = Date.now().toString();
-    const newMember = { id: newId, name: newName.toUpperCase(), phone: newPhone, section: newSection, sort_order: 999 };
-    setMembers(prev => [...prev, newMember]);
+    addRosterMember({ name: newName.toUpperCase(), phone: newPhone, section: newSection });
     setNewName(""); setNewPhone("");
-    supabase.from("members").insert(newMember).then(({ error }) => {
-      if (error) setMembers(prev => prev.filter(m => m.id !== newId)); // revert on error
-    });
   }
 
   // ── CSV download ──
@@ -2035,6 +2303,16 @@ export default function BowlsTracker() {
 
   return (
     <div style={{ minHeight: "100vh", background: BG, fontFamily: F_UI, color: TEXT, zoom: fontScale }}>
+
+      {/* ── NEW PIN REQUIRED — over everything, admins included ── */}
+      {pinChange && (
+        <ChangePinSheet
+          name={pinChange.name}
+          pin={pinChange.pin}
+          onDone={pinChanged}
+          onSignOut={leavePinChange}
+        />
+      )}
 
       {/* ── iOS INSTALL BANNER ── */}
       {showIosBanner && (
@@ -2251,6 +2529,11 @@ export default function BowlsTracker() {
                 <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, marginBottom: "24px", lineHeight: 1.5 }}>
                   {settingName ? "Enter your name and PIN to switch account." : "Enter your name and 4-digit PIN. If you've signed in before, use the same details to restore your data."}
                 </div>
+                {credentialNotice && signInState !== "locked" && (
+                  <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left", fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>
+                    You've been signed out on this phone — your PIN may have been reset, or your account locked. Sign in again with your current PIN.
+                  </div>
+                )}
 
                 {signInState === "locked" ? (
                   <>
@@ -2283,7 +2566,7 @@ export default function BowlsTracker() {
                       <div style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left" }}>
                         <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: LOSS_RED, marginBottom: "3px" }}>That PIN doesn't match</div>
                         <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>
-                          You already have an account under this name. Try your PIN again{lockoutInfo?.attempts ? ` — ${3 - lockoutInfo.attempts} attempt${3 - lockoutInfo.attempts === 1 ? "" : "s"} left before it locks` : ""}. If you've forgotten it, ask an admin to reset your account.
+                          You already have an account under this name. Try your PIN again{typeof lockoutInfo?.remaining === "number" ? ` — ${lockoutInfo.remaining} attempt${lockoutInfo.remaining === 1 ? "" : "s"} left before it locks` : ""}. If you've forgotten it, ask an admin to reset your account.
                         </div>
                       </div>
                     )}
@@ -2336,7 +2619,7 @@ export default function BowlsTracker() {
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Confirm PIN</div>
                       <input autoFocus value={pinConfirm} onChange={e => setPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 4))}
                         placeholder="••••" inputMode="numeric" maxLength={4}
-                        onKeyDown={e => e.key === "Enter" && pinConfirm === pinInput && commitSignIn()}
+                        onKeyDown={e => e.key === "Enter" && pinConfirm === pinInput && registerAccount()}
                         style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${pinConfirm.length === 4 && pinConfirm !== pinInput ? "#e07070" : BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px" }} />
                       {pinConfirm.length === 4 && pinConfirm !== pinInput && (
                         <div style={{ fontFamily: F_UI, fontSize: "12px", color: "#c0392b", marginTop: "5px" }}>PINs don't match — try again</div>
@@ -2347,7 +2630,7 @@ export default function BowlsTracker() {
                         style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
                         Back
                       </button>
-                      <button onClick={() => commitSignIn()} disabled={pinConfirm !== pinInput || pinConfirm.length !== 4}
+                      <button onClick={() => registerAccount()} disabled={pinConfirm !== pinInput || pinConfirm.length !== 4}
                         style={{ flex: 1, background: pinConfirm === pinInput && pinConfirm.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "13px 28px", fontSize: "14px", cursor: pinConfirm === pinInput && pinConfirm.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
                         Create Account
                       </button>
@@ -3609,7 +3892,7 @@ export default function BowlsTracker() {
             LIVE GAMES TAB
         ══════════════════════════════════════════ */}
         {activeTab === "live" && (
-          <LiveGamesTab myName={myName} cloudKey={cloudKey} myMemberId={linkedMemberId} isAdmin={isAdmin} setActiveTab={setActiveTab} members={members}
+          <LiveGamesTab myName={myName} cloudKey={liveGameCreatorKey} myMemberId={linkedMemberId} isAdmin={isAdmin} setActiveTab={setActiveTab} members={members}
             deepLinkGameId={deepLinkGameId} onDeepLinkHandled={() => setDeepLinkGameId(null)} />
         )}
 
@@ -3958,6 +4241,7 @@ export default function BowlsTracker() {
               isSuperAdmin={isSuperAdmin}
               isAdmin={isAdmin}
               cloudKey={cloudKey}
+              requestAdmin={role => tokenRpc("bowls_request_admin", { p_requested_role: role })}
               superAdminName={superAdminName}
               makeMeSuperAdmin={makeMeSuperAdmin}
               claimSuperAdmin={claimSuperAdmin}
@@ -4018,8 +4302,16 @@ export default function BowlsTracker() {
             canRunDraws={canRunDraws}
             adminRole={role}
             members={members}
-            addMember={m => { const id = Date.now().toString(); const nm = { id, name: m.name, phone: m.phone || null, section: m.section, position: m.position || null, sort_order: 999 }; setMembers(p => [...p, nm]); supabase.from("members").insert(nm); }}
-            saveEdit={(id, data) => { setMembers(p => p.map(m => m.id === id ? { ...m, ...data } : m)); supabase.from("members").update(data).eq("id", id); }}
+            addMember={m => addRosterMember({ name: m.name, phone: m.phone || "", section: m.section, position: m.position || "" })}
+            saveEdit={(id, data) => {
+              const prevMembers = members;
+              setMembers(p => p.map(m => m.id === id ? { ...m, ...data } : m));
+              const current = members.find(m => m.id === id) || {};
+              adminSaveMember(id, { ...current, ...data }).then(saved => {
+                if (saved) setMembers(p => p.map(m => m.id === id ? { ...m, ...saved } : m));
+                else setMembers(prevMembers);
+              });
+            }}
             deleteMember={deleteMember}
             fixtures={fixtures}
             addFixture={addFixture}
@@ -4161,12 +4453,20 @@ export default function BowlsTracker() {
         losses={losses}
         linkedPhone={members.find(m => m.name === linkedMemberName)?.phone || ""}
         onUpdatePhone={async (phone) => {
-          const linked = members.find(m => m.name === linkedMemberName);
+          const linked = members.find(m => m.is_me) || members.find(m => m.name === linkedMemberName);
           if (!linked) return;
           setMembers(p => p.map(m => m.id === linked.id ? { ...m, phone } : m));
-          await supabase.from("members").update({ phone }).eq("id", linked.id);
+          const { data } = await tokenRpc("bowls_set_my_phone", { p_phone: phone });
+          if (data?.status !== "ok") membersLoad.reload();
         }}
-        onSwitchAccount={() => { setShowProfileSheet(false); setSettingName(true); setNameInput(myName); setNameStep("name"); }}
+        onSwitchAccount={async () => {
+          const previous = myName;
+          setShowProfileSheet(false);
+          // endSession owns both halves now: the server first, then the
+          // device. Prefilling the name is all that is left to do here.
+          await endSession();
+          setNameInput(previous);
+        }}
       />
 
       <BottomSheet open={showLinkSheet} onClose={closeLinkSheet} title="Link Your Name">
@@ -4187,7 +4487,7 @@ export default function BowlsTracker() {
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <button onClick={() => submitClaimRequest(linkStatus.member, linkStatus.currentHolder)}
+                <button onClick={() => submitClaimRequest(linkStatus.member)}
                   style={{ background: MID, border: "none", borderRadius: "9px", color: "#fff", padding: "13px", fontSize: "13px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>
                   Request Reassignment
                 </button>
@@ -4226,9 +4526,9 @@ export default function BowlsTracker() {
                     <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "600", color: TEXT }}>{m.name}</div>
                     <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, marginTop: "2px", textTransform: "capitalize" }}>{m.section || "Gents"}</div>
                   </div>
-                  {m.linked_cloudkey && m.linked_cloudkey !== cloudKey
+                  {m.is_linked && !m.is_me
                     ? <div style={{ fontFamily: F_UI, fontSize: "10px", color: TEXT3, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "3px 8px" }}>Claimed</div>
-                    : m.linked_cloudkey === cloudKey
+                    : m.is_me
                     ? <div style={{ fontFamily: F_UI, fontSize: "10px", color: GREEN, fontWeight: "700" }}>✓ You</div>
                     : null}
                 </button>
