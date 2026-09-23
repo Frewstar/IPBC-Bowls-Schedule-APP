@@ -19,10 +19,10 @@ project can be taken to exactly what production has by running this folder in
 filename order. That claim is tested rather than asserted — see **Rebuilding
 from scratch** at the foot of this file.
 
-Two things stay deliberately outside the folder, and both are correct: the
-planned `002` / `002b` lockdown (not written yet), and this club's own data —
-the tournaments, the roll of honour, the roster, the admin rows. A new club
-starts with empty tables and fills them in.
+One thing stays deliberately outside the folder: this club's own data — the
+tournaments, the roll of honour, the roster, the admin rows. A new club
+starts with empty tables and fills them in. The `002b` lockdown, long planned,
+is #23 and #24 below — **written, not yet applied**.
 
 ## Order and status
 
@@ -52,8 +52,11 @@ Run them in filename order. Every one is idempotent.
 | 20 | `20260901181006_sessions_can_be_ended.sql` | **Track 2, Step 3a** — a session can be ended: reset-PIN changes `pin_hash` and only that, and kills the account's sessions; a trigger kills them on lock; `bowls_session_state`; `bowls_sign_out_all` | Applied 1 Sep — verified live in a rolled-back transaction: the token resolves BEFORE the reset and not after, the old PIN stops working and the new one starts, `player_name` does not move |
 | 21 | `20260901181151_lockout_lookup_shape_tolerant.sql` | **Track 2** — a lock locks whichever way it was written. `bowls_sign_in` and `bowls_request_unlock` match on `bowls_name_key(name)` | Applied 1 Sep — found by the lock test, not by looking: an admin-written raw-name lock did not lock. Verified live: a raw-name lock now refuses sign-in and the unlock button reaches the row |
 | 22 | `20260901181531_account_name_in_payload.sql` | **Track 2** — `account_name` on all three payloads: the name an account signs in under | Applied 1 Sep — verified live: `bowls_account_name` equals the old client's `keyName(player_name)` on 92 of 92 accounts, so no member's `myName` changes |
+| 23 | `20260923_directory_lockdown_1_functions.sql` | **Track 2, Steps 3b–3e, server half** — a token-keyed function for every read and write the app made straight to `player_data`, `members`, `admins`, `login_lockouts` and the request tables; `bowls_change_pin`; the admin checks get a real lock; `bowls_register` stops getting round the lock; `must_change_pin`, switched off | **NOT YET APPLIED.** Apply **before** the client deploy — see **18. Directory lockdown** |
+| 24 | `20260923_directory_lockdown_2_close_tables.sql` | **Track 2, Step 4** — closes those tables to the publishable key, ends every session, takes keys out of `live_games`, and makes every account choose a new PIN | **NOT YET APPLIED.** Apply **after** the client deploy is live — see **18. Directory lockdown** |
 
-Status is no longer "my best understanding from our sessions". Every row above was
+Status is no longer "my best understanding from our sessions". Every row above
+(#23 and #24 aside — neither has been applied) was
 checked against `information_schema`, `pg_constraint`, `pg_indexes`, `pg_policies`,
 `pg_get_functiondef`, `pg_trigger`, `storage.buckets` and `storage.objects` on
 31 August 2026, and the whole folder was replayed into an empty database and
@@ -2705,6 +2708,82 @@ byte-for-byte the old client's `keyName(player_name)` on all 92.
 
 ---
 
+## 18. Directory lockdown
+
+**Files:** `supabase/migrations/20260923_directory_lockdown_1_functions.sql`,
+`supabase/migrations/20260923_directory_lockdown_2_close_tables.sql`
+**Status:** **Not yet applied.** Written against production as it stood after
+#16–#22 (checked function by function, see *A note on filenames*), and tested
+against a rebuild of this folder with `test/directoryLockdown.e2e.mjs` — not
+against production.
+
+### Why
+
+Every table behind the member directory still carries `ALL / using(true)` to
+the publishable key in the bundle. Anyone can read every member's phone
+number without signing in, and every legacy PIN sits in `player_name`,
+`members.linked_cloudkey` and `admins.cloud_key` in plain text. #16–#22 moved
+sign-in and registration onto the server and gave the app a session token;
+this finishes the job: Steps 3b–3e (the data sync, the directory, the roster
+links and the admin panel go through token-keyed functions) and Step 4 (the
+revoke).
+
+### The order — it matters
+
+1. **Apply #23** (`20260923_directory_lockdown_1_functions.sql`). Additive. The
+   client that is live keeps working. What it will notice: five wrong PINs now
+   lock the admin check for 24 hours (before, admin PINs could be guessed
+   without limit), and `bowls_register` answers `wrong_pin` / `locked` where it
+   used to make a second account or hand a locked account a token — the live
+   client shows that as "can't reach the server", and only reaches
+   `bowls_register` after `bowls_sign_in` has said `not_found`.
+2. **Deploy the client** that goes through the #23 functions. It works with #23
+   alone: nobody is asked for a new PIN yet.
+3. **Apply #24** (`20260923_directory_lockdown_2_close_tables.sql`) once that
+   deploy is live. It converts `live_games` creator keys to account ids, ends
+   every session, sets `must_change_pin` on every account, and closes the
+   tables. From then an old PIN signs in to one screen only — "Choose a new
+   PIN" — and no session is issued for it; every admin function refuses it.
+
+#24 run before the deploy breaks the directory, account sync and the admin
+panel for everyone. Phones that have not taken the app update (the "new
+version" banner) see "can't reach the club server" at sign-in until they do.
+
+### What stays as it is live
+
+`bowls_admin_reset_pin` (pin_hash only, every session ended),
+`bowls_request_unlock(p_name) returns void`, `bowls_session_*`,
+`bowls_sign_out(_all)` and the `login_lockouts_end_sessions` trigger are not
+touched. `bowls_sign_in` is the live body plus the `must_change_pin` answer.
+
+### No PIN in `player_name`, ever
+
+`bowls_change_pin` sets `player_name` to the row's uuid, the way
+`bowls_register` already does, and moves every copy of the old key with it:
+`members.linked_cloudkey`, `admins.cloud_key`, the claim queue and
+`live_games`. Since `bowls_account_name` falls back to `display_name` for a
+non-legacy key — which differs from the sign-in name on 6 of the 92 legacy
+accounts — the sign-in name is frozen into a new `player_data.account_name`
+first, and `bowls_account_name` reads that before anything else. For every row
+that exists today the column is null and the answer is unchanged.
+
+### After #24
+
+The super admin and admins should sign in and choose a new PIN first: until
+they do, nobody can reset a PIN, unlock an account or approve anything.
+Anyone who collected an old PIN could choose a new PIN first and take that
+account; the real member then finds their PIN no longer works, and an admin
+resets it.
+
+### Still open to the publishable key
+
+`club_config`, `club_fixtures`, `tournaments`, `club_events`, `live_games`,
+`draw_results`, `draw_pairings` deletes, and the `draws` write policies (which
+trust a `generated_by` name the client supplies). Being first to sign in under
+a member's name still makes the account theirs.
+
+---
+
 ## A note on filenames
 
 The four Step 2 files and the three above are named for their **exact ledger
@@ -2718,8 +2797,15 @@ is ledger `20260901134702`). Filename order still replays correctly: everything
 in these seven files depends only on the baseline and on
 `20260830_reset_pin_keeps_admin_row_in_step.sql`, all of which sort earlier, and
 nothing in `20260902`–`20260905` refers to sessions, registration or lockouts.
-That is a dependency argument, not a test — the folder has not been replayed
-into an empty database since these were added.
+That was a dependency argument when it was written; it has since been tested.
+On 23 September the folder was replayed into an empty database twice — in
+filename order, and in ledger order with these seven moved after
+`20260905` — and both results were compared with production: all 29
+`public` functions identical once comments are stripped (production was
+applied without them), and columns, constraints, indexes, policies,
+triggers, table grants and function EXECUTE grants identical, apart from
+production's seven backup tables (`*_backup_2026*`, `*_cleared_*`,
+`*_deleted_*`), which have RLS on, no policies, and no file here.
 
 Renaming the older files to their ledger versions too would remove the
 inconsistency. That is a change to files this branch does not otherwise touch,
