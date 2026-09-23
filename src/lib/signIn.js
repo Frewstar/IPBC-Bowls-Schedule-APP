@@ -12,7 +12,10 @@
 
 // Every status bowls_sign_in can return. Anything outside this set is a
 // server we do not understand, and the safe reading of that is "no".
-const SIGN_IN_STATUSES = ["ok", "invalid", "locked", "not_found", "wrong_pin"];
+// must_change_pin arrives with 20260923_directory_lockdown: the PIN is right,
+// but it is one that sat in a readable column, and a new one has to be chosen
+// before a session is issued.
+const SIGN_IN_STATUSES = ["ok", "invalid", "locked", "not_found", "wrong_pin", "must_change_pin"];
 
 /**
  * @param {{ data: any, error: any }} res — straight from supabase.rpc()
@@ -23,6 +26,7 @@ const SIGN_IN_STATUSES = ["ok", "invalid", "locked", "not_found", "wrong_pin"];
  *   wrong-pin  — lockout.attempts, lockout.remaining
  *   register   — no account under this name yet
  *   invalid    — the server rejected the name or PIN as malformed
+ *   change-pin — right PIN, but a new one must be chosen (bowls_change_pin)
  */
 export function signInOutcome({ data, error } = {}) {
   // An error, a null, or a body with no status at all. The last one matters:
@@ -45,22 +49,40 @@ export function signInOutcome({ data, error } = {}) {
       };
     case "not_found":
       return { action: "register" };
+    case "must_change_pin":
+      return { action: "change-pin" };
     default: // "invalid"
       return { action: "invalid" };
   }
 }
 
 /**
- * bowls_register. "existing" is not an error — two members can share a name,
- * so signing in an account that already matches this name and PIN is the
- * correct outcome, not a clash.
+ * bowls_register. "existing" is not an error: it is the right PIN for an
+ * account that already has this name, and it signs in.
+ *
+ * Since 20260923_directory_lockdown_1, a wrong PIN for a name that already
+ * has an account is counted and refused, like bowls_sign_in — it no longer
+ * makes a second account under that name — and a locked name is refused.
+ * Those come back as the same screen states sign-in uses.
  */
 export function registerOutcome({ data, error } = {}) {
   if (error || !data || typeof data !== "object") return { action: "offline" };
-  if (data.status === "created" || data.status === "existing") {
-    return { action: "signed-in", payload: data };
+  switch (data.status) {
+    case "created":
+    case "existing":
+      return { action: "signed-in", payload: data };
+    case "must_change_pin":
+      return { action: "change-pin" };
+    case "locked":
+      return { action: "locked", lockout: { locked_until: data.locked_until ?? null } };
+    case "wrong_pin":
+      return {
+        action: "wrong-pin",
+        lockout: { attempts: data.attempts ?? null, remaining: data.remaining ?? null },
+      };
+    default:
+      // "invalid", or anything we do not recognise. Registration is a write,
+      // so an unrecognised answer must not be treated as success.
+      return { action: "offline" };
   }
-  // "invalid", or anything we do not recognise. Registration is a write, so
-  // an unrecognised answer must not be treated as success.
-  return { action: "offline" };
 }

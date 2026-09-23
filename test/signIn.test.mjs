@@ -49,6 +49,14 @@ check("not_found offers registration",
   signInOutcome({ data: { status: "not_found" }, error: null }),
   { action: "register" });
 
+check("must_change_pin asks for a new PIN, and is not a sign-in",
+  signInOutcome({ data: { status: "must_change_pin", account_name: "J FREW" }, error: null }),
+  { action: "change-pin" });
+
+check("must_change_pin carrying a token still does not sign in",
+  signInOutcome({ data: { status: "must_change_pin", token: "x" }, error: null }),
+  { action: "change-pin" });
+
 check("invalid is neither a sign-in nor a wrong PIN",
   signInOutcome({ data: { status: "invalid" }, error: null }),
   { action: "invalid" });
@@ -97,14 +105,28 @@ check("created signs in",
   registerOutcome({ data: { ...session, status: "created" }, error: null }),
   { action: "signed-in", payload: { ...session, status: "created" } });
 
-// Two members can share a name, so this is a real case rather than a clash.
-check("existing signs in — sharing a name is not an error",
+// The right PIN for an account that already has this name.
+check("existing signs in",
   registerOutcome({ data: { ...session, status: "existing" }, error: null }),
   { action: "signed-in", payload: { ...session, status: "existing" } });
 
 check("invalid does not sign in",
   registerOutcome({ data: { status: "invalid" }, error: null }),
   { action: "offline" });
+
+// Since 20260923_directory_lockdown_1: a wrong PIN for an existing name is
+// counted, not turned into a second account.
+check("wrong_pin is the screen's wrong-pin, with the count",
+  registerOutcome({ data: { status: "wrong_pin", attempts: 1, remaining: 4 }, error: null }),
+  { action: "wrong-pin", lockout: { attempts: 1, remaining: 4 } });
+
+check("locked is locked",
+  registerOutcome({ data: { status: "locked", locked_until: "2026-09-24T10:00:00Z" }, error: null }),
+  { action: "locked", lockout: { locked_until: "2026-09-24T10:00:00Z" } });
+
+check("must_change_pin asks for a new PIN",
+  registerOutcome({ data: { status: "must_change_pin" }, error: null }),
+  { action: "change-pin" });
 
 check("an error does not sign in",
   registerOutcome({ data: null, error: { message: "Failed to fetch" } }),

@@ -408,11 +408,11 @@ function AdminMembers({ members = [], addMember, saveEdit, deleteMember, phoneRe
               <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{req.requester_display_name}</div>
               <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT3, marginTop: "3px", lineHeight: 1.5 }}>
                 Requesting to claim <span style={{ color: TEXT, fontWeight: "600" }}>{req.target_member_name}</span>
-                {req.current_linked_cloudkey && <span> (currently linked to {req.current_linked_cloudkey.split("-")[0]})</span>}
+                {req.current_holder_name && <span> (currently linked to {req.current_holder_name})</span>}
               </div>
               <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
-                <button onClick={() => resolveClaimRequest(req.id, true, req)} style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 14px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Approve</button>
-                <button onClick={() => resolveClaimRequest(req.id, false, req)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "6px 10px", fontSize: "12px", fontFamily: F_UI, cursor: "pointer" }}>Reject</button>
+                <button onClick={() => resolveClaimRequest(req.id, true)} style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 14px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Approve</button>
+                <button onClick={() => resolveClaimRequest(req.id, false)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT3, padding: "6px 10px", fontSize: "12px", fontFamily: F_UI, cursor: "pointer" }}>Reject</button>
               </div>
             </div>
           ))}
@@ -530,9 +530,8 @@ function ResetPin({ members = [], resetMemberPin, myName }) {
   const results = search.trim().length >= 2
     ? members.filter(m => m.name.toUpperCase().includes(search.toUpperCase())).slice(0, 8)
     : [];
-  const hasAccount = !!picked?.linked_cloudkey;
-  const isMe = !!(picked && myName && picked.linked_cloudkey &&
-    picked.linked_cloudkey.replace(/-[^-]*$/, "").toUpperCase() === myName.toUpperCase());
+  const hasAccount = !!picked?.is_linked;
+  const isMe = !!picked?.is_me;
   const ready = hasAccount && /^\d{4}$/.test(newPin) && /^\d{4}$/.test(adminPin) && !busy;
 
   function startOver() {
@@ -596,8 +595,8 @@ function ResetPin({ members = [], resetMemberPin, myName }) {
                 <button key={m.id} onClick={() => { setPicked(m); setResult(null); }}
                   style={{ width: "100%", textAlign: "left", background: SURFACE, border: "none", borderBottom: `1px solid ${BORDER}`, padding: "11px 13px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
                   <span style={{ fontFamily: F_SANS, fontSize: "14px", fontWeight: "500", color: TEXT }}>{m.name}</span>
-                  <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: m.linked_cloudkey ? GREEN : TEXT3 }}>
-                    {m.linked_cloudkey ? "Has account" : "No account"}
+                  <span style={{ fontFamily: F_UI, fontSize: "10px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.08em", color: m.is_linked ? GREEN : TEXT3 }}>
+                    {m.is_linked ? "Has account" : "No account"}
                   </span>
                 </button>
               ))}
@@ -666,61 +665,69 @@ function ResetPin({ members = [], resetMemberPin, myName }) {
   );
 }
 
+// Accounts come from bowls_admin_panel_data: id, account_name, name_key,
+// must_change_pin, member_name, role. No PIN and no key — the list used to
+// print the last digits of everybody's PIN, read out of player_name, and
+// since 1 Sep would have shown a uuid for a new account.
 function AppAccounts({ registeredUsers, lockouts = [], lockAppAccount, unlockAppAccount, deleteAppAccount, isSuperAdmin }) {
   const [confirmDel, setConfirmDel] = useState(null);
+  const [delMsg, setDelMsg] = useState(null);
 
+  // Lockout rows are keyed by the squashed name (the server's counter) or,
+  // for rows the old app wrote, the name as typed.
   const lockoutMap = {};
   lockouts.forEach(l => { lockoutMap[l.name] = l; });
-
-  function isLocked(playerName) {
-    const parts = playerName.split("-");
-    const name = parts.slice(0, -1).join("-");
-    const row = lockoutMap[name];
-    return row?.locked_until && new Date(row.locked_until) > new Date();
-  }
-
-  function getLockoutName(playerName) {
-    const parts = playerName.split("-");
-    return parts.slice(0, -1).join("-");
-  }
-
-  function getLockoutRow(playerName) {
-    return lockoutMap[getLockoutName(playerName)];
-  }
+  const isActive = row => !!(row?.locked_until && new Date(row.locked_until) > new Date());
 
   if (registeredUsers.length === 0) {
     return <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT3, padding: "20px 0", textAlign: "center" }}>No app accounts found</div>;
   }
 
+  async function confirmDelete(u) {
+    setConfirmDel(null);
+    const res = await deleteAppAccount(u);
+    setDelMsg(res?.status === "ok" ? null : { id: u.id, text: res?.message || "Couldn't delete that account." });
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
       {registeredUsers.map(u => {
-        const locked = isLocked(u.player_name);
-        const lockRow = getLockoutRow(u.player_name);
-        const namePart = getLockoutName(u.player_name);
-        const pin = u.player_name.split("-").slice(-1)[0];
+        const lockRow = lockoutMap[u.name_key] || lockoutMap[(u.account_name || "").toUpperCase()];
+        const locked = isActive(lockRow);
+        const adminLocked = isActive(lockoutMap["ADMIN:" + u.name_key]);
+        const lockName = u.name_key || u.account_name;
         return (
-          <div key={u.player_name} style={{ background: SURFACE, border: `1px solid ${locked ? LOSS_RED + "66" : BORDER}`, borderRadius: "10px", padding: "12px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{namePart} <span style={{ color: TEXT3, fontWeight: "400" }}>•••• {pin}</span></div>
-              <div style={{ fontFamily: F_UI, fontSize: "11px", color: locked ? LOSS_RED : TEXT3, marginTop: "2px" }}>
-                {locked ? (lockRow?.locked_until === "2099-01-01T00:00:00.000Z" ? "Locked by admin" : "Locked (too many attempts)") : "Active"}
+          <div key={u.id} style={{ background: SURFACE, border: `1px solid ${locked ? LOSS_RED + "66" : BORDER}`, borderRadius: "10px", padding: "12px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>
+                  {u.account_name || u.display_name}
+                  {u.member_name && u.member_name !== (u.account_name || u.display_name) && <span style={{ color: TEXT3, fontWeight: "400" }}> · {u.member_name}</span>}
+                </div>
+                <div style={{ fontFamily: F_UI, fontSize: "11px", color: locked ? LOSS_RED : TEXT3, marginTop: "2px" }}>
+                  {locked ? (lockRow?.locked_until?.startsWith("2099") ? "Locked by admin" : "Locked (too many attempts)") : "Active"}
+                  {adminLocked && " · admin check locked"}
+                  {u.must_change_pin && <span style={{ marginLeft: "6px", background: `${GOLD}22`, color: GOLD_MUTED, borderRadius: "4px", padding: "1px 6px", fontSize: "10px" }}>New PIN needed</span>}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                {locked || adminLocked
+                  ? <button onClick={() => unlockAppAccount(lockName)} style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 11px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Unlock</button>
+                  : <button onClick={() => lockAppAccount(lockName)} style={{ background: LOSS_RED, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 11px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Lock</button>
+                }
+                {isSuperAdmin && (
+                  confirmDel === u.id
+                    ? <div style={{ display: "flex", gap: "4px" }}>
+                        <button onClick={() => confirmDelete(u)} style={{ background: LOSS_RED, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 10px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Confirm</button>
+                        <button onClick={() => setConfirmDel(null)} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "6px 10px", fontSize: "12px", fontFamily: F_UI, cursor: "pointer" }}>Cancel</button>
+                      </div>
+                    : <button onClick={() => { setConfirmDel(u.id); setDelMsg(null); }} style={{ background: "none", border: `1px solid ${LOSS_RED}44`, borderRadius: "6px", color: LOSS_RED, padding: "6px 10px", fontSize: "12px", fontFamily: F_UI, cursor: "pointer" }}><Trash2 size={13} /></button>
+                )}
               </div>
             </div>
-            <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-              {locked
-                ? <button onClick={() => unlockAppAccount(namePart)} style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 11px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Unlock</button>
-                : <button onClick={() => lockAppAccount(namePart)} style={{ background: LOSS_RED, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 11px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Lock</button>
-              }
-              {isSuperAdmin && (
-                confirmDel === u.player_name
-                  ? <div style={{ display: "flex", gap: "4px" }}>
-                      <button onClick={() => { deleteAppAccount(u.player_name); setConfirmDel(null); }} style={{ background: LOSS_RED, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 10px", fontSize: "12px", fontFamily: F_UI, fontWeight: "700", cursor: "pointer" }}>Confirm</button>
-                      <button onClick={() => setConfirmDel(null)} style={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: "6px", color: TEXT2, padding: "6px 10px", fontSize: "12px", fontFamily: F_UI, cursor: "pointer" }}>Cancel</button>
-                    </div>
-                  : <button onClick={() => setConfirmDel(u.player_name)} style={{ background: "none", border: `1px solid ${LOSS_RED}44`, borderRadius: "6px", color: LOSS_RED, padding: "6px 10px", fontSize: "12px", fontFamily: F_UI, cursor: "pointer" }}><Trash2 size={13} /></button>
-              )}
-            </div>
+            {delMsg?.id === u.id && (
+              <div style={{ fontFamily: F_UI, fontSize: "11px", color: LOSS_RED, marginTop: "6px" }}>{delMsg.text}</div>
+            )}
           </div>
         );
       })}
@@ -965,8 +972,8 @@ function AdminAccess({ adminList = [], pendingAdminRequests = [], approveAdminRe
       {/* Current admins */}
       <div style={{ marginBottom: "16px" }}>
         <div style={{ fontFamily: F_UI, fontSize: "12px", fontWeight: "700", color: TEXT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Current Admins</div>
-        {adminList.filter(a => a.cloud_key !== null).map(a => (
-          <div key={a.cloud_key} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", marginBottom: "6px" }}>
+        {adminList.map(a => (
+          <div key={a.player_id || a.player_name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", marginBottom: "6px" }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT }}>{a.display_name || a.player_name}</div>
               <div style={{ fontFamily: F_UI, fontSize: "11px", color: a.role === "super_admin" ? GOLD_MUTED : a.role === "admin" ? TEXT3 : MID }}>{ROLE_LABELS[a.role] || a.role}</div>
@@ -1081,7 +1088,7 @@ function AdminLockouts({ lockouts, clearLockout }) {
                   {l.unlock_requested && <span style={{ marginLeft: "6px", background: `${GOLD}22`, color: GOLD_MUTED, borderRadius: "4px", padding: "1px 6px", fontSize: "10px" }}>Unlock requested</span>}
                 </div>
               </div>
-              <button onClick={() => clearLockout(l.id)}
+              <button onClick={() => clearLockout(l)}
                 style={{ background: GREEN, border: "none", borderRadius: "6px", color: "#fff", padding: "6px 12px", fontSize: "12px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700" }}>
                 Unlock
               </button>
