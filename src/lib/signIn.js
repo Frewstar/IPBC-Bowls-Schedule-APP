@@ -12,9 +12,10 @@
 
 // Every status bowls_sign_in can return. Anything outside this set is a
 // server we do not understand, and the safe reading of that is "no".
-// must_change_pin arrives with 20260923_directory_lockdown: the PIN is right,
-// but it is one that sat in a readable column, and a new one has to be chosen
-// before a session is issued.
+// must_change_pin came with 20260923_directory_lockdown. Since
+// 20260925_keep_existing_pin_1 the server no longer sends it — members keep
+// the PIN they have — but it stays recognised so a server without that file
+// still gets the member somewhere rather than nowhere.
 const SIGN_IN_STATUSES = ["ok", "invalid", "locked", "not_found", "wrong_pin", "must_change_pin"];
 
 /**
@@ -43,6 +44,9 @@ export function signInOutcome({ data, error } = {}) {
     case "locked":
       return { action: "locked", lockout: { locked_until: data.locked_until ?? null } };
     case "wrong_pin":
+      // The wrong PIN that uses up the last try comes back as wrong_pin with
+      // the lock already set. Say "locked", not "0 attempts left".
+      if (data.locked_until) return { action: "locked", lockout: { locked_until: data.locked_until } };
       return {
         action: "wrong-pin",
         lockout: { attempts: data.attempts ?? null, remaining: data.remaining ?? null },
@@ -76,13 +80,51 @@ export function registerOutcome({ data, error } = {}) {
     case "locked":
       return { action: "locked", lockout: { locked_until: data.locked_until ?? null } };
     case "wrong_pin":
+      if (data.locked_until) return { action: "locked", lockout: { locked_until: data.locked_until } };
       return {
         action: "wrong-pin",
         lockout: { attempts: data.attempts ?? null, remaining: data.remaining ?? null },
       };
+    case "invalid":
+      return { action: "invalid" };
     default:
-      // "invalid", or anything we do not recognise. Registration is a write,
-      // so an unrecognised answer must not be treated as success.
+      // Anything we do not recognise. Registration is a write, so an
+      // unrecognised answer must not be treated as success.
       return { action: "offline" };
+  }
+}
+
+// ── Words for a refusal ────────────────────────────────────────────────────
+// Every place the app refuses a PIN says why, in plain words. These are the
+// ones shared between screens, kept here so they can be tested.
+
+export const LOCKED_MESSAGE =
+  "Too many tries. Please wait 24 hours, or ask a club admin to unlock your account.";
+export const FORGOT_PIN_MESSAGE =
+  "Ask a club admin to reset it. They can set a new PIN for you from the admin panel.";
+export const OFFLINE_MESSAGE =
+  "Can't reach the club server. Check your connection and try again.";
+
+/**
+ * bowls_change_pin's or bowls_change_my_pin's answer, for anything but "ok".
+ * Never empty.
+ * @param {{ data: any, error: any }} res — straight from supabase.rpc()
+ */
+export function changePinMessage({ data, error } = {}) {
+  if (error || !data || typeof data !== "object") return OFFLINE_MESSAGE;
+  switch (data.status) {
+    case "denied":
+      return "That PIN doesn't match your current PIN. Try again — after 5 wrong tries the account locks for 24 hours.";
+    case "locked":
+      return LOCKED_MESSAGE;
+    case "bad_pin":
+      return "Your new PIN must be exactly 4 digits.";
+    case "expired":
+      return "You've been signed out on this phone, so the PIN wasn't changed. Sign in again, then change it.";
+    case "must_change_pin":
+      // Only from a server without 20260925_keep_existing_pin_1.
+      return "The club server needs updating before PINs can be changed. Please ask a club admin.";
+    default:
+      return data.message || "That PIN couldn't be saved. Please try again, or ask a club admin.";
   }
 }

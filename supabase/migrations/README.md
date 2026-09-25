@@ -54,6 +54,8 @@ Run them in filename order. Every one is idempotent.
 | 22 | `20260901181531_account_name_in_payload.sql` | **Track 2** — `account_name` on all three payloads: the name an account signs in under | Applied 1 Sep — verified live: `bowls_account_name` equals the old client's `keyName(player_name)` on 92 of 92 accounts, so no member's `myName` changes |
 | 23 | `20260923_directory_lockdown_1_functions.sql` | **Track 2, Steps 3b–3e, server half** — a token-keyed function for every read and write the app made straight to `player_data`, `members`, `admins`, `login_lockouts` and the request tables; `bowls_change_pin`; the admin checks get a real lock; `bowls_register` stops getting round the lock; `must_change_pin`, switched off | **NOT YET APPLIED.** Apply **before** the client deploy — see **18. Directory lockdown** |
 | 24 | `20260923_directory_lockdown_2_close_tables.sql` | **Track 2, Step 4** — closes those tables to the publishable key, ends every session, takes keys out of `live_games`, and makes every account choose a new PIN | **NOT YET APPLIED.** Apply **after** the client deploy is live — see **18. Directory lockdown** |
+| 25 | `20260925_keep_existing_pin_1_functions.sql` | **Keep your existing PIN** (Joseph, 25 Sep) — `must_change_pin` no longer enforced anywhere; any 4 digits accepted on a PIN change, the old one included; new `bowls_change_my_pin(token, new)` so a signed-in member changes it without the current PIN; sessions 365 days rolling (were 90) | **NOT YET APPLIED.** Apply **before** merging the client — see **19. Keep your existing PIN** |
+| 26 | `20260925_keep_existing_pin_2_clear_flag.sql` | Clears `must_change_pin` where `pin_set_at is null`. That flag, those rows, nothing else. Prints before/after counts | **NOT YET APPLIED.** After #25. Re-run if #24 is applied after it |
 
 Status is no longer "my best understanding from our sessions". Every row above
 (#23 and #24 aside — neither has been applied) was
@@ -2781,6 +2783,38 @@ resets it.
 `draw_results`, `draw_pairings` deletes, and the `draws` write policies (which
 trust a `generated_by` name the client supplies). Being first to sign in under
 a member's name still makes the account theirs.
+
+---
+
+## 19. Keep your existing PIN
+
+Joseph, 25 Sep: older members forget new PINs. Members sign in with the
+4-digit PIN they already have; nobody is made to choose a new one; a member
+may change their PIN (signed in is enough) and may go back to an old one.
+Stronger sign-in — a code to the email on file — is the next brief.
+
+Everything else from #23/#24 stands: sign-in on the server with the five-try,
+24-hour lock; sessions; tables closed to the publishable key; admin grants
+server-only.
+
+### Order
+
+1. **Apply #25.** Safe with the client that is live today, and safe whether or
+   not #24 has run. From here the server never asks for a new PIN.
+2. **Apply #26.** Paste its NOTICE lines (before/after counts) into the file's
+   verification block.
+3. **Merge the client.** It has the "Change my PIN" button (profile sheet),
+   which calls `bowls_change_my_pin` from #25 — so #25 goes first.
+4. If #24 is applied **after** #26, run #26 again: #24 sets the flag on every
+   account the first time it runs. #25 means the flag is ignored anyway; #26
+   just keeps the column truthful.
+
+The client still understands `must_change_pin` (a "Set your PIN" screen), only
+so a phone that meets a server without #25 is not stranded.
+
+Test: `npx vite build && node test/keepPin.e2e.mjs`.
+`test/directoryLockdown.e2e.mjs` now stops at #24 — it is the test of the
+lockdown as written, and of the new client against a server without #25.
 
 ---
 

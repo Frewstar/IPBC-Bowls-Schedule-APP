@@ -707,7 +707,6 @@ function AppAccounts({ registeredUsers, lockouts = [], lockAppAccount, unlockApp
                 <div style={{ fontFamily: F_UI, fontSize: "11px", color: locked ? LOSS_RED : TEXT3, marginTop: "2px" }}>
                   {locked ? (lockRow?.locked_until?.startsWith("2099") ? "Locked by admin" : "Locked (too many attempts)") : "Active"}
                   {adminLocked && " · admin check locked"}
-                  {u.must_change_pin && <span style={{ marginLeft: "6px", background: `${GOLD}22`, color: GOLD_MUTED, borderRadius: "4px", padding: "1px 6px", fontSize: "10px" }}>New PIN needed</span>}
                 </div>
               </div>
               <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>

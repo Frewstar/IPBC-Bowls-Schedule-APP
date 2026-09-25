@@ -15,7 +15,7 @@
 //   * "wrong_pin" (server) and "wrong-pin" (screen) are different strings and
 //     always will be; the mapping between them is the thing being tested
 
-import { signInOutcome, registerOutcome } from "../src/lib/signIn.js";
+import { signInOutcome, registerOutcome, changePinMessage, LOCKED_MESSAGE, OFFLINE_MESSAGE } from "../src/lib/signIn.js";
 
 let failures = 0;
 function check(name, got, want) {
@@ -110,9 +110,9 @@ check("existing signs in",
   registerOutcome({ data: { ...session, status: "existing" }, error: null }),
   { action: "signed-in", payload: { ...session, status: "existing" } });
 
-check("invalid does not sign in",
+check("invalid does not sign in, and is said as invalid (not 'offline')",
   registerOutcome({ data: { status: "invalid" }, error: null }),
-  { action: "offline" });
+  { action: "invalid" });
 
 // Since 20260923_directory_lockdown_1: a wrong PIN for an existing name is
 // counted, not turned into a second account.
@@ -138,6 +138,26 @@ check("an error does not sign in",
 check("an unrecognised status does not sign in",
   registerOutcome({ data: { status: "done" }, error: null }),
   { action: "offline" });
+
+check("the wrong PIN that locks the account reads as locked, not '0 left'",
+  signInOutcome({ data: { status: "wrong_pin", attempts: 5, remaining: 0, locked_until: "2026-09-26T20:00:00Z" }, error: null }),
+  { action: "locked", lockout: { locked_until: "2026-09-26T20:00:00Z" } });
+check("register: the wrong PIN that locks reads as locked",
+  registerOutcome({ data: { status: "wrong_pin", attempts: 5, remaining: 0, locked_until: "2026-09-26T20:00:00Z" }, error: null }),
+  { action: "locked", lockout: { locked_until: "2026-09-26T20:00:00Z" } });
+
+// ── changePinMessage: every refusal has words ─────────────────────────────
+console.log("\nchangePinMessage");
+check("wrong current PIN says so", /doesn't match/.test(changePinMessage({ data: { status: "denied" } })), true);
+check("locked says wait or ask an admin", changePinMessage({ data: { status: "locked" } }), LOCKED_MESSAGE);
+check("locked message names the wait and the admin", /24 hours/.test(LOCKED_MESSAGE) && /club admin/.test(LOCKED_MESSAGE), true);
+check("no connection says so", changePinMessage({ data: null, error: { message: "Failed to fetch" } }), OFFLINE_MESSAGE);
+check("bad PIN says 4 digits", /4 digits/.test(changePinMessage({ data: { status: "bad_pin" } })), true);
+check("an old server's own message is used", changePinMessage({ data: { status: "same_pin", message: "Choose a PIN different from your old one." } }), "Choose a PIN different from your old one.");
+for (const status of ["denied", "locked", "bad_pin", "must_change_pin", "expired", "whatever", undefined]) {
+  const m = changePinMessage({ data: status ? { status } : {} });
+  check(`never empty: ${status}`, typeof m === "string" && m.length > 10, true);
+}
 
 console.log(failures ? `\n${failures} FAILED\n` : "\nall passed\n");
 process.exit(failures ? 1 : 0);

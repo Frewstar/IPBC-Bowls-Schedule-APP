@@ -1,20 +1,27 @@
 import { useState } from "react";
 import { Lock } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
+import { changePinMessage } from "../lib/signIn.js";
 import { GREEN, MID, SURFACE, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../lib/theme.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// "Choose a new PIN". Shown over everything when the server answers
-// must_change_pin: every PIN set before the directory lockdown sat in a table
-// anyone could read, so every account chooses a new one. Nothing else works
-// with the old PIN — the server refuses the directory, saving, linking and
-// every admin function — so this is not a prompt that can be put off, only
-// one that can be left by signing out.
+// Change your PIN.
 //
-// bowls_change_pin checks the current PIN and sets the new one. onDone gets
-// its answer and the new PIN; onSignOut leaves without changing.
+// Two ways in:
+//   * From the profile sheet ("Change my PIN"), when the member wants to.
+//     Being signed in is enough (25 Sep): no current PIN, just the new one
+//     twice, through bowls_change_my_pin with the session token. Any 4 digits
+//     are accepted — including the PIN they have now or had before.
+//   * required: the server answered must_change_pin. Since
+//     20260925_keep_existing_pin_1 nothing does; this stays only so a phone
+//     that meets a server without that file is not left with no way in. The
+//     current PIN is the one just typed at sign-in, so it is not asked again.
+//
+// Either function sets the new PIN, ends every other session and hands back a
+// fresh one for this device. onDone gets its answer and the new PIN; onCancel
+// leaves without changing anything.
 // ─────────────────────────────────────────────────────────────────────────────
-export default function ChangePinSheet({ name, pin, onDone, onSignOut }) {
+export default function ChangePinSheet({ name, pin = "", token = "", required = false, onDone, onCancel }) {
   const [newPin, setNewPin]   = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy]       = useState(false);
@@ -24,17 +31,21 @@ export default function ChangePinSheet({ name, pin, onDone, onSignOut }) {
   const ready = /^\d{4}$/.test(newPin) && confirm === newPin && !busy;
 
   async function submit() {
-    if (!ready) return;
-    if (newPin === pin) { setError("Choose a PIN different from your old one."); return; }
+    if (busy) return;
+    if (!/^\d{4}$/.test(newPin))  { setError("Your new PIN must be exactly 4 digits."); return; }
+    if (confirm !== newPin)       { setError("The two new PINs don't match. Type the same 4 digits in both boxes."); return; }
     setBusy(true);
     setError(null);
-    const { data, error: err } = await supabase.rpc("bowls_change_pin", { p_name: name, p_pin: pin, p_new_pin: newPin });
+    let res;
+    try {
+      res = required
+        ? await supabase.rpc("bowls_change_pin", { p_name: name, p_pin: pin, p_new_pin: newPin })
+        : await supabase.rpc("bowls_change_my_pin", { p_token: token, p_new_pin: newPin });
+    }
+    catch (e) { res = { data: null, error: e }; }
     setBusy(false);
-    if (err || !data) { setError("Can't reach the club server. Check your connection and try again."); return; }
-    if (data.status === "ok") { onDone(data, newPin); return; }
-    if (data.status === "denied") { setError("Your old PIN no longer works on this phone. Sign out, then sign in again or ask an admin to reset it."); return; }
-    if (data.status === "locked") { setError("This account is locked after too many wrong PINs. Ask an admin to unlock it."); return; }
-    setError(data.message || "That PIN can't be used. Choose a different one.");
+    if (!res.error && res.data?.status === "ok") { onDone(res.data, newPin); return; }
+    setError(changePinMessage(res));
   }
 
   const pinBox = (value, set, extra = {}) => (
@@ -53,10 +64,14 @@ export default function ChangePinSheet({ name, pin, onDone, onSignOut }) {
       <div style={{ background: SURFACE, borderRadius: "16px", padding: "28px 22px", width: "100%", maxWidth: "400px", boxSizing: "border-box", boxShadow: "0 8px 32px rgba(0,0,0,0.25)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
           <Lock size={20} strokeWidth={2} color={GREEN} />
-          <div id="change-pin-title" style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "600", color: GREEN }}>Choose a new PIN</div>
+          <div id="change-pin-title" style={{ fontFamily: F_SANS, fontSize: "22px", fontWeight: "600", color: GREEN }}>
+            {required ? "Set your PIN" : "Change your PIN"}
+          </div>
         </div>
         <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.55, marginBottom: "18px" }}>
-          To keep members' phone numbers safe, everyone is choosing a new PIN. Your old PIN stops working once you've chosen one, and nothing else in the app will work for <strong>{name}</strong> until you have.
+          {required
+            ? <>Please set a 4-digit PIN for <strong>{name}</strong> to carry on.</>
+            : <>Choose any 4 digits for <strong>{name}</strong>. You can go back to a PIN you've used before. Your other phones and tablets will need the new PIN.</>}
         </div>
 
         <div style={{ marginBottom: "12px" }}>
@@ -64,19 +79,19 @@ export default function ChangePinSheet({ name, pin, onDone, onSignOut }) {
           {pinBox(newPin, setNewPin)}
         </div>
         <div style={{ marginBottom: "6px" }}>
-          {label("Confirm new PIN")}
+          {label("Type the new PIN again")}
           {pinBox(confirm, setConfirm, mismatch ? { border: `1px solid ${LOSS_RED}` } : {})}
         </div>
-        {mismatch && <div style={{ fontFamily: F_UI, fontSize: "12px", color: LOSS_RED, marginBottom: "6px" }}>PINs don't match — try again</div>}
-        {error && <div style={{ fontFamily: F_UI, fontSize: "12px", color: LOSS_RED, lineHeight: 1.5, marginBottom: "6px" }}>{error}</div>}
+        {mismatch && !error && <div role="alert" style={{ fontFamily: F_UI, fontSize: "12px", color: LOSS_RED, marginBottom: "6px" }}>The two new PINs don't match — try again</div>}
+        {error && <div role="alert" style={{ fontFamily: F_UI, fontSize: "12px", color: LOSS_RED, lineHeight: 1.5, marginBottom: "6px" }}>{error}</div>}
 
-        <button onClick={submit} disabled={!ready}
-          style={{ width: "100%", marginTop: "12px", background: ready ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "13px", fontSize: "14px", cursor: ready ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
-          {busy ? "Saving…" : "Save new PIN"}
+        <button onClick={submit} disabled={busy}
+          style={{ width: "100%", marginTop: "12px", background: ready ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "13px", fontSize: "14px", cursor: busy ? "default" : "pointer", fontFamily: F_UI, fontWeight: "700" }}>
+          {busy ? "Saving…" : "Save PIN"}
         </button>
-        <button onClick={onSignOut}
+        <button onClick={onCancel}
           style={{ width: "100%", marginTop: "8px", background: "none", border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
-          Not now — sign out
+          {required ? "Not now — sign out" : "Cancel"}
         </button>
       </div>
     </div>
