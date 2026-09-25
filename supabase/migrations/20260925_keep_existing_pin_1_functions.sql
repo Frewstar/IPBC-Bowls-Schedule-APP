@@ -24,9 +24,9 @@
 --      breaks. Clearing the flag on existing accounts is the job of
 --      20260925_keep_existing_pin_2_clear_flag.sql, kept separate so that
 --      file touches the flag and nothing else.
---   2. Changing a PIN accepts any 4 digits, including the PIN the member
---      has now or had before. No "different from your old one" rule, no
---      list of refused PINs. New: bowls_change_my_pin(token, new PIN), so a
+--   2. Changing a PIN accepts the PIN the member has now or had before:
+--      no "different from your old one" rule (the weak-PIN list in 5 still
+--      applies). New: bowls_change_my_pin(token, new PIN), so a
 --      signed-in member can change it without typing the current one
 --      (bowls_set_pin holds the shared body and is closed to the key).
 --   3. Sessions last 12 months (365 days) instead of 90, still rolling: every
