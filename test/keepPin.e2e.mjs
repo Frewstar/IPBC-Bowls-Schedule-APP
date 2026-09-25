@@ -25,6 +25,7 @@
 //      paused, club-wide attack tightens it, a normal member still gets in.
 //  10. (follow-up) Weak PINs refused when set or changed; existing ones work.
 //  11. (follow-up) Admin reset refuses the weak list too, and the admin is told.
+//  12. An admin resetting their own PIN lands on the sign-in card, not a blank page.
 //
 //  Run:   npx vite build && node test/keepPin.e2e.mjs
 //  Needs: PostgreSQL (16 used), superuser URL in BOWLS_E2E_PG
@@ -607,6 +608,44 @@ async function run(browser) {
     const unchanged = psql(DB_URL, "select bowls_sign_in('TEST BOB', '1954')->>'status'", { asAnon: true });
     check("admin panel: and the member's PIN is unchanged", unchanged === "ok", unchanged);
     psql(DB_URL, "delete from login_lockouts");
+  }
+
+  // 12. An admin resets their OWN PIN from the panel: that phone is signed
+  // out, and must land on the sign-in card, not a blank page.
+  {
+    const { context, page } = await openApp(browser, { bowls_myname: "TEST CAROL", bowls_mypin: "3141" });
+    await page.waitForTimeout(1800);
+    await page.locator('button[title="Admin"]').click();
+    await page.waitForTimeout(700);
+    const membersButtons = page.getByRole("button", { name: "Members", exact: true });
+    for (let i = 0; i < await membersButtons.count(); i++) {
+      await membersButtons.nth(i).click();
+      await page.waitForTimeout(500);
+      if (await page.getByRole("button", { name: "Reset PIN", exact: true }).count()) break;
+      await page.locator('button[title="Admin"]').click();
+      await page.waitForTimeout(500);
+    }
+    await page.getByRole("button", { name: "Reset PIN", exact: true }).click();
+    await page.waitForTimeout(500);
+    await page.locator('input[placeholder="Search by name…"]').fill("TEST C");
+    await page.waitForTimeout(500);
+    await page.locator("button", { hasText: "TEST CAROL" }).last().click();
+    await page.waitForTimeout(500);
+    await page.locator('input[placeholder="4 digits"]').fill("1954");
+    await page.locator('input[placeholder="••••"]').last().fill("3141");
+    await page.locator("button", { hasText: /^Reset .*PIN$/ }).last().click();
+    await page.waitForTimeout(1800);
+    const t = await text(page);
+    check("own PIN reset: the phone lands on the sign-in card, not a blank page",
+      t.includes("Update Sign-in") && /4-digit pin/i.test(t) && !!(await page.locator("#pin-input").count()), t.slice(0, 300).replace(/\s+/g, " "));
+    check("own PIN reset: and is told why", t.includes("You've reset your own PIN, so this phone has been signed out."));
+    check("own PIN reset: no admin padlock left", (await page.locator('button[title="Admin"]').count()) === 0);
+    await page.locator('input[placeholder]').first().fill("test carol");
+    await page.locator("#pin-input").fill("1954");
+    await clickText(page, "Update");     // the card's button reads "Update" after a sign-out
+    await page.waitForTimeout(1500);
+    check("own PIN reset: signs straight back in with the new PIN", !!(await stored(page, "bowls_session_token")));
+    await context.close();
   }
 
   // 7. The publishable key.
