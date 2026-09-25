@@ -45,8 +45,8 @@
 --      creating an account, bowls_change_pin, bowls_change_my_pin): 0000,
 --      1111 … 9999, 1234, 4321, 1212, 2580 — status 'weak_pin'. Years are
 --      allowed. Existing PINs still sign in and nobody is asked to change.
---      bowls_admin_reset_pin is not touched: an admin choosing a PIN for a
---      member is left to the admin.
+--      bowls_admin_reset_pin refuses them too (Joseph, 25 Sep), with the
+--      same message, shown to the admin.
 --   6. A spray guard. Every wrong PIN for a name that has an account is
 --      recorded against the caller's IP (bowls_client_ip). If one IP gets
 --      wrong PINs on 5 different names within 10 minutes, that IP is paused
@@ -81,7 +81,7 @@
 --    drop function if exists public.bowls_auth_refusal(text, text);  -- then re-run its lockdown_1 body
 --    drop table if exists public.bowls_signin_failures, public.bowls_ip_pauses;
 --    alter table public.login_lockouts drop column if exists window_started_at;
---  and restore login_lockouts_end_sessions from
+--  and restore login_lockouts_end_sessions and bowls_admin_reset_pin from
 --  20260901181006_sessions_can_be_ended.sql. Nobody's PIN or session is
 --  changed by this file, so the revert loses nothing.
 -- ════════════════════════════════════════════════════════════════════════
@@ -805,6 +805,103 @@ begin
 end $$;
 
 
+-- ── 5b. bowls_admin_reset_pin: the weak-PIN list applies here too ────────
+-- The live body (20260901181006_sessions_can_be_ended.sql) with one added
+-- refusal: 'weak_pin', with the same message the member would see, shown to
+-- the admin. Signature, grants and every other answer unchanged; the reset
+-- still changes pin_hash only, ends every session and clears the lockouts.
+create or replace function public.bowls_admin_reset_pin(
+  p_admin_name text,
+  p_admin_pin  text,
+  p_member_id  text,
+  p_new_pin    text
+) returns jsonb
+language plpgsql
+security definer
+set search_path to 'public', 'extensions'
+as $function$
+declare
+  v_member   record;
+  v_account  record;
+  v_admin_id uuid;
+  v_ended    integer := 0;
+begin
+  if p_new_pin is null or p_new_pin !~ '^[0-9]{4}$' then
+    return jsonb_build_object('status','bad_pin','message','A PIN must be exactly 4 digits.');
+  end if;
+
+  -- The weak-PIN list (Joseph, 25 Sep): an admin setting a PIN for a member
+  -- is setting a PIN too. Before the admin check, so it costs no try.
+  if public.bowls_pin_is_weak(p_new_pin) then
+    return jsonb_build_object('status', 'weak_pin',
+      'message', 'That one''s too easy to guess — try a year or house number you''ll remember.');
+  end if;
+
+  if coalesce(p_admin_name,'') = '' or coalesce(p_admin_pin,'') = ''
+     or not public.bowls_is_admin(p_admin_name, p_admin_pin) then
+    return jsonb_build_object('status','not_admin','message','That name and PIN did not match an admin account.');
+  end if;
+
+  -- Which account the caller is. Used only to tell them they have just reset
+  -- their own PIN and are about to be signed out — the client cannot work
+  -- this out reliably by comparing names, and should not have to.
+  select d.id into v_admin_id
+    from public.player_data d
+   where d.name_key = public.bowls_name_key(p_admin_name)
+     and d.pin_hash = extensions.crypt(p_admin_pin, d.pin_hash)
+   limit 1;
+
+  select m.id, m.name, m.linked_player_id into v_member
+    from public.members m where m.id::text = p_member_id;
+  if not found then
+    return jsonb_build_object('status','no_member','message','That member is not on the roster.');
+  end if;
+
+  if v_member.linked_player_id is null then
+    return jsonb_build_object('status','no_account',
+      'message', v_member.name || ' has not set up an app account yet, so there is no PIN to reset.');
+  end if;
+
+  select d.id, d.player_name, d.display_name, d.name_key into v_account
+    from public.player_data d where d.id = v_member.linked_player_id for update;
+  if not found then
+    return jsonb_build_object('status','no_account',
+      'message','The account linked to ' || v_member.name || ' no longer exists.');
+  end if;
+
+  -- The bad_account branch is gone with the key rewriting that needed it.
+  -- Any account can have its PIN reset now, whatever shape its player_name
+  -- is, because the shape of player_name is no longer any of this
+  -- function's business.
+  update public.player_data
+     set pin_hash   = extensions.crypt(p_new_pin, extensions.gen_salt('bf', 10)),
+         updated_at = now()
+   where id = v_account.id;
+
+  -- The point of the reset. Whoever else was signed in as this account —
+  -- including the member themselves, on their own phone — stops being signed
+  -- in. They sign back in with the new PIN, which is the expected outcome
+  -- and the only one that actually locks out whoever knew the old PIN.
+  with gone as (delete from public.bowls_sessions where player_id = v_account.id returning 1)
+  select count(*) into v_ended from gone;
+
+  delete from public.login_lockouts
+   where name = v_account.name_key
+      or upper(name) = upper(v_member.name)
+      or public.bowls_name_key(name) = v_account.name_key;
+
+  return jsonb_build_object(
+    'status',         'ok',
+    'member_name',    v_member.name,
+    'account_name',   coalesce(v_account.display_name, v_member.name),
+    'new_pin',        p_new_pin,
+    'player_id',      v_account.id,
+    'is_self',        v_admin_id is not null and v_admin_id = v_account.id,
+    'sessions_ended', v_ended);
+end;
+$function$;
+
+
 -- ── 6. Sessions: 12 months, rolling ───────────────────────────────────────
 -- Was 90 days, rolling. Members who only open the app in the outdoor season
 -- were signed out over the winter and had to remember their PIN in April.
@@ -897,6 +994,11 @@ begin
     or has_table_privilege('anon', 'public.bowls_ip_pauses', 'select')
     or has_table_privilege('anon', 'public.bowls_ip_pauses', 'delete')) then
     raise exception 'anon can reach the sign-in guard tables. Do not ship this.';
+  end if;
+  if not exists (select 1 from pg_proc
+                  where oid = 'public.bowls_admin_reset_pin(text, text, text, text)'::regprocedure
+                    and prosrc like '%bowls_pin_is_weak%') then
+    raise exception 'bowls_admin_reset_pin does not check the weak-PIN list.';
   end if;
   if not public.bowls_pin_is_weak('0000') or not public.bowls_pin_is_weak('7777')
      or not public.bowls_pin_is_weak('2580') or public.bowls_pin_is_weak('1967') then

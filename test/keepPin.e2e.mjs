@@ -24,6 +24,7 @@
 //   9. (follow-up) Spray guard: one PIN across many names from one IP is
 //      paused, club-wide attack tightens it, a normal member still gets in.
 //  10. (follow-up) Weak PINs refused when set or changed; existing ones work.
+//  11. (follow-up) Admin reset refuses the weak list too, and the admin is told.
 //
 //  Run:   npx vite build && node test/keepPin.e2e.mjs
 //  Needs: PostgreSQL (16 used), superuser URL in BOWLS_E2E_PG
@@ -554,6 +555,58 @@ async function run(browser) {
     const reset = psql(DB_URL, "select bowls_admin_reset_pin('TEST CAROL', '3141', 't1', '8080')->>'status'", { asAnon: true });
     const after = psql(DB_URL, `select bowls_session_state('${tok2}')->>'status'`, { asAnon: true });
     check("an admin PIN reset ends it", reset === "ok" && after === "expired", `${reset}/${after}`);
+  }
+
+  // 11. Admin reset refuses the weak-PIN list too, with the same words.
+  {
+    psql(DB_URL, "delete from login_lockouts; delete from bowls_signin_failures; delete from bowls_ip_pauses");
+    for (const weak of ["0000", "8888", "1234", "4321", "1212", "2580"]) {
+      const r = JSON.parse(psql(DB_URL, `select bowls_admin_reset_pin('TEST CAROL', '3141', 't2', '${weak}')::text`, { asAnon: true }));
+      check(`admin reset: ${weak} refused as weak, with Joseph's words`,
+        r.status === "weak_pin" && r.message === "That one's too easy to guess — try a year or house number you'll remember.", JSON.stringify(r));
+    }
+    // Checked before the admin's PIN, so a weak choice with a wrong admin PIN costs the admin nothing.
+    const w = psql(DB_URL, "select bowls_admin_reset_pin('TEST CAROL', '0001', 't2', '1111')->>'status'", { asAnon: true });
+    const cost = psql(DB_URL, "select count(*) from login_lockouts");
+    check("admin reset: a weak choice is refused before the admin's PIN is checked (no try spent)", w === "weak_pin" && cost === "0", `${w}/${cost}`);
+    const still = psql(DB_URL, "select bowls_sign_in('TEST BOB', '2719')->>'status'", { asAnon: true });
+    check("admin reset: the refused reset changed nothing", still === "ok", still);
+    const ok = psql(DB_URL, "select bowls_admin_reset_pin('TEST CAROL', '3141', 't2', '1954')->>'status'", { asAnon: true });
+    const now = psql(DB_URL, "select bowls_sign_in('TEST BOB', '1954')->>'status'", { asAnon: true });
+    check("admin reset: a year is fine", ok === "ok" && now === "ok", `${ok}/${now}`);
+
+    // In the admin panel, the admin sees the words before typing their own PIN.
+    const { context, page } = await openApp(browser, { bowls_myname: "TEST CAROL", bowls_mypin: "3141" });
+    await page.waitForTimeout(1800);
+    let shown = false;
+    if (await page.locator('button[title="Admin"]').count()) {
+      await page.locator('button[title="Admin"]').click();
+      await page.waitForTimeout(700);
+      const membersButtons = page.getByRole("button", { name: "Members", exact: true });
+      for (let i = 0; i < await membersButtons.count(); i++) {
+        await membersButtons.nth(i).click();
+        await page.waitForTimeout(500);
+        if (await page.getByRole("button", { name: "Reset PIN", exact: true }).count()) break;
+        await page.locator('button[title="Admin"]').click();
+        await page.waitForTimeout(500);
+      }
+      await page.getByRole("button", { name: "Reset PIN", exact: true }).click();
+      await page.waitForTimeout(500);
+      await page.locator('input[placeholder="Search by name…"]').fill("TEST B");
+      await page.waitForTimeout(500);
+      await page.locator("button", { hasText: "TEST BOB" }).last().click();
+      await page.waitForTimeout(500);
+      await page.locator('input[placeholder="4 digits"]').fill("2580");
+      await page.locator('input[placeholder="••••"]').last().fill("3141");
+      await page.locator("button", { hasText: /^Reset .*PIN$/ }).last().click();
+      await page.waitForTimeout(800);
+      shown = (await text(page)).includes("That one's too easy to guess — try a year or house number you'll remember.");
+    }
+    check("admin panel: a weak reset shows the admin the same words", shown);
+    await context.close();
+    const unchanged = psql(DB_URL, "select bowls_sign_in('TEST BOB', '1954')->>'status'", { asAnon: true });
+    check("admin panel: and the member's PIN is unchanged", unchanged === "ok", unchanged);
+    psql(DB_URL, "delete from login_lockouts");
   }
 
   // 7. The publishable key.
