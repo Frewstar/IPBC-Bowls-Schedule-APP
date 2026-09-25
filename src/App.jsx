@@ -499,6 +499,18 @@ export default function BowlsTracker() {
   // so they get no padlock rather than a padlock onto an empty room.
   const hasAdminPanel  = isAdmin || canRunDraws;
 
+  // Never leave the admin tab showing nothing. It happens when the panel goes
+  // away underneath it — an admin resetting their OWN PIN is signed out on
+  // this phone (bowls_admin_reset_pin ends every session), and the page went
+  // blank with no tab lit. Signed out, or confirmed as no longer having a
+  // panel: go to My Ties, which is the sign-in card when signed out. Not
+  // while the role is being re-checked (adminVerified is false then), so an
+  // admin is not bounced out of the panel by a routine re-check.
+  useEffect(() => {
+    if (activeTab !== "admin") return;
+    if (!myName || (adminVerified && !hasAdminPanel)) setActiveTab("myties");
+  }, [activeTab, myName, adminVerified, hasAdminPanel]);
+
   // The very first super admin of a club. The server checks the session,
   // refuses if the club already has one, and records the claim by account id.
   // The role is then read back the usual way rather than assumed here.
@@ -2093,7 +2105,7 @@ export default function BowlsTracker() {
     // this one, so this device signs out and they come back with the new PIN.
     // The server works out whose account it was; comparing names here could
     // not tell two members with the same initials apart.
-    if (data.is_self) signOutLocally();
+    if (data.is_self) { signOutLocally(); setCredentialNotice("own-reset"); }
 
     // The account list is re-read: updated_at has moved and the lockouts for
     // them are gone.
@@ -2557,7 +2569,9 @@ export default function BowlsTracker() {
                 </div>
                 {credentialNotice && signInState !== "locked" && (
                   <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left", fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>
-                    {credentialNotice === "pin"
+                    {credentialNotice === "own-reset"
+                      ? "You've reset your own PIN, so this phone has been signed out. Sign in again with the new PIN you've just set."
+                      : credentialNotice === "pin"
                       ? "You've been signed out on this phone because the PIN saved on it no longer matches. It may have been changed or reset. Sign in with your current PIN, or ask a club admin to reset it."
                       : "You've been signed out on this phone — your PIN may have been changed or reset, or your account locked. Sign in again with your current PIN."}
                   </div>
