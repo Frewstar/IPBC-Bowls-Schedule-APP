@@ -30,7 +30,7 @@ import {
 // ── lib imports ──────────────────────────────────────────────────────────────
 import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_SANS, F_UI } from "./lib/theme.js";
 import { TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
-import { signInOutcome, registerOutcome } from "./lib/signIn.js";
+import { signInOutcome, registerOutcome, lockedMessage, OFFLINE_MESSAGE, FORGOT_PIN_MESSAGE, PAUSED_MESSAGE, WEAK_PIN_MESSAGE, isWeakPin } from "./lib/signIn.js";
 import { endServerSession, flushPendingSignouts, queuePendingSignout, PENDING_SIGNOUT_KEY } from "./lib/session.js";
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
 import { supabase } from "./lib/supabase.js";
@@ -302,10 +302,21 @@ export default function BowlsTracker() {
     const v = load(PENDING_SIGNOUT_KEY, []);
     return Array.isArray(v) ? v : [];
   });
-  // Set when the server says this account must choose a new PIN before
-  // anything else works: { name, pin, fromSignIn }. See ChangePinSheet.
+  // The change-PIN sheet, when open. { name, voluntary: true } from the
+  // profile sheet; { name, pin, fromSignIn } when a server without
+  // 20260925_keep_existing_pin_1 answers must_change_pin. See ChangePinSheet.
   const [pinChange, setPinChange] = useState(null);
-  // Why this device was signed out, for the sign-in card: "expired".
+  // The signed-out card's "Forgot PIN?" answer, when shown.
+  const [showForgotPin, setShowForgotPin] = useState(false);
+  // "PIN saved" after a change the member asked for, for a few seconds.
+  const [pinSavedNotice, setPinSavedNotice] = useState(false);
+  useEffect(() => {
+    if (!pinSavedNotice) return;
+    const t = setTimeout(() => setPinSavedNotice(false), 4000);
+    return () => clearTimeout(t);
+  }, [pinSavedNotice]);
+  // Why this device was signed out, for the sign-in card: "expired", or
+  // "pin" when the PIN saved on this phone stopped working.
   const [credentialNotice, setCredentialNotice] = useState(null);
   const sessionTokenRef = useRef(sessionToken); sessionTokenRef.current = sessionToken;
 
@@ -1438,7 +1449,7 @@ export default function BowlsTracker() {
 
   // ── Sign-in flow ──
   const [pinConfirm, setPinConfirm]   = useState("");
-  const [signInState, setSignInState] = useState("idle"); // "idle"|"checking"|"confirm-new"|"wrong-pin"|"offline"|"locked"
+  const [signInState, setSignInState] = useState("idle"); // "idle"|"checking"|"confirm-new"|"wrong-pin"|"offline"|"locked"|"invalid"|"paused"
   const [lockoutInfo, setLockoutInfo] = useState(null); // { id, attempts, locked_until, unlock_requested }
 
   // ── Sign-in goes through the server ──────────────────────────────────────
@@ -1607,11 +1618,10 @@ export default function BowlsTracker() {
       const outcome = signInOutcome(await supabase.rpc("bowls_sign_in", { p_name: myName, p_pin: myPin }));
       if (cancelled) return;
       if (outcome.action === "signed-in") { applySession(outcome.payload, myPin, { background: true }); return; }
-      // The PIN is right, but it has been readable by anyone: nothing works
-      // until a new one is chosen. The member stays signed in on this device
-      // and is shown the new-PIN screen.
+      // Only from a server without 20260925_keep_existing_pin_1.
       if (outcome.action === "change-pin") { setPinChange(p => p || { name: myName, pin: myPin }); return; }
-      if (outcome.action === "wrong-pin" || outcome.action === "register") signOutLocally();
+      // Said, not silent: the sign-in card tells them why they are on it.
+      if (outcome.action === "wrong-pin" || outcome.action === "register") { signOutLocally(); setCredentialNotice("pin"); }
     })();
     return () => { cancelled = true; };
   }, [sessionToken, signedOut, myName, myPin]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1627,6 +1637,7 @@ export default function BowlsTracker() {
     if (outcome.action === "change-pin") { setSignInState("idle"); setPinChange({ name: nameUpper, pin: pinInput, fromSignIn: true }); return; }
     if (outcome.action === "offline")   { setSignInState("offline"); return; }
     if (outcome.action === "locked")    { setLockoutInfo({ name: nameUpper, ...outcome.lockout }); setSignInState("locked"); return; }
+    if (outcome.action === "paused")    { setSignInState("paused"); return; }
     if (outcome.action === "wrong-pin") { setLockoutInfo({ name: nameUpper, ...outcome.lockout }); setSignInState("wrong-pin"); return; }
     if (outcome.action === "register") {
       // No account under this name yet. Being on the roster is not evidence
@@ -1635,9 +1646,9 @@ export default function BowlsTracker() {
       setSignInState("confirm-new");
       return;
     }
-    // "invalid" — a name that squashes to nothing. The form has already
-    // checked the PIN, so going back to idle leaves their input on screen.
-    setSignInState("idle");
+    // "invalid" — a name that squashes to nothing. Their input stays on
+    // screen, with a line saying what to fix.
+    setSignInState("invalid");
   }
 
   // Registration. The confirm-new step calls this once the member has typed
@@ -1662,6 +1673,9 @@ export default function BowlsTracker() {
     setSettingName(true);
     if (outcome.action === "locked")    { setLockoutInfo({ name, ...outcome.lockout }); setSignInState("locked"); return; }
     if (outcome.action === "wrong-pin") { setLockoutInfo({ name, ...outcome.lockout }); setSignInState("wrong-pin"); return; }
+    if (outcome.action === "invalid")   { setSignInState("invalid"); return; }
+    if (outcome.action === "paused")    { setSignInState("paused"); return; }
+    if (outcome.action === "weak-pin")  { setPinConfirm(""); setSignInState("confirm-new"); return; }
     setSignInState("offline");
   }
 
@@ -1675,6 +1689,7 @@ export default function BowlsTracker() {
     setPinChange(null);
     applySession(payload, newPin, { background: !from?.fromSignIn });
     setRoleCheck(n => n + 1);
+    if (from?.voluntary) setPinSavedNotice(true);
   }
 
   // Leaving the new-PIN screen without choosing one. From the sign-in card
@@ -1683,6 +1698,7 @@ export default function BowlsTracker() {
   function leavePinChange() {
     const from = pinChange;
     setPinChange(null);
+    if (from?.voluntary) return;
     if (from?.fromSignIn) { setSignInState("idle"); setPinInput(""); return; }
     endSession();
   }
@@ -1697,12 +1713,15 @@ export default function BowlsTracker() {
   async function requestUnlock() {
     const name = lockoutInfo?.name || nameInput.toUpperCase().trim();
     if (!name) return;
-    await supabase.rpc("bowls_request_unlock", { p_name: name });
+    let res;
+    try { res = await supabase.rpc("bowls_request_unlock", { p_name: name }); }
+    catch (e) { res = { error: e }; }
+    if (res?.error) { setLockoutInfo(p => ({ ...(p || {}), name, unlock_error: true })); return; }
     // The server says nothing back on purpose — an endpoint that confirmed
     // whether a name exists would be a way to enumerate members without ever
     // spending a PIN attempt. So the screen reports what was asked for, not
     // what was found.
-    setLockoutInfo(p => ({ ...(p || {}), name, unlock_requested: true }));
+    setLockoutInfo(p => ({ ...(p || {}), name, unlock_requested: true, unlock_error: false }));
   }
 
 
@@ -2064,8 +2083,8 @@ export default function BowlsTracker() {
       p_member_id:  String(memberId),
       p_new_pin:    newPin,
     });
-    if (error) return { status: "error", message: error.message };
-    if (data?.status !== "ok") return data || { status: "error", message: "No response from the server." };
+    if (error || !data) return { status: "error", message: OFFLINE_MESSAGE };
+    if (data.status !== "ok") return { ...data, message: data.message || "That PIN couldn't be reset. Please try again." };
 
     // A reset ends every session for that account — that is the point of it,
     // and it is what makes the reset actually lock out whoever knew the old
@@ -2304,14 +2323,21 @@ export default function BowlsTracker() {
   return (
     <div style={{ minHeight: "100vh", background: BG, fontFamily: F_UI, color: TEXT, zoom: fontScale }}>
 
-      {/* ── NEW PIN REQUIRED — over everything, admins included ── */}
+      {/* ── CHANGE PIN — from the profile sheet (or, from an old server, required) ── */}
       {pinChange && (
         <ChangePinSheet
           name={pinChange.name}
           pin={pinChange.pin}
+          token={sessionToken}
+          required={!pinChange.voluntary}
           onDone={pinChanged}
-          onSignOut={leavePinChange}
+          onCancel={leavePinChange}
         />
+      )}
+      {pinSavedNotice && (
+        <div role="status" style={{ position: "fixed", top: "16px", left: "16px", right: "16px", zIndex: 1001, background: GREEN, color: "#fff", borderRadius: "10px", padding: "12px 16px", fontFamily: F_UI, fontSize: "13px", textAlign: "center", boxShadow: "0 4px 16px rgba(0,0,0,0.2)" }}>
+          PIN saved. Use it next time you sign in.
+        </div>
       )}
 
       {/* ── iOS INSTALL BANNER ── */}
@@ -2531,7 +2557,9 @@ export default function BowlsTracker() {
                 </div>
                 {credentialNotice && signInState !== "locked" && (
                   <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left", fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>
-                    You've been signed out on this phone — your PIN may have been reset, or your account locked. Sign in again with your current PIN.
+                    {credentialNotice === "pin"
+                      ? "You've been signed out on this phone because the PIN saved on it no longer matches. It may have been changed or reset. Sign in with your current PIN, or ask a club admin to reset it."
+                      : "You've been signed out on this phone — your PIN may have been changed or reset, or your account locked. Sign in again with your current PIN."}
                   </div>
                 )}
 
@@ -2543,7 +2571,7 @@ export default function BowlsTracker() {
                         <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: LOSS_RED }}>Account Locked</div>
                       </div>
                       <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5, marginBottom: "4px" }}>
-                        Too many incorrect PIN attempts for <strong>{nameInput.toUpperCase().trim() || lockoutInfo?.name}</strong>. This account is locked for 24 hours.
+                        Too many wrong PINs for <strong>{nameInput.toUpperCase().trim() || lockoutInfo?.name}</strong>. {lockedMessage(lockoutInfo?.locked_until)}
                       </div>
                       {lockoutInfo?.locked_until && (
                         <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
@@ -2551,6 +2579,11 @@ export default function BowlsTracker() {
                         </div>
                       )}
                     </div>
+                    {lockoutInfo?.unlock_error && (
+                      <div role="alert" style={{ fontFamily: F_UI, fontSize: "12px", color: LOSS_RED, textAlign: "center", marginBottom: "10px", lineHeight: 1.5 }}>
+                        Your unlock request didn't send. {OFFLINE_MESSAGE}
+                      </div>
+                    )}
                     {lockoutInfo?.unlock_requested
                       ? <div style={{ fontFamily: F_UI, fontSize: "13px", color: GREEN, textAlign: "center", marginBottom: "16px" }}>Unlock request sent — your admin will review it.</div>
                       : <button onClick={requestUnlock} style={{ width: "100%", background: MID, border: "none", borderRadius: "8px", color: "#fff", padding: "13px", fontSize: "14px", cursor: "pointer", fontFamily: F_UI, fontWeight: "700", marginBottom: "12px" }}>Request Admin Unlock</button>
@@ -2570,6 +2603,20 @@ export default function BowlsTracker() {
                         </div>
                       </div>
                     )}
+                    {signInState === "paused" && (
+                      <div role="alert" style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left" }}>
+                        <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: LOSS_RED, marginBottom: "3px" }}>Please wait a few minutes</div>
+                        <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>{PAUSED_MESSAGE}</div>
+                      </div>
+                    )}
+                    {signInState === "invalid" && (
+                      <div role="alert" style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left" }}>
+                        <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: LOSS_RED, marginBottom: "3px" }}>Check your name and PIN</div>
+                        <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>
+                          Type your name using letters, and a PIN of exactly 4 digits.
+                        </div>
+                      </div>
+                    )}
                     {signInState === "offline" && (
                       <div style={{ background: `${GOLD}12`, border: `1px solid ${GOLD}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left" }}>
                         <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: TEXT, marginBottom: "3px" }}>Can't reach the club server</div>
@@ -2580,14 +2627,14 @@ export default function BowlsTracker() {
                     )}
                     <div style={{ textAlign: "left", marginBottom: "12px" }}>
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Your Name</div>
-                      <input value={nameInput} onChange={e => { setNameInput(e.target.value.toUpperCase()); if (signInState === "wrong-pin" || signInState === "offline") setSignInState("idle"); }}
+                      <input value={nameInput} onChange={e => { setNameInput(e.target.value.toUpperCase()); if (["wrong-pin", "offline", "invalid", "paused"].includes(signInState)) setSignInState("idle"); }}
                         placeholder="e.g. J FREW" autoFocus
                         onKeyDown={e => e.key === "Enter" && document.getElementById("pin-input")?.focus()}
                         style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, letterSpacing: "2px" }} />
                     </div>
                     <div style={{ textAlign: "left", marginBottom: "20px" }}>
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>4-Digit PIN</div>
-                      <input id="pin-input" value={pinInput} onChange={e => { setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4)); if (signInState === "wrong-pin" || signInState === "offline") setSignInState("idle"); }}
+                      <input id="pin-input" value={pinInput} onChange={e => { setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4)); if (["wrong-pin", "offline", "invalid", "paused"].includes(signInState)) setSignInState("idle"); }}
                         placeholder="••••" inputMode="numeric" maxLength={4}
                         onKeyDown={e => e.key === "Enter" && handleSignIn()}
                         style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px" }} />
@@ -2608,6 +2655,18 @@ export default function BowlsTracker() {
                     <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textAlign: "center", marginTop: "12px", lineHeight: 1.5 }}>
                       Can't find your data? Make sure your name and PIN match exactly what you used before.
                     </div>
+                    {/* No self-service reset while signed out — until email codes exist. */}
+                    <div style={{ textAlign: "center", marginTop: "10px" }}>
+                      <button onClick={() => setShowForgotPin(v => !v)}
+                        style={{ background: "none", border: "none", fontFamily: F_UI, fontSize: "13px", color: MID, cursor: "pointer", textDecoration: "underline", padding: "4px" }}>
+                        Forgot PIN?
+                      </button>
+                      {showForgotPin && (
+                        <div role="status" style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5, marginTop: "6px" }}>
+                          {FORGOT_PIN_MESSAGE}
+                        </div>
+                      )}
+                    </div>
                   </>
                 ) : (
                   <>
@@ -2615,6 +2674,13 @@ export default function BowlsTracker() {
                       <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT, marginBottom: "3px" }}>Looks like you're new here</div>
                       <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>If you've signed in before, go back and check your name and PIN match exactly. Otherwise confirm your PIN below to create your account.</div>
                     </div>
+                    {/* A new account is setting a PIN, so the weak list applies (the server
+                        refuses it too). Go back and pick another. */}
+                    {isWeakPin(pinInput) && (
+                      <div role="alert" style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left", fontFamily: F_UI, fontSize: "12px", color: LOSS_RED, lineHeight: 1.5 }}>
+                        {WEAK_PIN_MESSAGE} Tap Back and choose another PIN.
+                      </div>
+                    )}
                     <div style={{ textAlign: "left", marginBottom: "20px" }}>
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Confirm PIN</div>
                       <input autoFocus value={pinConfirm} onChange={e => setPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 4))}
@@ -2626,11 +2692,11 @@ export default function BowlsTracker() {
                       )}
                     </div>
                     <div style={{ display: "flex", gap: "10px" }}>
-                      <button onClick={() => { setPinConfirm(""); setSignInState("idle"); }}
+                      <button onClick={() => { setPinConfirm(""); if (isWeakPin(pinInput)) setPinInput(""); setSignInState("idle"); }}
                         style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
                         Back
                       </button>
-                      <button onClick={() => registerAccount()} disabled={pinConfirm !== pinInput || pinConfirm.length !== 4}
+                      <button onClick={() => registerAccount()} disabled={pinConfirm !== pinInput || pinConfirm.length !== 4 || isWeakPin(pinInput)}
                         style={{ flex: 1, background: pinConfirm === pinInput && pinConfirm.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "13px 28px", fontSize: "14px", cursor: pinConfirm === pinInput && pinConfirm.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
                         Create Account
                       </button>
@@ -4459,6 +4525,7 @@ export default function BowlsTracker() {
           const { data } = await tokenRpc("bowls_set_my_phone", { p_phone: phone });
           if (data?.status !== "ok") membersLoad.reload();
         }}
+        onChangePin={() => { setShowProfileSheet(false); setPinChange({ name: myName, voluntary: true }); }}
         onSwitchAccount={async () => {
           const previous = myName;
           setShowProfileSheet(false);

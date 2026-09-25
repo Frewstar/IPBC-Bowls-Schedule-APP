@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { BRACKET_SIZE, bracketPairs, rowsToDisplay, fmtRoundDate, ViewToggle, BracketDisplay, BracketTreeView } from "../DrawViewer.jsx";
 import { Users, Calendar, Shield, Lock, Plus, Pencil, Trash2, Crown, Trophy, Shuffle, X } from "lucide-react";
 import { GREEN, MID, GOLD, GOLD_MUTED, SURFACE, SURFACE2, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../../lib/theme.js";
+import { isWeakPin, WEAK_PIN_MESSAGE } from "../../lib/signIn.js";
 import { supabase } from "../../lib/supabase.js";
 
 export function buildTieSheetHtml(draw, slots, prelims, roundDates, { withToolbar = true } = {}) {
@@ -540,6 +541,9 @@ function ResetPin({ members = [], resetMemberPin, myName }) {
 
   async function submit() {
     if (!ready) return;
+    // Same list and words as the server (bowls_admin_reset_pin refuses these
+    // too); checked here so the admin sees it before typing their own PIN.
+    if (isWeakPin(newPin)) { setResult({ status: "weak_pin", message: WEAK_PIN_MESSAGE }); return; }
     setBusy(true);
     const res = await resetMemberPin(picked.id, newPin, adminPin);
     setBusy(false);
@@ -633,7 +637,7 @@ function ResetPin({ members = [], resetMemberPin, myName }) {
               )}
               <div>
                 <div style={labelStyle}>New PIN for {picked.name}</div>
-                <input value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                <input value={newPin} onChange={e => { setNewPin(e.target.value.replace(/\D/g, "").slice(0, 4)); if (result?.status === "weak_pin") setResult(null); }}
                   inputMode="numeric" maxLength={4} placeholder="4 digits"
                   style={{ ...inputStyle, textAlign: "center", fontSize: "22px", letterSpacing: "8px" }} />
               </div>
@@ -707,7 +711,6 @@ function AppAccounts({ registeredUsers, lockouts = [], lockAppAccount, unlockApp
                 <div style={{ fontFamily: F_UI, fontSize: "11px", color: locked ? LOSS_RED : TEXT3, marginTop: "2px" }}>
                   {locked ? (lockRow?.locked_until?.startsWith("2099") ? "Locked by admin" : "Locked (too many attempts)") : "Active"}
                   {adminLocked && " · admin check locked"}
-                  {u.must_change_pin && <span style={{ marginLeft: "6px", background: `${GOLD}22`, color: GOLD_MUTED, borderRadius: "4px", padding: "1px 6px", fontSize: "10px" }}>New PIN needed</span>}
                 </div>
               </div>
               <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>

@@ -25,7 +25,7 @@ async function compressImage(file) {
   });
 }
 
-export default function ProfileSheet({ open, onClose, profile, setProfile, myName, myEntries = [], settings = {}, linkedPhone = "", onUpdatePhone, onSwitchAccount }) {
+export default function ProfileSheet({ open, onClose, profile, setProfile, myName, myEntries = [], settings = {}, linkedPhone = "", onUpdatePhone, onChangePin, onSwitchAccount }) {
   const fileRef = useRef(null);
   const currentSeason = settings.seasonYear || new Date().getFullYear();
   const [phoneInput, setPhoneInput] = useState(linkedPhone);
@@ -163,11 +163,17 @@ export default function ProfileSheet({ open, onClose, profile, setProfile, myNam
           );
         })}
 
-        {/* Switch account */}
-        <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: "14px" }}>
+        {/* Change PIN, switch account */}
+        <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: "14px", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "12px" }}>
+          {onChangePin && (
+            <button onClick={onChangePin}
+              style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: "8px", fontFamily: F_UI, fontSize: "13px", color: TEXT2, cursor: "pointer", padding: "9px 14px" }}>
+              Change my PIN
+            </button>
+          )}
           <button onClick={onSwitchAccount}
             style={{ background: "none", border: "none", fontFamily: F_UI, fontSize: "12px", color: TEXT3, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
-            Switch account / update PIN
+            Switch account
           </button>
         </div>
 

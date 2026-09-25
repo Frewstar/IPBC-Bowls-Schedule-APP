@@ -20,7 +20,7 @@
 //   1. The app never touches player_data, login_lockouts, admins or the
 //      request tables directly, and never asks members for a column the
 //      publishable key cannot read.
-//   2. Signing in with an old PIN leads to "Choose a new PIN", and only then
+//   2. Signing in with an old PIN leads to "Set your PIN", and only then
 //      to the directory with phone numbers. A reload stays signed in.
 //   3. The new PIN never lands in player_name: the account's key is its uuid.
 //   4. A phone from before sessions (name and PIN, no token) is taken to the
@@ -107,7 +107,11 @@ function buildDatabase() {
   const dir = path.resolve("supabase/migrations");
   const files = fs.readdirSync(dir).filter(f => f.endsWith(".sql")).sort();
   const lockdown2 = files.find(f => f.startsWith("20260923_directory_lockdown_2"));
-  for (const f of files) {
+  // This test is the lockdown as written on 23 Sep — forced PIN change and
+  // all. 20260925_keep_existing_pin retired the forced change; that is
+  // test/keepPin.e2e.mjs. So stop at part 2: this is also the test of a new
+  // client meeting a server that has not had the 25 Sep files yet.
+  for (const f of files.filter(f => f <= lockdown2)) {
     if (f === lockdown2) {
       // The live state part 2 meets: legacy accounts, a live session, and
       // an account bowls_register made since 1 Sep.
@@ -218,7 +222,7 @@ async function choosePin(page, pin) {
   const boxes = page.locator('[role="dialog"] input');
   await boxes.nth(0).fill(pin);
   await boxes.nth(1).fill(pin);
-  await clickText(page, "Save new PIN");
+  await clickText(page, "Save PIN");
   await page.waitForTimeout(1800);
 }
 async function signIn(page, name, pin) {
@@ -241,10 +245,10 @@ async function afterLockdown(browser) {
   {
     const { context, page } = await openApp(browser);
     await signIn(page, "test alice", "1111");
-    check("old PIN leads to 'Choose a new PIN'", (await text(page)).includes("Choose a new PIN"));
+    check("old PIN leads to 'Set your PIN'", (await text(page)).includes("Set your PIN"));
     check("no token for the old PIN", !(await stored(page, "bowls_session_token")));
     await choosePin(page, "2468");
-    check("new-PIN screen closes after saving", !(await text(page)).includes("Choose a new PIN"));
+    check("new-PIN screen closes after saving", !(await text(page)).includes("Set your PIN"));
     check("device holds a token and the new PIN",
       !!(await stored(page, "bowls_session_token")) && (await stored(page, "bowls_mypin")) === "2468");
     check("signed in under the same name", (await stored(page, "bowls_myname")) === "TEST ALICE");
@@ -252,7 +256,7 @@ async function afterLockdown(browser) {
     check("directory shows phone numbers after the change", (await text(page)).includes("07700 900002"));
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1800);
-    check("reload: no new-PIN screen", !(await text(page)).includes("Choose a new PIN"));
+    check("reload: no new-PIN screen", !(await text(page)).includes("Set your PIN"));
     await openMembers(page);
     check("reload: still in the directory", (await text(page)).includes("07700 900002"));
     await context.close();
@@ -266,7 +270,7 @@ async function afterLockdown(browser) {
   {
     const { context, page } = await openApp(browser, { bowls_myname: "TEST BOB", bowls_mypin: "2222" });
     await page.waitForTimeout(1200);
-    check("pre-session phone is shown 'Choose a new PIN'", (await text(page)).includes("Choose a new PIN"));
+    check("pre-session phone is shown 'Set your PIN'", (await text(page)).includes("Set your PIN"));
     await choosePin(page, "8642");
     check("and signs in once it has", !!(await stored(page, "bowls_session_token")));
     await context.close();
@@ -286,7 +290,7 @@ async function afterLockdown(browser) {
   {
     const { context, page } = await openApp(browser, { bowls_myname: "TEST CAROL", bowls_mypin: "3333" });
     await page.waitForTimeout(1500);
-    check("admin sees 'Choose a new PIN' on open", (await text(page)).includes("Choose a new PIN"));
+    check("admin sees 'Set your PIN' on open", (await text(page)).includes("Set your PIN"));
     check("no admin panel before the change", (await page.locator('button[title="Admin"]').count()) === 0);
     await choosePin(page, "1357");
     await page.waitForTimeout(1500);
@@ -308,7 +312,7 @@ async function afterLockdown(browser) {
       await page.getByRole("button", { name: /^App Accounts/ }).click();
       await page.waitForTimeout(900);
       const t = await text(page);
-      check("admin account list loads through the server", t.includes("TEST BOB") && t.includes("New PIN needed"));
+      check("admin account list loads through the server", t.includes("TEST BOB"));
       check("admin account list shows no PIN digits or keys",
         !/••••|\b(1111|2222|2468|1357|4444|8642)\b|[0-9a-f]{8}-[0-9a-f]{4}-/.test(t));
     }
@@ -328,7 +332,7 @@ async function afterLockdown(browser) {
 async function part1Only(browser) {
   const { context, page } = await openApp(browser);
   await signIn(page, "test alice", "1111");
-  check("part 1 only: signs in with the existing PIN, no new-PIN screen", !(await text(page)).includes("Choose a new PIN"));
+  check("part 1 only: signs in with the existing PIN, no new-PIN screen", !(await text(page)).includes("Set your PIN"));
   check("part 1 only: holds a token", !!(await stored(page, "bowls_session_token")));
   await openMembers(page);
   check("part 1 only: directory through the server", (await text(page)).includes("07700 900002"));
