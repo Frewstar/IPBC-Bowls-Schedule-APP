@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Lock } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
-import { changePinMessage } from "../lib/signIn.js";
+import { changePinMessage, isWeakPin, WEAK_PIN_MESSAGE } from "../lib/signIn.js";
 import { GREEN, MID, SURFACE, BORDER, TEXT, TEXT2, TEXT3, LOSS_RED, F_SANS, F_UI } from "../lib/theme.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +34,7 @@ export default function ChangePinSheet({ name, pin = "", token = "", required = 
     if (busy) return;
     if (!/^\d{4}$/.test(newPin))  { setError("Your new PIN must be exactly 4 digits."); return; }
     if (confirm !== newPin)       { setError("The two new PINs don't match. Type the same 4 digits in both boxes."); return; }
+    if (isWeakPin(newPin))        { setError(WEAK_PIN_MESSAGE); return; }
     setBusy(true);
     setError(null);
     let res;
@@ -71,7 +72,7 @@ export default function ChangePinSheet({ name, pin = "", token = "", required = 
         <div style={{ fontFamily: F_UI, fontSize: "13px", color: TEXT2, lineHeight: 1.55, marginBottom: "18px" }}>
           {required
             ? <>Please set a 4-digit PIN for <strong>{name}</strong> to carry on.</>
-            : <>Choose any 4 digits for <strong>{name}</strong>. You can go back to a PIN you've used before. Your other phones and tablets will need the new PIN.</>}
+            : <>Choose 4 digits for <strong>{name}</strong> — a year or house number you'll remember works well. You can go back to a PIN you've used before, as long as it isn't an easy one like 1234 or 1111. Your other phones and tablets will need the new PIN.</>}
         </div>
 
         <div style={{ marginBottom: "12px" }}>

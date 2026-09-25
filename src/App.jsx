@@ -30,7 +30,7 @@ import {
 // ── lib imports ──────────────────────────────────────────────────────────────
 import { GREEN, MID, GOLD, GOLD_LIGHT, LIGHT, BG, LADIES, LADIES_MID, SURFACE, SURFACE2, BORDER, BRAND_HI, GOLD_MUTED, TEXT, TEXT2, TEXT3, WIN_GOLD, LOSS_RED, WIN_BG, LOSS_BG, F_DISPLAY, F_SANS, F_UI } from "./lib/theme.js";
 import { TIES_KEY, SETTINGS_KEY, ENTRIES_KEY, NAME_KEY, load, save, membersToCSV, parseCSV } from "./lib/storage.js";
-import { signInOutcome, registerOutcome, LOCKED_MESSAGE, OFFLINE_MESSAGE, FORGOT_PIN_MESSAGE } from "./lib/signIn.js";
+import { signInOutcome, registerOutcome, lockedMessage, OFFLINE_MESSAGE, FORGOT_PIN_MESSAGE, PAUSED_MESSAGE, WEAK_PIN_MESSAGE, isWeakPin } from "./lib/signIn.js";
 import { endServerSession, flushPendingSignouts, queuePendingSignout, PENDING_SIGNOUT_KEY } from "./lib/session.js";
 import { DAY_NAMES, MONTH_ABBR, getSurname, getRoundLabel, fmtDate, parseTournRoundDate, getTournRoundDate, fixtureStatus, findUrgentTie, countdownLabel, countdownDays, getHeadToHead } from "./lib/utils.js";
 import { supabase } from "./lib/supabase.js";
@@ -1449,7 +1449,7 @@ export default function BowlsTracker() {
 
   // ── Sign-in flow ──
   const [pinConfirm, setPinConfirm]   = useState("");
-  const [signInState, setSignInState] = useState("idle"); // "idle"|"checking"|"confirm-new"|"wrong-pin"|"offline"|"locked"
+  const [signInState, setSignInState] = useState("idle"); // "idle"|"checking"|"confirm-new"|"wrong-pin"|"offline"|"locked"|"invalid"|"paused"
   const [lockoutInfo, setLockoutInfo] = useState(null); // { id, attempts, locked_until, unlock_requested }
 
   // ── Sign-in goes through the server ──────────────────────────────────────
@@ -1637,6 +1637,7 @@ export default function BowlsTracker() {
     if (outcome.action === "change-pin") { setSignInState("idle"); setPinChange({ name: nameUpper, pin: pinInput, fromSignIn: true }); return; }
     if (outcome.action === "offline")   { setSignInState("offline"); return; }
     if (outcome.action === "locked")    { setLockoutInfo({ name: nameUpper, ...outcome.lockout }); setSignInState("locked"); return; }
+    if (outcome.action === "paused")    { setSignInState("paused"); return; }
     if (outcome.action === "wrong-pin") { setLockoutInfo({ name: nameUpper, ...outcome.lockout }); setSignInState("wrong-pin"); return; }
     if (outcome.action === "register") {
       // No account under this name yet. Being on the roster is not evidence
@@ -1673,6 +1674,8 @@ export default function BowlsTracker() {
     if (outcome.action === "locked")    { setLockoutInfo({ name, ...outcome.lockout }); setSignInState("locked"); return; }
     if (outcome.action === "wrong-pin") { setLockoutInfo({ name, ...outcome.lockout }); setSignInState("wrong-pin"); return; }
     if (outcome.action === "invalid")   { setSignInState("invalid"); return; }
+    if (outcome.action === "paused")    { setSignInState("paused"); return; }
+    if (outcome.action === "weak-pin")  { setPinConfirm(""); setSignInState("confirm-new"); return; }
     setSignInState("offline");
   }
 
@@ -2568,7 +2571,7 @@ export default function BowlsTracker() {
                         <div style={{ fontFamily: F_UI, fontSize: "14px", fontWeight: "700", color: LOSS_RED }}>Account Locked</div>
                       </div>
                       <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5, marginBottom: "4px" }}>
-                        Too many wrong PINs for <strong>{nameInput.toUpperCase().trim() || lockoutInfo?.name}</strong>. {LOCKED_MESSAGE}
+                        Too many wrong PINs for <strong>{nameInput.toUpperCase().trim() || lockoutInfo?.name}</strong>. {lockedMessage(lockoutInfo?.locked_until)}
                       </div>
                       {lockoutInfo?.locked_until && (
                         <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3 }}>
@@ -2600,6 +2603,12 @@ export default function BowlsTracker() {
                         </div>
                       </div>
                     )}
+                    {signInState === "paused" && (
+                      <div role="alert" style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left" }}>
+                        <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: LOSS_RED, marginBottom: "3px" }}>Please wait a few minutes</div>
+                        <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>{PAUSED_MESSAGE}</div>
+                      </div>
+                    )}
                     {signInState === "invalid" && (
                       <div role="alert" style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left" }}>
                         <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "700", color: LOSS_RED, marginBottom: "3px" }}>Check your name and PIN</div>
@@ -2618,14 +2627,14 @@ export default function BowlsTracker() {
                     )}
                     <div style={{ textAlign: "left", marginBottom: "12px" }}>
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Your Name</div>
-                      <input value={nameInput} onChange={e => { setNameInput(e.target.value.toUpperCase()); if (["wrong-pin", "offline", "invalid"].includes(signInState)) setSignInState("idle"); }}
+                      <input value={nameInput} onChange={e => { setNameInput(e.target.value.toUpperCase()); if (["wrong-pin", "offline", "invalid", "paused"].includes(signInState)) setSignInState("idle"); }}
                         placeholder="e.g. J FREW" autoFocus
                         onKeyDown={e => e.key === "Enter" && document.getElementById("pin-input")?.focus()}
                         style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "16px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, letterSpacing: "2px" }} />
                     </div>
                     <div style={{ textAlign: "left", marginBottom: "20px" }}>
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>4-Digit PIN</div>
-                      <input id="pin-input" value={pinInput} onChange={e => { setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4)); if (["wrong-pin", "offline", "invalid"].includes(signInState)) setSignInState("idle"); }}
+                      <input id="pin-input" value={pinInput} onChange={e => { setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4)); if (["wrong-pin", "offline", "invalid", "paused"].includes(signInState)) setSignInState("idle"); }}
                         placeholder="••••" inputMode="numeric" maxLength={4}
                         onKeyDown={e => e.key === "Enter" && handleSignIn()}
                         style={{ width: "100%", boxSizing: "border-box", padding: "13px", fontSize: "22px", border: `1px solid ${BORDER}`, borderRadius: "8px", outline: "none", fontFamily: F_UI, color: TEXT, background: SURFACE, textAlign: "center", letterSpacing: "8px" }} />
@@ -2665,6 +2674,13 @@ export default function BowlsTracker() {
                       <div style={{ fontFamily: F_UI, fontSize: "13px", fontWeight: "600", color: TEXT, marginBottom: "3px" }}>Looks like you're new here</div>
                       <div style={{ fontFamily: F_UI, fontSize: "12px", color: TEXT2, lineHeight: 1.5 }}>If you've signed in before, go back and check your name and PIN match exactly. Otherwise confirm your PIN below to create your account.</div>
                     </div>
+                    {/* A new account is setting a PIN, so the weak list applies (the server
+                        refuses it too). Go back and pick another. */}
+                    {isWeakPin(pinInput) && (
+                      <div role="alert" style={{ background: `${LOSS_RED}0d`, border: `1px solid ${LOSS_RED}44`, borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", textAlign: "left", fontFamily: F_UI, fontSize: "12px", color: LOSS_RED, lineHeight: 1.5 }}>
+                        {WEAK_PIN_MESSAGE} Tap Back and choose another PIN.
+                      </div>
+                    )}
                     <div style={{ textAlign: "left", marginBottom: "20px" }}>
                       <div style={{ fontFamily: F_UI, fontSize: "11px", color: TEXT3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "5px" }}>Confirm PIN</div>
                       <input autoFocus value={pinConfirm} onChange={e => setPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 4))}
@@ -2676,11 +2692,11 @@ export default function BowlsTracker() {
                       )}
                     </div>
                     <div style={{ display: "flex", gap: "10px" }}>
-                      <button onClick={() => { setPinConfirm(""); setSignInState("idle"); }}
+                      <button onClick={() => { setPinConfirm(""); if (isWeakPin(pinInput)) setPinInput(""); setSignInState("idle"); }}
                         style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", color: TEXT2, padding: "11px 18px", fontSize: "13px", cursor: "pointer", fontFamily: F_UI }}>
                         Back
                       </button>
-                      <button onClick={() => registerAccount()} disabled={pinConfirm !== pinInput || pinConfirm.length !== 4}
+                      <button onClick={() => registerAccount()} disabled={pinConfirm !== pinInput || pinConfirm.length !== 4 || isWeakPin(pinInput)}
                         style={{ flex: 1, background: pinConfirm === pinInput && pinConfirm.length === 4 ? MID : BORDER, border: "none", borderRadius: "8px", color: "#fff", padding: "13px 28px", fontSize: "14px", cursor: pinConfirm === pinInput && pinConfirm.length === 4 ? "pointer" : "default", fontFamily: F_UI, fontWeight: "700" }}>
                         Create Account
                       </button>

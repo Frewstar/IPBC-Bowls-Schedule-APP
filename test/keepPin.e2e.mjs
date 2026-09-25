@@ -19,6 +19,11 @@
 //   6. Sessions are 12 months, rolling, and end on a PIN change, an admin
 //      reset and sign-out.
 //   7. The publishable key still cannot read PINs, phones or player_data.
+//   8. (follow-up) Stepped lock: 5 wrong → 15 minutes, 10 in 24 hours → 24
+//      hours; an admin unlocks at once; only the long lock signs the member out.
+//   9. (follow-up) Spray guard: one PIN across many names from one IP is
+//      paused, club-wide attack tightens it, a normal member still gets in.
+//  10. (follow-up) Weak PINs refused when set or changed; existing ones work.
 //
 //  Run:   npx vite build && node test/keepPin.e2e.mjs
 //  Needs: PostgreSQL (16 used), superuser URL in BOWLS_E2E_PG
@@ -38,9 +43,12 @@ const DIST = path.resolve("dist");
 const PORT = 4319;
 
 // ── Database ────────────────────────────────────────────────────────────────
-function psql(url, sql, { asAnon = false } = {}) {
+// ip: the caller's address as PostgREST would pass it (request.headers),
+// which is what the spray guard keys on. Without one, calls share 'unknown'.
+function psql(url, sql, { asAnon = false, ip = null } = {}) {
   const args = [url, "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1"];
   if (asAnon) args.push("-c", "set role anon");
+  if (ip) args.push("-c", `set request.headers = '{"cf-connecting-ip": "${ip}"}'`);
   args.push("-c", sql);
   return execFileSync("psql", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
@@ -69,15 +77,16 @@ alter default privileges in schema public grant all on functions to anon, authen
 // Made up. Legacy accounts written the way the old client wrote them:
 // NAME-PIN only, the trigger derives the hash.
 const SEED = `
-insert into player_data (player_name) values ('TEST ALICE-1111'), ('TEST BOB-2222'), ('TEST CAROL-3333'), ('TEST DAN-4444');
+insert into player_data (player_name) values ('TEST ALICE-1111'), ('TEST BOB-2719'), ('TEST CAROL-3141'), ('TEST DAN-4444');
 insert into members (id, name, phone, section, sort_order) values
   ('t1', 'TEST ALICE', '07700 900001', 'ladies', 1),
   ('t2', 'TEST BOB',   '07700 900002', 'gents',  2),
   ('t3', 'TEST CAROL', '07700 900003', 'ladies', 3);
 update members set linked_cloudkey = 'TEST ALICE-1111', linked_player_id = (select id from player_data where player_name = 'TEST ALICE-1111') where id = 't1';
-update members set linked_cloudkey = 'TEST CAROL-3333', linked_player_id = (select id from player_data where player_name = 'TEST CAROL-3333') where id = 't3';
+update members set linked_cloudkey = 'TEST BOB-2719', linked_player_id = (select id from player_data where player_name = 'TEST BOB-2719') where id = 't2';
+update members set linked_cloudkey = 'TEST CAROL-3141', linked_player_id = (select id from player_data where player_name = 'TEST CAROL-3141') where id = 't3';
 insert into admins (cloud_key, player_name, role, player_id)
-  select player_name, 'TEST CAROL', 'admin', id from player_data where player_name = 'TEST CAROL-3333';
+  select player_name, 'TEST CAROL', 'admin', id from player_data where player_name = 'TEST CAROL-3141';
 `;
 
 const COUNTS = `select json_build_object(
@@ -133,6 +142,8 @@ function answer(route, status, body) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
+// The browser's IP, as the server sees it. Tests change it to be "another phone".
+let browserIp = "203.0.113.10";
 async function postgrest(route) {
   const req = route.request();
   const url = new URL(req.url());
@@ -147,10 +158,10 @@ async function postgrest(route) {
     const args = Object.entries(body).map(([k, v]) => `${k} => ${literal(v)}`).join(", ");
     try {
       if (VOID_FUNCTIONS.includes(fn)) {
-        psql(DB_URL, `select public.${fn}(${args})`, { asAnon: true });
+        psql(DB_URL, `select public.${fn}(${args})`, { asAnon: true, ip: browserIp });
         return route.fulfill({ status: 200, contentType: "application/json", body: "null" });
       }
-      const out = psql(DB_URL, `select to_jsonb(public.${fn}(${args}))`, { asAnon: true });
+      const out = psql(DB_URL, `select to_jsonb(public.${fn}(${args}))`, { asAnon: true, ip: browserIp });
       return route.fulfill({ status: 200, contentType: "application/json", body: out || "null" });
     } catch (e) {
       return answer(route, 400, { message: String(e.stderr || e.message).trim() });
@@ -267,7 +278,7 @@ async function run(browser) {
     const { context, page } = await openApp(browser);
     await signIn(page, "test alice", "1111");
     const t = await text(page);
-    check("old PIN signs in with no PIN-change screen", !t.includes("Set your PIN") && !t.includes("Change your PIN"));
+    check("old PIN (an easy one, 1111) signs in with no PIN-change screen", !t.includes("Set your PIN") && !t.includes("Change your PIN"));
     check("and holds a session", !!(await stored(page, "bowls_session_token")));
     await openMembers(page);
     check("directory with phone numbers, through the server", (await text(page)).includes("07700 900002"));
@@ -281,14 +292,14 @@ async function run(browser) {
     // block. (The flag can come back if lockdown_2 runs after the 25 Sep files.)
     psql(DB_URL, "update player_data set must_change_pin = true where name_key = 'TESTBOB'");
     const { context, page } = await openApp(browser);
-    await signIn(page, "test bob", "2222");
+    await signIn(page, "test bob", "2719");
     check("must_change_pin set: signs in, not asked to change",
       !!(await stored(page, "bowls_session_token")) && !(await text(page)).includes("Set your PIN"));
     await openMembers(page);
     const dir = await text(page);
     check("must_change_pin set: directory works", dir.includes("07700 900002"), dir.slice(0, 300).replace(/\s+/g, " "));
     await context.close();
-    const bg = await openApp(browser, { bowls_myname: "TEST BOB", bowls_mypin: "2222" });
+    const bg = await openApp(browser, { bowls_myname: "TEST BOB", bowls_mypin: "2719" });
     await bg.page.waitForTimeout(1500);
     check("must_change_pin set: a phone from before sessions signs in quietly",
       !!(await stored(bg.page, "bowls_session_token")) && !(await text(bg.page)).includes("Set your PIN"));
@@ -297,7 +308,7 @@ async function run(browser) {
   }
   {
     // An admin with an old PIN: panel as before, no PIN step.
-    const { context, page } = await openApp(browser, { bowls_myname: "TEST CAROL", bowls_mypin: "3333" });
+    const { context, page } = await openApp(browser, { bowls_myname: "TEST CAROL", bowls_mypin: "3141" });
     await page.waitForTimeout(1800);
     check("admin with old PIN: admin panel, no PIN step",
       (await page.locator('button[title="Admin"]').count()) === 1 && !(await text(page)).includes("Set your PIN"));
@@ -322,11 +333,16 @@ async function run(browser) {
     const oldState = psql(DB_URL, `select bowls_session_state('${other}')->>'status'`, { asAnon: true });
     check("change PIN ends the account's other sessions", oldState === "expired", oldState);
 
+    // Going back to an easy old PIN is refused, in the sheet and on the server.
     await page.waitForTimeout(3000);
     await changePin(page, "TEST ALICE", "1111");
-    check("set back to the previous PIN: accepted", (await text(page)).includes("PIN saved") && (await stored(page, "bowls_mypin")) === "1111");
-    await page.waitForTimeout(3000);
-    await changePin(page, "TEST ALICE", "1111");
+    check("weak: 1111 refused with Joseph's words", (await dialogText(page)).includes("too easy to guess — try a year or house number"));
+    await clickText(page, "Cancel");
+    for (const weak of ["0000", "7777", "1234", "4321", "1212", "2580"]) {
+      const r = psql(DB_URL, `select bowls_change_my_pin('${await stored(page, "bowls_session_token")}', '${weak}')->>'status'`, { asAnon: true });
+      check(`weak: server refuses ${weak} on change`, r === "weak_pin", r);
+    }
+    await changePin(page, "TEST ALICE", "2468");
     check("set to the same PIN it already is: accepted", (await text(page)).includes("PIN saved"));
 
     // Signed out elsewhere mid-way: the sheet says so rather than failing quietly.
@@ -344,15 +360,34 @@ async function run(browser) {
     psql(DB_URL, "delete from login_lockouts where name = 'TESTALICE'");
     const noToken = psql(DB_URL, "select bowls_change_my_pin('not-a-token', '2468')->>'status'", { asAnon: true });
     check("bowls_change_my_pin: no session, no change", noToken === "expired", noToken);
-    const back = psql(DB_URL, "select bowls_sign_in('TEST ALICE', '1111')->>'status'", { asAnon: true });
-    const gone = psql(DB_URL, "select bowls_sign_in('TEST ALICE', '2468')->>'status'", { asAnon: true });
+    psql(DB_URL, "delete from login_lockouts where name = 'TESTALICE'");
+    const now = psql(DB_URL, "select bowls_sign_in('TEST ALICE', '2468')->>'status'", { asAnon: true });
+    const old = psql(DB_URL, "select bowls_sign_in('TEST ALICE', '1111')->>'status'", { asAnon: true });
+    check("the new PIN signs in; the old one does not", now === "ok" && old === "wrong_pin", `${now}/${old}`);
+    psql(DB_URL, "delete from login_lockouts where name = 'TESTALICE'");
+  }
+  {
+    // Back to a previous PIN that is not an easy one: BOB, 2719 → 1967 → 2719.
+    const { context, page } = await openApp(browser);
+    await signIn(page, "test bob", "2719");
+    await changePin(page, "TEST BOB", "1967");
+    check("change to a year (1967): accepted", (await text(page)).includes("PIN saved"));
+    await page.waitForTimeout(3000);
+    await changePin(page, "TEST BOB", "2719");
+    check("set back to the previous PIN: accepted", (await text(page)).includes("PIN saved") && (await stored(page, "bowls_mypin")) === "2719");
+    await context.close();
+    const back = psql(DB_URL, "select bowls_sign_in('TEST BOB', '2719')->>'status'", { asAnon: true });
+    const gone = psql(DB_URL, "select bowls_sign_in('TEST BOB', '1967')->>'status'", { asAnon: true });
     check("the previous PIN signs in again; the in-between one does not", back === "ok" && gone === "wrong_pin", `${back}/${gone}`);
+    psql(DB_URL, "delete from login_lockouts where name = 'TESTBOB'");
     const key = psql(DB_URL, "select player_name = id::text from player_data where name_key = 'TESTALICE'");
     check("no PIN written into player_name", key === "t", key);
   }
 
   // 4. Lockout, and 5. its messages.
   {
+    // BOB's own phone, signed in, from somewhere else.
+    const bobToken = psql(DB_URL, "select bowls_sign_in('TEST BOB', '2719')->>'token'", { asAnon: true, ip: "192.0.2.50" });
     const { context, page } = await openApp(browser);
     let msgs = [];
     for (let i = 0; i < 4; i++) {
@@ -363,34 +398,133 @@ async function run(browser) {
     check("refusal: and how many tries are left", msgs[3].includes("1 attempt left"), msgs[3].slice(0, 200));
     await signIn(page, "test bob", "0000");
     const locked = await text(page);
-    check("refusal: fifth wrong PIN: 'Too many tries … 24 hours … club admin'",
-      /Too many tries/.test(locked) && /24 hours/.test(locked) && /club admin/.test(locked));
-    const row = psql(DB_URL, "select attempts || ':' || (locked_until > now()) from login_lockouts where name = 'TESTBOB'");
-    check("the server counted five and locked", row === "5:true", row);
+    check("refusal: fifth wrong PIN: 'Try again in 15 minutes, or ask a club admin to unlock you now'",
+      locked.includes("Too many tries. Try again in 15 minutes, or ask a club admin to unlock you now."));
+    const row = psql(DB_URL, "select attempts || ':' || round(extract(epoch from locked_until - now()) / 60) from login_lockouts where name = 'TESTBOB'");
+    check("the server counted five and locked for 15 minutes", row === "5:15", row);
+    const alive = psql(DB_URL, `select bowls_session_state('${bobToken}')->>'status'`, { asAnon: true });
+    check("a 15-minute lock does not sign the member out on their own phone", alive === "ok", alive);
     await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
     await context.clearCookies();
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.evaluate(() => localStorage.setItem("ipbc_welcome_seen", "true"));
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1500);
-    await signIn(page, "test bob", "2222");
+    await signIn(page, "test bob", "2719");
     check("storage cleared, right PIN: still locked", /Too many tries/.test(await text(page)) && !(await stored(page, "bowls_session_token")));
     await context.close();
     const fresh = await openApp(browser);
-    await signIn(fresh.page, "test bob", "2222");
+    await signIn(fresh.page, "test bob", "2719");
     check("a different browser, right PIN: still locked", /Too many tries/.test(await text(fresh.page)));
     await fresh.context.close();
+    check("a locked attempt costs nothing more", psql(DB_URL, "select attempts from login_lockouts where name = 'TESTBOB'") === "5");
+
+    // The 15 minutes pass. Tries 6 to 9 count on towards 10.
+    psql(DB_URL, "update login_lockouts set locked_until = now() - interval '1 second' where name = 'TESTBOB'");
+    const six = JSON.parse(psql(DB_URL, "select bowls_sign_in('TEST BOB', '0000')::text", { asAnon: true }));
+    check("after the 15 minutes: the 6th wrong PIN says 4 tries left", six.status === "wrong_pin" && six.remaining === 4, JSON.stringify(six));
+    for (let i = 7; i <= 9; i++) psql(DB_URL, "select bowls_sign_in('TEST BOB', '0000')", { asAnon: true });
+    const ten = JSON.parse(psql(DB_URL, "select bowls_sign_in('TEST BOB', '0000')::text", { asAnon: true }));
+    const hours = psql(DB_URL, "select round(extract(epoch from locked_until - now()) / 3600) from login_lockouts where name = 'TESTBOB'");
+    check("the 10th wrong PIN within 24 hours locks for 24 hours", ten.status === "wrong_pin" && !!ten.locked_until && hours === "24", `${JSON.stringify(ten)} ${hours}h`);
+    const ended = psql(DB_URL, `select bowls_session_state('${bobToken}')->>'status'`, { asAnon: true });
+    check("the 24-hour lock ends the account's sessions", ended === "expired", ended);
+    const long = await openApp(browser);
+    await signIn(long.page, "test bob", "2719");
+    check("refusal: 24-hour lock uses the 24-hour wording",
+      (await text(long.page)).includes("Too many tries. Try again in 24 hours, or ask a club admin to unlock you now."));
+    await long.context.close();
+
+    // An admin unlocks at once.
+    const carol = psql(DB_URL, "select bowls_sign_in('TEST CAROL', '3141')->>'token'", { asAnon: true, ip: "192.0.2.60" });
+    const unlock = psql(DB_URL, `select bowls_admin_set_lockout('${carol}', 'TEST BOB', false)->>'status'`, { asAnon: true });
+    const again = psql(DB_URL, "select bowls_sign_in('TEST BOB', '2719')->>'status'", { asAnon: true });
+    check("an admin unlock lets the member straight back in", unlock === "ok" && again === "ok", `${unlock}/${again}`);
+
+    // A window more than 24 hours old starts again from one.
+    psql(DB_URL, "select bowls_sign_in('TEST BOB', '0000')", { asAnon: true });
+    psql(DB_URL, "update login_lockouts set attempts = 7, window_started_at = now() - interval '25 hours' where name = 'TESTBOB'");
+    const fresh1 = JSON.parse(psql(DB_URL, "select bowls_sign_in('TEST BOB', '0000')::text", { asAnon: true }));
+    check("24 hours after the first wrong PIN, the count starts again", fresh1.attempts === 1 && fresh1.remaining === 4, JSON.stringify(fresh1));
     psql(DB_URL, "delete from login_lockouts where name = 'TESTBOB'");
+  }
+
+  // 8. The spray guard: one PIN tried across many names.
+  {
+    psql(DB_URL, "delete from login_lockouts; delete from bowls_signin_failures; delete from bowls_ip_pauses");
+    const A = "198.51.100.7", B = "198.51.100.8";
+    const names = ["TEST ALICE", "TEST BOB", "TEST CAROL", "TEST DAN", "TEST UUID"];
+    const got = names.map(n => psql(DB_URL, `select bowls_sign_in('${n}', '1357')->>'status'`, { asAnon: true, ip: A }));
+    check("spray: the first 5 names from one IP are checked (wrong PIN each)", got.every(g => g === "wrong_pin"), got.join(","));
+    const paused = JSON.parse(psql(DB_URL, "select bowls_sign_in('TEST ALICE', '2468')::text", { asAnon: true, ip: A }));
+    check("spray: after 5 names, that IP is paused — even the right PIN is not checked", paused.status === "paused" && !!paused.paused_until, JSON.stringify(paused));
+    const mins = psql(DB_URL, `select round(extract(epoch from paused_until - now()) / 60) from bowls_ip_pauses where ip = '${A}'`);
+    check("spray: the pause is 15 minutes", mins === "15", mins);
+    const reg = psql(DB_URL, "select bowls_register('TEST SOMEONE', '1967')->>'status'", { asAnon: true, ip: A });
+    const adm = psql(DB_URL, "select bowls_admin_role('TEST CAROL', '3141')", { asAnon: true, ip: A });
+    check("spray: registration and the admin check are paused too", reg === "paused" && adm === "", `${reg}/${adm}`);
+    const counts = psql(DB_URL, "select string_agg(attempts::text, ',' order by name) from login_lockouts where name in ('TESTALICE','TESTBOB','TESTCAROL','TESTDAN','TESTUUID')");
+    check("spray: paused attempts cost the members nothing (one wrong PIN each)", counts === "1,1,1,1,1", counts);
+    const normal = psql(DB_URL, "select bowls_sign_in('TEST ALICE', '2468')->>'status'", { asAnon: true, ip: B });
+    check("spray: a normal member on another network signs in", normal === "ok", normal);
+    browserIp = A;
+    const { context, page } = await openApp(browser);
+    await signIn(page, "test bob", "2719");
+    check("refusal: a paused network is told why", (await text(page)).includes("Too many sign-in attempts from this network"));
+    await context.close();
+    browserIp = B;
+    const ok = await openApp(browser);
+    await signIn(ok.page, "test bob", "2719");
+    check("a normal member in the browser, another network: signed in", !!(await stored(ok.page, "bowls_session_token")));
+    await ok.context.close();
+    browserIp = "203.0.113.10";
+
+    // A member getting their own PIN wrong four times is one name: no pause.
+    psql(DB_URL, "delete from login_lockouts");
+    for (let i = 0; i < 4; i++) psql(DB_URL, "select bowls_sign_in('TEST DAN', '0000')", { asAnon: true, ip: "198.51.100.9" });
+    const own = psql(DB_URL, "select bowls_sign_in('TEST DAN', '9090')->>'status'", { asAnon: true, ip: "198.51.100.9" });
+    check("spray: one member's own wrong PINs never pause their network", own === "ok", own);
+
+    // Club-wide: 21 accounts, sprayed 3 names at a time from 7 IPs.
+    psql(DB_URL, "delete from login_lockouts; delete from bowls_signin_failures; delete from bowls_ip_pauses");
+    for (let i = 1; i <= 21; i++) psql(DB_URL, `select bowls_register('TEST SPRAY ${i}', '1967')`, { asAnon: true, ip: "192.0.2.99" });
+    const statusOf = (i, ip) => psql(DB_URL, `select bowls_sign_in('TEST SPRAY ${i}', '1357')->>'status'`, { asAnon: true, ip });
+    let first18 = [];
+    for (let k = 0; k < 6; k++) for (let j = 1; j <= 3; j++) first18.push(statusOf(k * 3 + j, `198.18.0.${k + 1}`));
+    check("club-wide: 6 IPs × 3 names (18 names) — nobody paused yet", first18.every(x => x === "wrong_pin"), first18.join(","));
+    const s19 = statusOf(19, "198.18.0.7"), s20 = statusOf(20, "198.18.0.7"), s21 = statusOf(21, "198.18.0.7");
+    const p7 = psql(DB_URL, "select count(*) from bowls_ip_pauses where ip = '198.18.0.7' and paused_until > now()");
+    check("club-wide: once 20+ names are failing, 3 names from one IP pauses it", s21 === "wrong_pin" && p7 === "1", `${s19},${s20},${s21} paused=${p7}`);
+    const p1 = psql(DB_URL, "select count(*) from bowls_ip_pauses where ip = '198.18.0.1'");
+    check("club-wide: earlier IPs under the limit are not retro-paused", p1 === "0", p1);
+    psql(DB_URL, "delete from login_lockouts; delete from bowls_signin_failures; delete from bowls_ip_pauses");
+  }
+
+  // 9. Weak PINs when an account is created.
+  {
+    const { context, page } = await openApp(browser);
+    await signIn(page, "test newcomer", "1234");
+    const t = await text(page);
+    check("weak: a new account with 1234 is refused with Joseph's words", t.includes("too easy to guess — try a year or house number"));
+    const createDisabled = await page.evaluate(() => [...document.querySelectorAll("button")].find(b => b.textContent.trim() === "Create Account")?.disabled);
+    check("weak: and cannot be created", createDisabled === true);
+    await context.close();
+    const srv = ["0000", "5555", "1234", "4321", "1212", "2580"].map(p => psql(DB_URL, `select bowls_register('TEST NEWCOMER', '${p}')->>'status'`, { asAnon: true }));
+    check("weak: the server refuses them for a new account too", srv.every(x => x === "weak_pin"), srv.join(","));
+    const year = psql(DB_URL, "select bowls_register('TEST NEWCOMER', '1954')->>'status'", { asAnon: true });
+    check("weak: a year is fine", year === "created", year);
+    const existing = psql(DB_URL, "select bowls_register('TEST UUID', '5555')->>'status'", { asAnon: true });
+    check("weak: an existing easy PIN still signs in (not forced to change)", existing === "existing", existing);
   }
 
   // 5. The other refusals.
   {
     const { context, page } = await openApp(browser);
     await page.route("**/rest/v1/rpc/bowls_sign_in", r => r.abort("failed"));
-    await signIn(page, "test bob", "2222");
+    await signIn(page, "test bob", "2719");
     check("refusal: no connection says 'Can't reach the club server'", (await text(page)).includes("Can't reach the club server"));
     await page.unroute("**/rest/v1/rpc/bowls_sign_in");
-    await signIn(page, "!!!", "2222");
+    await signIn(page, "!!!", "2719");
     check("refusal: a name with no letters is explained", (await text(page)).includes("Check your name and PIN"));
     await clickText(page, "Forgot PIN?");
     check("signed out: 'Forgot PIN?' says ask a club admin", (await text(page)).includes("Ask a club admin to reset it"));
@@ -406,7 +540,7 @@ async function run(browser) {
 
   // 6. Sessions.
   {
-    const tok = psql(DB_URL, "select bowls_sign_in('TEST BOB', '2222')->>'token'", { asAnon: true });
+    const tok = psql(DB_URL, "select bowls_sign_in('TEST BOB', '2719')->>'token'", { asAnon: true });
     const days = psql(DB_URL, "select round(extract(epoch from max(expires_at) - now()) / 86400) from bowls_sessions s join player_data d on d.id = s.player_id where d.name_key = 'TESTBOB'");
     check("a new session lasts 365 days", days === "365", days);
     psql(DB_URL, "update bowls_sessions set expires_at = now() + interval '10 days' where player_id = (select id from player_data where name_key = 'TESTBOB')");
@@ -416,8 +550,8 @@ async function run(browser) {
     psql(DB_URL, `select bowls_sign_out('${tok}')`, { asAnon: true });
     const out = psql(DB_URL, `select bowls_session_state('${tok}')->>'status'`, { asAnon: true });
     check("sign-out ends it", out === "expired", out);
-    const tok2 = psql(DB_URL, "select bowls_sign_in('TEST ALICE', '1111')->>'token'", { asAnon: true });
-    const reset = psql(DB_URL, "select bowls_admin_reset_pin('TEST CAROL', '3333', 't1', '8080')->>'status'", { asAnon: true });
+    const tok2 = psql(DB_URL, "select bowls_sign_in('TEST ALICE', '2468')->>'token'", { asAnon: true });
+    const reset = psql(DB_URL, "select bowls_admin_reset_pin('TEST CAROL', '3141', 't1', '8080')->>'status'", { asAnon: true });
     const after = psql(DB_URL, `select bowls_session_state('${tok2}')->>'status'`, { asAnon: true });
     check("an admin PIN reset ends it", reset === "ok" && after === "expired", `${reset}/${after}`);
   }
@@ -433,7 +567,11 @@ async function run(browser) {
   check("anon cannot call the internal auth functions",
     anonRefused("select public.bowls_auth('TEST BOB', '8080')")
       && anonRefused("select public.bowls_session_issue(gen_random_uuid(), gen_random_uuid())")
-      && anonRefused("select public.bowls_set_pin(gen_random_uuid(), '1234')"));
+      && anonRefused("select public.bowls_set_pin(gen_random_uuid(), '1234')")
+      && anonRefused("select public.bowls_spray_record('TESTBOB', null)")
+      && anonRefused("select public.bowls_count_wrong_pin('TESTBOB', null)"));
+  check("anon cannot read or clear the spray guard's records",
+    anonRefused("select 1 from public.bowls_signin_failures") && anonRefused("delete from public.bowls_ip_pauses"));
   check("anon cannot grant admin without a super admin's PIN",
     psql(DB_URL, "select count(*) from admins", {}) === "1");
 }
