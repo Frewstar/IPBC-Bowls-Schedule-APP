@@ -1,5 +1,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+// Same as src/main.jsx: theme.js reads some colours and fonts from these.
+import "../../frewstar/tokens/frewstar-tokens.css";
+import "../../frewstar/frewstar-brand.css";
 import LiveGamesTab from "../../src/components/tabs/LiveGames.jsx";
 
 // Who this browser context is signed in as, from the query string, so one

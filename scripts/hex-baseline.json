@@ -1,0 +1,24 @@
+{
+  "_readme": "Hex colours per file outside the theme, seeded 26 Sep 2026 from main at a63fd5e. Counts may only go down: run `node scripts/check-hex.mjs --update` after cleaning a file. Raising a count or adding a file is a hand edit that should be justified in the PR. See scripts/check-hex.mjs.",
+  "files": {
+    "api/share.js": 3,
+    "index.html": 17,
+    "src/App.jsx": 121,
+    "src/components/AvatarBubble.jsx": 9,
+    "src/components/ChangePinSheet.jsx": 1,
+    "src/components/DrawResultSheet.jsx": 1,
+    "src/components/DrawViewer.jsx": 3,
+    "src/components/ProfileSheet.jsx": 4,
+    "src/components/tabs/AdminPanel.jsx": 98,
+    "src/components/tabs/Club.jsx": 5,
+    "src/components/tabs/Draws.jsx": 1,
+    "src/components/tabs/Find.jsx": 8,
+    "src/components/tabs/Fixtures.jsx": 11,
+    "src/components/tabs/Help.jsx": 10,
+    "src/components/tabs/LiveGames.jsx": 16,
+    "src/components/tabs/Members.jsx": 13,
+    "src/components/tabs/Settings.jsx": 6,
+    "src/components/tabs/WhatsOn.jsx": 14,
+    "src/lib/poster.js": 1
+  }
+}
