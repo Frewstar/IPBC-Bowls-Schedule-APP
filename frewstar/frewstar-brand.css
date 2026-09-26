@@ -1,0 +1,42 @@
+/*
+ * IPBC bowls app's brand. App-owned: edit freely.
+ * Loaded by src/main.jsx straight after frewstar/tokens/frewstar-tokens.css,
+ * so everything here wins over the Frewstar family default.
+ *
+ * Mode: light, the family default. No data-fs-mode attribute.
+ *
+ * Joseph's decisions (26 Sep 2026): burgundy accent, gold as the secondary
+ * colour, Cormorant Garamond for display, and the app KEEPS Inter for body
+ * text. Every other value below keeps what the app rendered before the tokens
+ * existed; each one is the value of the src/lib/theme.js constant named
+ * beside it. Visual unification with the family is a separate decision.
+ *
+ * Fonts: these only NAME the families. They are still loaded exactly as
+ * before, by the Google Fonts <link> in index.html.
+ */
+:root {
+  /* ── Brand colours ─────────────────────────────────────── */
+  --fs-accent: #6B1D2E;            /* GREEN / MID — the burgundy */
+  --fs-accent-strong: #4A0E1F;     /* --burgundy-deep in index.html (theme-color) */
+  --fs-accent-on: #FFFFFF;         /* white on burgundy; the family default is near-black */
+  --fs-accent-secondary: #C9A84C;  /* GOLD */
+
+  /* ── Surfaces: an off-white page, white cards, a warm panel ── */
+  --fs-surface-canvas: #FAF8F5;    /* BG */
+  --fs-surface-default: #F5F0EB;   /* SURFACE2 */
+  --fs-surface-raised: #FFFFFF;    /* SURFACE */
+
+  /* ── Text ──────────────────────────────────────────────── */
+  --fs-fg-primary: #1A0A0E;        /* TEXT */
+  --fs-fg-muted: #6B5A5E;          /* TEXT2 */
+  --fs-fg-disabled: #9E8A8E;       /* TEXT3 */
+
+  /* ── Lines and status ──────────────────────────────────── */
+  --fs-line-default: #E8E0D5;      /* BORDER */
+  --fs-status-failed: #C0392B;     /* LOSS_RED */
+  /* --fs-status-success is already the app's --success (#2D6A4F in index.html). */
+
+  /* ── Fonts ─────────────────────────────────────────────── */
+  --fs-font-display: 'Cormorant Garamond', Georgia, serif;  /* F_DISPLAY */
+  --fs-font-body: 'Inter', system-ui, sans-serif;           /* F_SANS, F_UI */
+}

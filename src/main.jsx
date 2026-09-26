@@ -1,5 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+// Frewstar tokens (synced from frewstar-ui, never edited here), then this
+// app's brand values. Both before App: src/lib/theme.js points some colour
+// and font constants at these var(--fs-*) tokens.
+import "../frewstar/tokens/frewstar-tokens.css";
+import "../frewstar/frewstar-brand.css";
 import App from "./App.jsx";
 
 // Catch Android Chrome install prompt and re-expose it via a custom event

@@ -1,0 +1,8 @@
+{
+  "_readme": "Written by frewstar-ui/scripts/sync-tokens.mjs. The app's tests fail if a synced file is older than this version or has been hand-edited.",
+  "version": "1.0.0",
+  "files": {
+    "frewstar-tokens.css": "sha256:403806f20f89446eb8969a222941d89ab05236da897c4c0d2a2cb5b509db7298",
+    "frewstar-tokens.ts": "sha256:5312b5d59408cb6e6feeec36e233e177c9668f36d5460f92d679fc7dbe36fbdb"
+  }
+}

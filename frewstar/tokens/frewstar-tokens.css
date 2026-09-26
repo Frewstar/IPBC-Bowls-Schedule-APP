@@ -1,0 +1,115 @@
+/* @frewstar/tokens v1.0.0 sha256:403806f20f89446eb8969a222941d89ab05236da897c4c0d2a2cb5b509db7298 — generated, do not edit in apps */
+/*
+ * Frewstar design tokens. Generated from frewstar-ui/src/tokens.source.mjs by
+ * scripts/build-tokens.mjs, and copied into each app by scripts/sync-tokens.mjs.
+ *
+ * Light is the default, on :root. Dark applies under [data-fs-mode="dark"], on
+ * <html> for a dark app or on any element for a dark section.
+ *
+ * An app changes values in its own frewstar-brand.css, which must load AFTER
+ * this file. Set the accent on the same element as the mode (normally :root):
+ * the -strong and -soft shades are worked out where they are declared.
+ */
+
+:root {
+  /* ── Primitives ─────────────────────────────────────────── */
+  --fs-gold-400: #F0C674;
+  --fs-gold-500: #E8B45A;
+  --fs-gold-600: #D4A24A;
+  --fs-ink-950: #0A0A0A;
+  --fs-ink-900: #111010;
+  --fs-ink-850: #141414;
+  --fs-ink-800: #1C1C1C;
+  --fs-ink-700: #3F3A32;
+  --fs-ink-600: #5A5A5A;
+  --fs-ink-500: #6B6457;
+  --fs-ink-450: #7A7264;
+  --fs-ink-400: #9A9284;
+  --fs-ink-300: #999999;
+  --fs-paper-0: #FFFFFF;
+  --fs-paper-50: #F6F3EE;
+  --fs-paper-100: #ECE6DC;
+  --fs-paper-200: #E7E1D6;
+  --fs-paper-300: #CFC6B6;
+  --fs-white-a06: rgba(255, 255, 255, 0.06);
+  --fs-white-a08: rgba(255, 255, 255, 0.08);
+  --fs-white-a10: rgba(255, 255, 255, 0.10);
+  --fs-green-400: #38D9A9;
+  --fs-green-700: #2D6A4F;
+  --fs-amber-500: #F5842A;
+  --fs-red-500: #C94040;
+
+  /* ── Semantic, shared by both modes ─────────────────────── */
+  --fs-accent: var(--fs-gold-500);
+  --fs-accent-strong: color-mix(in srgb, var(--fs-accent) 85%, #000000);
+  --fs-accent-soft: color-mix(in srgb, var(--fs-accent) 15%, transparent);
+  --fs-accent-on: var(--fs-ink-950);
+  --fs-accent-secondary: var(--fs-accent);
+  --fs-status-available: var(--fs-green-400);
+  --fs-status-attention: var(--fs-amber-500);
+  --fs-status-failed: var(--fs-red-500);
+  --fs-font-display: 'Poppins', system-ui, sans-serif;
+  --fs-font-body: 'Poppins', system-ui, sans-serif;
+
+  /* ── Semantic, light ────────────────────────────────────── */
+  --fs-surface-canvas: var(--fs-paper-0);
+  --fs-surface-default: var(--fs-paper-50);
+  --fs-surface-raised: var(--fs-paper-0);
+  --fs-fg-primary: var(--fs-ink-900);
+  --fs-fg-muted: var(--fs-ink-500);
+  --fs-fg-disabled: var(--fs-ink-400);
+  --fs-line-faint: var(--fs-paper-100);
+  --fs-line-default: var(--fs-paper-200);
+  --fs-line-strong: var(--fs-paper-300);
+  --fs-status-success: var(--fs-green-700);
+
+  /* ── Component, shared by both modes ────────────────────── */
+  --fs-radius-pill: 999px;
+  --fs-radius-card: 20px;
+  --fs-radius-input: 12px;
+  --fs-radius-inset: 8px;
+  --fs-touch: 44px;
+  --fs-button-height: 48px;
+  --fs-space-unit: 4px;
+  --fs-space-1: 4px;
+  --fs-space-2: 8px;
+  --fs-space-3: 12px;
+  --fs-space-4: 16px;
+  --fs-space-5: 20px;
+  --fs-space-6: 24px;
+  --fs-space-8: 32px;
+  --fs-space-10: 40px;
+  --fs-space-12: 48px;
+  --fs-space-16: 64px;
+  --fs-space-20: 80px;
+  --fs-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --fs-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --fs-duration-fast: 160ms;
+  --fs-duration-slow: 320ms;
+
+  /* ── Component, light ───────────────────────────────────── */
+  --fs-shadow-sm: 0 1px 3px rgba(17, 16, 16, 0.10);
+  --fs-shadow-md: 0 18px 40px rgba(17, 16, 16, 0.14);
+  --fs-shadow-lg: 0 24px 50px rgba(0, 0, 0, 0.38);
+}
+
+/* Only the per-mode tokens. Shared ones are inherited from above, so a dark
+   section keeps the app's accent, fonts and radii. */
+[data-fs-mode="dark"] {
+  /* ── Semantic, dark ─────────────────────────────────────── */
+  --fs-surface-canvas: var(--fs-ink-950);
+  --fs-surface-default: var(--fs-ink-850);
+  --fs-surface-raised: var(--fs-ink-800);
+  --fs-fg-primary: var(--fs-paper-0);
+  --fs-fg-muted: var(--fs-ink-300);
+  --fs-fg-disabled: var(--fs-ink-600);
+  --fs-line-faint: var(--fs-white-a06);
+  --fs-line-default: var(--fs-white-a08);
+  --fs-line-strong: var(--fs-white-a10);
+  --fs-status-success: var(--fs-green-400);
+
+  /* ── Component, dark ────────────────────────────────────── */
+  --fs-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.60);
+  --fs-shadow-md: 0 6px 20px -6px rgba(0, 0, 0, 0.85);
+  --fs-shadow-lg: 0 18px 50px -12px rgba(0, 0, 0, 0.90);
+}
