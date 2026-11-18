@@ -1,10 +1,10 @@
-/* @frewstar/tokens v1.0.0 sha256:5312b5d59408cb6e6feeec36e233e177c9668f36d5460f92d679fc7dbe36fbdb — generated, do not edit in apps */
+/* @frewstar/tokens v1.2.0 sha256:dd6dc707423294b01ef1ce862432e93622128cf79c6917740af5b7bb98eb49d8 — generated, do not edit in apps */
 /*
  * Frewstar design tokens, as data. The same values as frewstar-tokens.css,
  * generated from the same source, for JS use and tests.
  */
 
-export const version = "1.0.0";
+export const version = "1.2.0";
 
 export type Mode = "light" | "dark";
 
@@ -17,6 +17,7 @@ export const primitives = {
   "--fs-ink-900": "#111010",
   "--fs-ink-850": "#141414",
   "--fs-ink-800": "#1C1C1C",
+  "--fs-ink-750": "#262626",
   "--fs-ink-700": "#3F3A32",
   "--fs-ink-600": "#5A5A5A",
   "--fs-ink-500": "#6B6457",
@@ -35,6 +36,10 @@ export const primitives = {
   "--fs-green-700": "#2D6A4F",
   "--fs-amber-500": "#F5842A",
   "--fs-red-500": "#C94040",
+  "--fs-red-600": "#B3261E",
+  "--fs-red-300": "#F28B82",
+  "--fs-scrim-light": "rgba(17, 16, 16, 0.45)",
+  "--fs-scrim-dark": "rgba(0, 0, 0, 0.62)",
 } as const;
 
 /** What each value is for: shared by both modes, then per mode. */
@@ -45,6 +50,10 @@ export const semantic = {
     "--fs-accent-soft": "color-mix(in srgb, var(--fs-accent) 15%, transparent)",
     "--fs-accent-on": "var(--fs-ink-950)",
     "--fs-accent-secondary": "var(--fs-accent)",
+    "--fs-accent-fill": "var(--fs-accent)",
+    "--fs-accent-text": "var(--fs-accent)",
+    "--fs-accent-mark": "var(--fs-accent)",
+    "--fs-accent-fill-edge": "0 0 0 0 transparent",
     "--fs-status-available": "var(--fs-green-400)",
     "--fs-status-attention": "var(--fs-amber-500)",
     "--fs-status-failed": "var(--fs-red-500)",
@@ -55,6 +64,8 @@ export const semantic = {
     "--fs-surface-canvas": "var(--fs-paper-0)",
     "--fs-surface-default": "var(--fs-paper-50)",
     "--fs-surface-raised": "var(--fs-paper-0)",
+    "--fs-surface-hover": "var(--fs-paper-100)",
+    "--fs-scrim": "var(--fs-scrim-light)",
     "--fs-fg-primary": "var(--fs-ink-900)",
     "--fs-fg-muted": "var(--fs-ink-500)",
     "--fs-fg-disabled": "var(--fs-ink-400)",
@@ -62,11 +73,14 @@ export const semantic = {
     "--fs-line-default": "var(--fs-paper-200)",
     "--fs-line-strong": "var(--fs-paper-300)",
     "--fs-status-success": "var(--fs-green-700)",
+    "--fs-status-failed-text": "var(--fs-red-600)",
   },
   dark: {
     "--fs-surface-canvas": "var(--fs-ink-950)",
     "--fs-surface-default": "var(--fs-ink-850)",
     "--fs-surface-raised": "var(--fs-ink-800)",
+    "--fs-surface-hover": "var(--fs-ink-750)",
+    "--fs-scrim": "var(--fs-scrim-dark)",
     "--fs-fg-primary": "var(--fs-paper-0)",
     "--fs-fg-muted": "var(--fs-ink-300)",
     "--fs-fg-disabled": "var(--fs-ink-600)",
@@ -74,6 +88,7 @@ export const semantic = {
     "--fs-line-default": "var(--fs-white-a08)",
     "--fs-line-strong": "var(--fs-white-a10)",
     "--fs-status-success": "var(--fs-green-400)",
+    "--fs-status-failed-text": "var(--fs-red-300)",
   },
 } as const;
 
@@ -98,10 +113,26 @@ export const component = {
     "--fs-space-12": "48px",
     "--fs-space-16": "64px",
     "--fs-space-20": "80px",
-    "--fs-ease-standard": "cubic-bezier(0.2, 0, 0, 1)",
-    "--fs-ease-emphasized": "cubic-bezier(0.16, 1, 0.3, 1)",
-    "--fs-duration-fast": "160ms",
-    "--fs-duration-slow": "320ms",
+    "--fs-dur-tap": "180ms",
+    "--fs-dur-quick": "220ms",
+    "--fs-dur-enter": "320ms",
+    "--fs-dur-exit": "220ms",
+    "--fs-dur-max": "600ms",
+    "--fs-dur-screen-enter": "280ms",
+    "--fs-dur-screen-exit": "200ms",
+    "--fs-dur-toast-enter": "250ms",
+    "--fs-dur-toast-exit": "200ms",
+    "--fs-dur-expand": "250ms",
+    "--fs-stagger-step": "40ms",
+    "--fs-ease-enter": "cubic-bezier(0.2, 0, 0, 1)",
+    "--fs-ease-exit": "cubic-bezier(0.4, 0, 1, 1)",
+    "--fs-ease-standard": "cubic-bezier(0.2, 0, 0.2, 1)",
+    "--fs-move-sm": "8px",
+    "--fs-move-md": "16px",
+    "--fs-press-scale": "0.97",
+    "--fs-ease-emphasized": "var(--fs-ease-enter)",
+    "--fs-duration-fast": "var(--fs-dur-tap)",
+    "--fs-duration-slow": "var(--fs-dur-enter)",
   },
   light: {
     "--fs-shadow-sm": "0 1px 3px rgba(17, 16, 16, 0.10)",
@@ -115,6 +146,24 @@ export const component = {
   },
 } as const;
 
+/** The motion tokens under "reduce motion" (the OS setting, or data-fs-motion="reduce" on <html>). */
+export const reducedMotion = {
+  "--fs-dur-tap": "180ms",
+  "--fs-dur-quick": "200ms",
+  "--fs-dur-enter": "200ms",
+  "--fs-dur-exit": "200ms",
+  "--fs-dur-max": "200ms",
+  "--fs-dur-screen-enter": "200ms",
+  "--fs-dur-screen-exit": "200ms",
+  "--fs-dur-toast-enter": "200ms",
+  "--fs-dur-toast-exit": "200ms",
+  "--fs-dur-expand": "200ms",
+  "--fs-stagger-step": "0ms",
+  "--fs-move-sm": "0px",
+  "--fs-move-md": "0px",
+  "--fs-press-scale": "1",
+} as const;
+
 export type PrimitiveName = keyof typeof primitives;
 export type SemanticName = keyof typeof semantic.shared | keyof typeof semantic.light;
 export type ComponentName = keyof typeof component.shared | keyof typeof component.light;
@@ -123,14 +172,16 @@ export type TokenName = PrimitiveName | SemanticName | ComponentName;
 /**
  * A token's value in a mode, following var() references to the end. A value
  * that is not a bare var() (a color-mix(), a font stack) comes back as written.
+ * The reducedMotion option reads the motion tokens as they are under "reduce motion".
  */
-export function resolve(name: TokenName, mode: Mode = "light"): string {
+export function resolve(name: TokenName, mode: Mode = "light", options: { reducedMotion?: boolean } = {}): string {
   const table: Record<string, string> = {
     ...primitives,
     ...semantic.shared,
     ...semantic[mode],
     ...component.shared,
     ...component[mode],
+    ...(options.reducedMotion ? reducedMotion : {}),
   };
   let value: string = table[name] ?? "";
   for (let hops = 0; hops < 10; hops++) {

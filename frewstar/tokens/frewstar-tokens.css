@@ -1,4 +1,4 @@
-/* @frewstar/tokens v1.0.0 sha256:403806f20f89446eb8969a222941d89ab05236da897c4c0d2a2cb5b509db7298 — generated, do not edit in apps */
+/* @frewstar/tokens v1.2.0 sha256:6460ac3085b9fc696a91e24280e688795938f79d85f509a8bd55078cfacc21a4 — generated, do not edit in apps */
 /*
  * Frewstar design tokens. Generated from frewstar-ui/src/tokens.source.mjs by
  * scripts/build-tokens.mjs, and copied into each app by scripts/sync-tokens.mjs.
@@ -20,6 +20,7 @@
   --fs-ink-900: #111010;
   --fs-ink-850: #141414;
   --fs-ink-800: #1C1C1C;
+  --fs-ink-750: #262626;
   --fs-ink-700: #3F3A32;
   --fs-ink-600: #5A5A5A;
   --fs-ink-500: #6B6457;
@@ -38,6 +39,10 @@
   --fs-green-700: #2D6A4F;
   --fs-amber-500: #F5842A;
   --fs-red-500: #C94040;
+  --fs-red-600: #B3261E;
+  --fs-red-300: #F28B82;
+  --fs-scrim-light: rgba(17, 16, 16, 0.45);
+  --fs-scrim-dark: rgba(0, 0, 0, 0.62);
 
   /* ── Semantic, shared by both modes ─────────────────────── */
   --fs-accent: var(--fs-gold-500);
@@ -45,6 +50,10 @@
   --fs-accent-soft: color-mix(in srgb, var(--fs-accent) 15%, transparent);
   --fs-accent-on: var(--fs-ink-950);
   --fs-accent-secondary: var(--fs-accent);
+  --fs-accent-fill: var(--fs-accent);
+  --fs-accent-text: var(--fs-accent);
+  --fs-accent-mark: var(--fs-accent);
+  --fs-accent-fill-edge: 0 0 0 0 transparent;
   --fs-status-available: var(--fs-green-400);
   --fs-status-attention: var(--fs-amber-500);
   --fs-status-failed: var(--fs-red-500);
@@ -55,6 +64,8 @@
   --fs-surface-canvas: var(--fs-paper-0);
   --fs-surface-default: var(--fs-paper-50);
   --fs-surface-raised: var(--fs-paper-0);
+  --fs-surface-hover: var(--fs-paper-100);
+  --fs-scrim: var(--fs-scrim-light);
   --fs-fg-primary: var(--fs-ink-900);
   --fs-fg-muted: var(--fs-ink-500);
   --fs-fg-disabled: var(--fs-ink-400);
@@ -62,6 +73,7 @@
   --fs-line-default: var(--fs-paper-200);
   --fs-line-strong: var(--fs-paper-300);
   --fs-status-success: var(--fs-green-700);
+  --fs-status-failed-text: var(--fs-red-600);
 
   /* ── Component, shared by both modes ────────────────────── */
   --fs-radius-pill: 999px;
@@ -82,10 +94,26 @@
   --fs-space-12: 48px;
   --fs-space-16: 64px;
   --fs-space-20: 80px;
-  --fs-ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --fs-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
-  --fs-duration-fast: 160ms;
-  --fs-duration-slow: 320ms;
+  --fs-dur-tap: 180ms;
+  --fs-dur-quick: 220ms;
+  --fs-dur-enter: 320ms;
+  --fs-dur-exit: 220ms;
+  --fs-dur-max: 600ms;
+  --fs-dur-screen-enter: 280ms;
+  --fs-dur-screen-exit: 200ms;
+  --fs-dur-toast-enter: 250ms;
+  --fs-dur-toast-exit: 200ms;
+  --fs-dur-expand: 250ms;
+  --fs-stagger-step: 40ms;
+  --fs-ease-enter: cubic-bezier(0.2, 0, 0, 1);
+  --fs-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --fs-ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --fs-move-sm: 8px;
+  --fs-move-md: 16px;
+  --fs-press-scale: 0.97;
+  --fs-ease-emphasized: var(--fs-ease-enter);
+  --fs-duration-fast: var(--fs-dur-tap);
+  --fs-duration-slow: var(--fs-dur-enter);
 
   /* ── Component, light ───────────────────────────────────── */
   --fs-shadow-sm: 0 1px 3px rgba(17, 16, 16, 0.10);
@@ -100,6 +128,8 @@
   --fs-surface-canvas: var(--fs-ink-950);
   --fs-surface-default: var(--fs-ink-850);
   --fs-surface-raised: var(--fs-ink-800);
+  --fs-surface-hover: var(--fs-ink-750);
+  --fs-scrim: var(--fs-scrim-dark);
   --fs-fg-primary: var(--fs-paper-0);
   --fs-fg-muted: var(--fs-ink-300);
   --fs-fg-disabled: var(--fs-ink-600);
@@ -107,9 +137,48 @@
   --fs-line-default: var(--fs-white-a08);
   --fs-line-strong: var(--fs-white-a10);
   --fs-status-success: var(--fs-green-400);
+  --fs-status-failed-text: var(--fs-red-300);
 
   /* ── Component, dark ────────────────────────────────────── */
   --fs-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.60);
   --fs-shadow-md: 0 6px 20px -6px rgba(0, 0, 0, 0.85);
   --fs-shadow-lg: 0 18px 50px -12px rgba(0, 0, 0, 0.90);
+}
+
+/* Reduce motion: the phone's own setting, or an app's switch
+   (data-fs-motion="reduce" on <html>). Durations at most 200ms, no distance,
+   no scale, so every move is left as an opacity fade. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fs-dur-tap: 180ms;
+    --fs-dur-quick: 200ms;
+    --fs-dur-enter: 200ms;
+    --fs-dur-exit: 200ms;
+    --fs-dur-max: 200ms;
+    --fs-dur-screen-enter: 200ms;
+    --fs-dur-screen-exit: 200ms;
+    --fs-dur-toast-enter: 200ms;
+    --fs-dur-toast-exit: 200ms;
+    --fs-dur-expand: 200ms;
+    --fs-stagger-step: 0ms;
+    --fs-move-sm: 0px;
+    --fs-move-md: 0px;
+    --fs-press-scale: 1;
+  }
+}
+:root[data-fs-motion="reduce"] {
+  --fs-dur-tap: 180ms;
+  --fs-dur-quick: 200ms;
+  --fs-dur-enter: 200ms;
+  --fs-dur-exit: 200ms;
+  --fs-dur-max: 200ms;
+  --fs-dur-screen-enter: 200ms;
+  --fs-dur-screen-exit: 200ms;
+  --fs-dur-toast-enter: 200ms;
+  --fs-dur-toast-exit: 200ms;
+  --fs-dur-expand: 200ms;
+  --fs-stagger-step: 0ms;
+  --fs-move-sm: 0px;
+  --fs-move-md: 0px;
+  --fs-press-scale: 1;
 }
